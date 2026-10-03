@@ -81,6 +81,10 @@
                 max-height: max(240px, calc(100vh - 330px));
             }
         }
+        /* 家長查詢頁：只顯示查詢區，隱藏看板與教師功能 */
+        .parent-mode .teacher-ui {
+            display: none !important;
+        }
         /* 美化 Scrollbar */
         ::-webkit-scrollbar {
             width: 6px;
@@ -100,7 +104,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc, deleteDoc, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Firebase 專案設定：從 Firebase 主控台「專案設定 → 你的應用程式 → SDK 設定」複製過來。
         // 改成 null 即為純本機模式（資料只存在這台裝置的瀏覽器）。
@@ -120,6 +124,14 @@
         let currentUser = null;
         let cloudDocRef = null;
         let unsubscribeSnapshot = null;
+
+        // 家長查詢用的「每位學生一份」摘要文件，只記錄已發布的內容，沒變就不重寫
+        const publishedParentViews = new Map();
+        const pendingParentViewDeletes = new Set();
+
+        // Firebase 登入完成（或確定無法使用）後才 resolve，家長查詢會等它
+        let resolveFirebaseReady;
+        window.firebaseReady = new Promise(r => { resolveFirebaseReady = r; });
 
         // 同步狀態：寫入進行中時不丟棄新的變更，改為完成後再補寫一次
         let syncInFlight = false;
@@ -240,8 +252,11 @@
 
             ...window.createDefaultBoard(),
 
+            // 家長查詢分頁目前顯示的對象：mode 為 'teacher'（教師選座號）、'local'（本機用查詢碼）、'cloud'（雲端查詢碼）
             parentSearch: {
-                studentId: 1
+                mode: null,
+                studentId: null,
+                code: ''
             }
         };
 
@@ -275,6 +290,54 @@
             }
         };
 
+        function boardRefFor(code) {
+            return doc(db, 'artifacts', appId, 'public', 'data', 'checkpoint_boards', code);
+        }
+
+        function parentViewRef(parentCode) {
+            return doc(db, 'artifacts', appId, 'public', 'data', 'parent_views', parentCode);
+        }
+
+        // 把每位學生的摘要寫到 parent_views/{查詢碼}；家長只讀得到自己孩子的那一份
+        async function publishParentViews() {
+            if (!db || !currentUser || window.IS_PARENT_MODE) return;
+            const views = window.buildParentViews();
+            const batch = writeBatch(db);
+            const written = [];
+            Object.entries(views).forEach(([code, view]) => {
+                const key = JSON.stringify(view);
+                if (publishedParentViews.get(code) === key) return;
+                batch.set(parentViewRef(code), { ...view, updatedAt: Date.now() });
+                written.push([code, key]);
+            });
+            const deletes = [...pendingParentViewDeletes].filter(code => !views[code]);
+            deletes.forEach(code => batch.delete(parentViewRef(code)));
+            if (written.length === 0 && deletes.length === 0) return;
+            await batch.commit();
+            written.forEach(([code, key]) => publishedParentViews.set(code, key));
+            deletes.forEach(code => {
+                pendingParentViewDeletes.delete(code);
+                publishedParentViews.delete(code);
+            });
+        }
+
+        window.queueParentViewDelete = function(code) {
+            if (code) pendingParentViewDeletes.add(code);
+        };
+
+        // 家長端：即時監看某個查詢碼的摘要。回傳取消監看的函式；無法連線時回傳 null
+        window.watchParentView = async function(code, onView, onMissing) {
+            const ready = await window.firebaseReady;
+            if (!ready || !db) return null;
+            return onSnapshot(parentViewRef(code), (snap) => {
+                if (snap.exists()) onView(snap.data());
+                else onMissing();
+            }, (err) => {
+                console.warn("家長查詢失敗:", err);
+                onMissing(err);
+            });
+        };
+
         function buildPayload() {
             const serializedStatuses = {};
             Object.keys(window.state.assignmentStatuses).forEach(asgn => {
@@ -306,6 +369,11 @@
             try {
                 // 不使用 merge：整份覆蓋，已刪除的作業狀態才會真的從雲端移除
                 await setDoc(cloudDocRef, buildPayload());
+                try {
+                    await publishParentViews();
+                } catch (err) {
+                    console.warn("家長查詢資料更新失敗:", err);
+                }
                 if (!syncPending) window.updateCloudStatusBadge('synced');
             } catch (err) {
                 console.error("雲端存檔異常:", err);
@@ -321,6 +389,8 @@
         }
 
         window.syncStateToCloud = function(immediate = false) {
+            if (window.IS_PARENT_MODE) return;
+            window.ensureParentCodes();
             window.saveLocalBackup();
             if (!window.isCloudConnected()) return;
 
@@ -360,7 +430,11 @@
             if (Array.isArray(d.students)) {
                 window.state.students = d.students
                     .filter(s => s && Number.isFinite(Number(s.id)))
-                    .map(s => ({ id: Number(s.id), name: String(s.name ?? s.id) }));
+                    .map(s => {
+                        const st = { id: Number(s.id), name: String(s.name ?? s.id) };
+                        if (typeof s.parentCode === 'string' && /^[A-Z0-9]{8}$/.test(s.parentCode)) st.parentCode = s.parentCode;
+                        return st;
+                    });
             }
             if (Number.isFinite(Number(d.nextStudentId))) window.state.nextStudentId = Number(d.nextStudentId);
             if (Array.isArray(d.assignments)) window.state.assignments = d.assignments.map(String);
@@ -421,7 +495,8 @@
             }
 
             const code = window.getClassCode();
-            const boardRef = doc(db, 'artifacts', appId, 'public', 'data', 'checkpoint_boards', code);
+            const boardRef = boardRefFor(code);
+            publishedParentViews.clear();
             // 舊版資料存在每個匿名使用者自己的路徑，首次連線時搬過來
             const legacyRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'checkpoint_data', 'main_board');
             cloudDocRef = boardRef;
@@ -444,10 +519,12 @@
                     window.saveLocalBackup();
                     rerenderCurrentView();
                     window.updateCloudStatusBadge('synced');
+                    // 開啟看板時同步一次家長查詢資料（沒變的不會重寫）
+                    if (firstSnapshot) publishParentViews().catch(err => console.warn("家長查詢資料更新失敗:", err));
                 } else if (firstSnapshot && startFreshIfMissing) {
                     // 新班級：沿用目前的教師密碼，其餘全部重設為預設值
                     Object.assign(window.state, window.createDefaultBoard());
-                    window.state.parentSearch.studentId = 1;
+                    window.state.parentSearch.mode = null;
                     rerenderCurrentView();
                     window.syncStateToCloud(true);
                 } else {
@@ -488,6 +565,33 @@
             if (db && currentUser) await connectBoard(true);
         };
 
+        // 把目前看板搬到新代碼，並刪除舊代碼的雲端資料。新代碼已有資料時不覆蓋
+        window.moveBoardToClassCode = async function(code) {
+            if (!window.isCloudConnected()) {
+                try { localStorage.setItem(CLASS_CODE_KEY, code); } catch(e) {}
+                return 'local';
+            }
+            const oldRef = cloudDocRef;
+            const newRef = boardRefFor(code);
+            const existing = await getDoc(newRef);
+            if (existing.exists()) return 'exists';
+
+            if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
+            syncDebounceTimer = null;
+            syncPending = false;
+            await setDoc(newRef, buildPayload());
+            try {
+                localStorage.setItem(CLASS_CODE_KEY, code);
+            } catch(e) {}
+            await connectBoard();
+            try {
+                await deleteDoc(oldRef);
+            } catch(e) {
+                console.warn("刪除舊班級資料失敗:", e);
+            }
+            return 'moved';
+        };
+
         async function initCloudFirebase() {
             try {
                 let firebaseConfig = FIREBASE_CONFIG;
@@ -500,6 +604,7 @@
                 if (!firebaseConfig) {
                     // 沒有雲端設定：純本機模式
                     window.updateCloudStatusBadge('local');
+                    resolveFirebaseReady(false);
                     return;
                 }
 
@@ -516,6 +621,14 @@
                 currentUser = auth.currentUser;
                 if (!currentUser) {
                     window.updateCloudStatusBadge('error');
+                    resolveFirebaseReady(false);
+                    return;
+                }
+                resolveFirebaseReady(true);
+
+                // 家長查詢頁不讀取整班看板，只讀自己孩子的摘要
+                if (window.IS_PARENT_MODE) {
+                    window.updateCloudStatusBadge('synced');
                     return;
                 }
 
@@ -523,10 +636,16 @@
             } catch (err) {
                 console.warn("降級本機快取:", err);
                 window.updateCloudStatusBadge('error');
+                resolveFirebaseReady(false);
             }
         }
 
         window.addEventListener('DOMContentLoaded', () => {
+            if (window.IS_PARENT_MODE) {
+                window.enterParentMode();
+                initCloudFirebase();
+                return;
+            }
             window.loadLocalBackup();
             window.renderSlogan();
             window.renderDashboard();
@@ -551,12 +670,12 @@
             </div>
 
             <!-- 頁籤切換鈕 -->
-            <nav class="flex bg-slate-100 p-1 rounded-xl border border-slate-200 flex-shrink-0">
+            <nav class="teacher-ui flex bg-slate-100 p-1 rounded-xl border border-slate-200 flex-shrink-0">
                 <button onclick="switchTab('dashboard')" id="tab-dashboard" class="px-3 py-1 rounded-lg text-xs sm:text-sm font-black flex items-center gap-1.5 whitespace-nowrap transition-all bg-white text-slate-900 shadow-sm">
                     <i class="fa-solid fa-chalkboard-user text-amber-500"></i> 班級看板
                 </button>
                 <button onclick="switchTab('parent')" id="tab-parent" class="px-3 py-1 rounded-lg text-xs sm:text-sm font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900">
-                    <i class="fa-solid fa-id-card text-indigo-500"></i> 座號查詢
+                    <i class="fa-solid fa-id-card text-indigo-500"></i> 家長查詢
                 </button>
                 <button onclick="switchTab('settings')" id="tab-settings" class="px-3 py-1 rounded-lg text-xs sm:text-sm font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900">
                     <i class="fa-solid fa-gears text-slate-500"></i> 設定後台
@@ -564,7 +683,7 @@
             </nav>
 
             <!-- 學生消單 / 教師模式按鈕組 -->
-            <div class="flex items-center gap-2 flex-shrink-0">
+            <div class="teacher-ui flex items-center gap-2 flex-shrink-0">
                 <div class="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
                     <button onclick="setRole('student')" id="role-student" class="px-3 py-1 rounded-lg text-xs font-black whitespace-nowrap transition-all flex items-center gap-1 bg-white text-emerald-600 shadow-sm">
                         <i class="fa-solid fa-child text-xs"></i> 學生消單
@@ -595,7 +714,7 @@
                     </p>
                 </div>
             </div>
-            <div id="role-status-indicator" class="hidden sm:flex text-xs font-black px-3 py-1 rounded-xl bg-black/25 text-white/95 border border-white/20 flex-shrink-0 items-center gap-1.5 whitespace-nowrap">
+            <div id="role-status-indicator" class="teacher-ui hidden sm:flex text-xs font-black px-3 py-1 rounded-xl bg-black/25 text-white/95 border border-white/20 flex-shrink-0 items-center gap-1.5 whitespace-nowrap">
                 <i class="fa-solid fa-shield-halved text-amber-300"></i>
                 <span id="role-status-text">學生自主消單模式</span>
             </div>
@@ -607,29 +726,36 @@
         <!-- JS 動態生成卡片 -->
     </main>
 
-    <!-- 座號個人查詢分頁 -->
+    <!-- 家長查詢分頁：輸入查詢碼，只看得到自己孩子的狀態 -->
     <main id="view-parent" class="max-w-3xl mx-auto px-4 py-5 w-full flex-1 min-h-0 overflow-y-auto hidden">
-        <div class="bg-white border-2 border-slate-200 rounded-3xl p-6 sm:p-8 board-shadow">
+        <div class="bg-white border-2 border-slate-200 rounded-3xl p-5 sm:p-8 board-shadow">
             <div class="text-center mb-6">
                 <div class="bg-indigo-50 text-indigo-600 w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-2 border border-indigo-100">
                     <i class="fa-solid fa-magnifying-glass-chart text-xl"></i>
                 </div>
-                <h3 class="text-xl font-black text-slate-800">座號個人訂正追蹤</h3>
-                <p class="text-xs text-slate-400 mt-0.5">選擇學生座號即可即時檢視該生全科目之完成狀態</p>
+                <h3 class="text-xl font-black text-slate-800">家長查詢</h3>
+                <p class="text-xs text-slate-400 mt-0.5">請輸入老師提供的 8 碼查詢碼，只會顯示您孩子的訂正狀態</p>
             </div>
 
             <div class="mb-5 bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                <label class="block text-xs font-bold text-slate-600 mb-2">請選擇要查詢的座號：</label>
-                <select id="parent-student-select" onchange="onSeatSelectChange()" class="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-base font-black text-slate-800 focus:outline-none focus:border-indigo-400 shadow-sm cursor-pointer">
+                <label for="parent-code-input" class="block text-xs font-bold text-slate-600 mb-2">查詢碼：</label>
+                <div class="flex gap-2">
+                    <input type="text" id="parent-code-input" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="例如: K7P2QX9A" onkeydown="if(event.key === 'Enter') lookupParentCode()" class="flex-grow min-w-0 bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-base font-black tracking-widest uppercase text-slate-800 focus:outline-none focus:border-indigo-400 shadow-sm">
+                    <button onclick="lookupParentCode()" class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold px-4 py-2.5 rounded-xl text-sm whitespace-nowrap transition-all flex-shrink-0">
+                        查詢
+                    </button>
+                </div>
+                <p id="parent-code-msg" class="text-xs font-bold mt-2 hidden"></p>
+            </div>
+
+            <div id="parent-teacher-picker" class="teacher-ui mb-5 bg-amber-50 p-4 rounded-2xl border border-amber-200 hidden">
+                <label class="block text-xs font-bold text-amber-800 mb-2">教師檢視：選擇座號（只有解鎖教師權限時看得到）</label>
+                <select id="parent-student-select" onchange="onSeatSelectChange()" class="w-full bg-white border border-amber-200 rounded-xl px-4 py-2.5 text-base font-black text-slate-800 focus:outline-none focus:border-amber-400 shadow-sm cursor-pointer">
                     <!-- 動態填入 -->
                 </select>
             </div>
 
-            <div id="parent-empty" class="hidden bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center text-xs font-bold text-slate-500">
-                目前名冊中沒有學生，請先到設定後台新增座號。
-            </div>
-
-            <div id="parent-result-box" class="space-y-4">
+            <div id="parent-result-box" class="space-y-4 hidden">
                 <div class="bg-slate-800 text-white rounded-2xl p-4 flex justify-between items-center shadow-sm">
                     <div>
                         <span class="text-[11px] font-bold text-slate-400 uppercase tracking-widest block">當前學生</span>
@@ -658,6 +784,7 @@
                         <!-- 動態細目 -->
                     </div>
                 </div>
+                <p id="parent-updated-at" class="text-[11px] text-slate-400 text-center"></p>
             </div>
         </div>
     </main>
@@ -736,12 +863,21 @@
                         <h3 class="text-sm font-black text-slate-800">4. 班級共用代碼</h3>
                     </div>
                     <div class="flex gap-2 mb-2">
-                        <input type="text" id="settings-class-code" maxlength="40" placeholder="例如: 301" class="flex-grow min-w-0 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-indigo-400">
-                        <button onclick="updateClassCode()" class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold px-3 py-2 rounded-xl text-xs whitespace-nowrap transition-all flex-shrink-0">
-                            套用
+                        <input type="text" id="settings-class-code" maxlength="40" placeholder="例如: class-k7p2qx9a" class="flex-grow min-w-0 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-indigo-400">
+                        <button onclick="fillRandomClassCode()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-2 rounded-xl text-xs whitespace-nowrap transition-all flex-shrink-0" title="產生一組不易猜到的代碼">
+                            隨機產生
                         </button>
                     </div>
-                    <p class="text-[11px] text-slate-400">教室電腦、老師手機、家長手機輸入相同代碼，就會看到同一份看板。輸入還沒用過的新代碼時，會建立一份全新的空白看板（教師密碼沿用目前的）。</p>
+                    <div class="grid grid-cols-2 gap-2 mb-2">
+                        <button onclick="updateClassCode()" class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold px-3 py-2 rounded-xl text-xs whitespace-nowrap transition-all">
+                            切換到此代碼
+                        </button>
+                        <button onclick="moveClassCode()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold px-3 py-2 rounded-xl text-xs whitespace-nowrap transition-all">
+                            把目前資料搬過去
+                        </button>
+                    </div>
+                    <p class="text-[11px] text-slate-400">教室電腦和老師手機輸入相同代碼，就會共用同一份看板。<b class="text-rose-500">班級代碼等於整班資料的鑰匙，請勿告訴家長</b>；家長只需要各自孩子的查詢碼。建議用「隨機產生」，不要用 main 或班級號碼這類容易猜到的代碼。</p>
+                    <p class="text-[11px] text-slate-400 mt-1">「切換」：新代碼沒用過時會建立空白看板。「搬移」：把目前的看板搬到新代碼，並刪除舊代碼的雲端資料；家長的查詢碼不受影響。</p>
                 </div>
             </div>
 
@@ -755,7 +891,10 @@
                             </div>
                             <h3 class="text-sm font-black text-slate-800">5. 班級座號名冊維護</h3>
                         </div>
-                        <div class="flex gap-2">
+                        <div class="flex flex-wrap gap-2">
+                            <button onclick="printParentCodes()" class="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 text-xs font-bold px-2.5 py-1.5 rounded-xl whitespace-nowrap transition-all">
+                                <i class="fa-solid fa-print"></i> 列印家長查詢碼
+                            </button>
                             <button onclick="resetAllStudentsToGreen()" class="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-xs font-bold px-2.5 py-1.5 rounded-xl whitespace-nowrap transition-all">
                                 <i class="fa-solid fa-check-double"></i> 全班歸零(綠燈)
                             </button>
@@ -783,6 +922,7 @@
                             <tr>
                                 <th class="px-3 py-2 w-14">序號</th>
                                 <th class="px-3 py-2">學生座號</th>
+                                <th class="px-3 py-2">家長查詢碼</th>
                                 <th class="px-3 py-2 text-center w-16">刪除</th>
                             </tr>
                         </thead>
@@ -866,6 +1006,13 @@
         const TEACHER_IDLE_MS = 90000;
         const SEAT_COLUMNS = 7;
 
+        // 網址帶 ?p=查詢碼（或只有 ?p）時是家長查詢頁：不載入整班看板
+        window.IS_PARENT_MODE = new URLSearchParams(location.search).has('p');
+        const PARENT_CODE_KEY = 'checkpoint_parent_code';
+        // 去掉容易看錯的 I、O、0、1
+        const PARENT_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        const PARENT_CODE_RE = /^[A-Z0-9]{8}$/;
+
         const SEAT_DONE_CLASS = 'seat-btn bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm w-full h-full min-h-0 min-w-0 rounded-xl font-black flex items-center justify-center p-0';
         const SEAT_PENDING_CLASS = 'seat-btn bg-rose-500 hover:bg-rose-600 text-white shadow-sm ring-2 ring-rose-300/80 ring-offset-1 w-full h-full min-h-0 min-w-0 rounded-xl font-black flex items-center justify-center p-0';
 
@@ -920,6 +1067,66 @@
                 studentIds.forEach(id => { delete map[id]; });
             });
         }
+
+        function randomString(alphabet, length) {
+            const bytes = new Uint32Array(length);
+            crypto.getRandomValues(bytes);
+            return Array.from(bytes, b => alphabet[b % alphabet.length]).join('');
+        }
+
+        function generateParentCode() {
+            const used = new Set(window.state.students.map(s => s.parentCode));
+            let code;
+            do {
+                code = randomString(PARENT_CODE_ALPHABET, 8);
+            } while (used.has(code));
+            return code;
+        }
+
+        function normalizeParentCode(value) {
+            return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+        }
+
+        // 幫還沒有查詢碼的學生補上一組；有變動時回傳 true
+        function ensureParentCodes() {
+            let changed = false;
+            window.state.students.forEach(st => {
+                if (!st.parentCode) {
+                    st.parentCode = generateParentCode();
+                    changed = true;
+                }
+            });
+            return changed;
+        }
+        window.ensureParentCodes = ensureParentCodes;
+
+        function getParentLink(code) {
+            return `${location.origin}${location.pathname}?p=${code}`;
+        }
+
+        // 家長看到的單一學生摘要（不含其他學生、教師密碼等資料）
+        function buildParentView(student) {
+            const onBoard = new Set(window.state.slots.map(s => s.assignment));
+            return {
+                seat: getPureSeatNumber(student.name),
+                sloganTitle: window.state.sloganTitle,
+                sloganSub: window.state.sloganSub,
+                items: window.state.assignments.map(a => ({
+                    name: a,
+                    finished: !!getStudentStatus(a, student.id),
+                    onBoard: onBoard.has(a)
+                }))
+            };
+        }
+
+        window.buildParentViews = function() {
+            ensureParentCodes();
+            const views = {};
+            window.state.students.forEach(st => {
+                views[st.parentCode] = buildParentView(st);
+            });
+            return views;
+        };
 
         function switchTab(tab, silent = false) {
             if (!silent) window.soundEffect.playToggle();
@@ -1043,6 +1250,11 @@
             applyRoleUI('student');
             closeTeacherAuthModal(false);
             if (window.state.currentTab === 'settings') switchTab('dashboard', true);
+            if (window.state.parentSearch.mode === 'teacher') {
+                window.state.parentSearch.mode = null;
+                hideParentResult();
+            }
+            if (window.state.currentTab === 'parent') initParentView();
             showToast(byTimeout ? "閒置超時，已自動鎖定並返回學生消單模式" : "已安全鎖定並退出教師模式");
         }
 
@@ -1252,59 +1464,158 @@
             window.syncStateToCloud();
         }
 
+        let parentWatchUnsub = null;
+        let parentLookupToken = 0;
+
+        function stopParentWatch() {
+            if (parentWatchUnsub) parentWatchUnsub();
+            parentWatchUnsub = null;
+            parentLookupToken++;
+        }
+
+        function setParentMessage(text, kind = 'info') {
+            const el = document.getElementById('parent-code-msg');
+            el.textContent = text;
+            el.className = `text-xs font-bold mt-2 ${text ? '' : 'hidden'} ${kind === 'error' ? 'text-rose-600' : 'text-slate-500'}`;
+        }
+
+        function hideParentResult() {
+            document.getElementById('parent-result-box').classList.add('hidden');
+        }
+
+        function isTeacherViewing() {
+            return window.state.isTeacherUnlocked && !window.IS_PARENT_MODE;
+        }
+
         function initParentView() {
-            const select = document.getElementById('parent-student-select');
-            select.innerHTML = '';
+            const picker = document.getElementById('parent-teacher-picker');
+            const teacherView = isTeacherViewing() && window.state.students.length > 0;
+            picker.classList.toggle('hidden', !teacherView);
 
-            window.state.students.forEach(st => {
-                const opt = document.createElement('option');
-                opt.value = st.id;
-                opt.innerText = `${getPureSeatNumber(st.name)} 號 同學`;
-                select.appendChild(opt);
-            });
+            if (teacherView) {
+                const select = document.getElementById('parent-student-select');
+                select.innerHTML = '<option value="">— 請選擇 —</option>';
+                window.state.students.forEach(st => {
+                    const opt = document.createElement('option');
+                    opt.value = st.id;
+                    opt.innerText = `${getPureSeatNumber(st.name)} 號 同學`;
+                    select.appendChild(opt);
+                });
+            }
 
-            const hasStudents = window.state.students.length > 0;
-            document.getElementById('parent-empty').classList.toggle('hidden', hasStudents);
-            document.getElementById('parent-result-box').classList.toggle('hidden', !hasStudents);
-            select.disabled = !hasStudents;
-            if (!hasStudents) return;
-
-            // 原本查詢的學生已被刪除時，改為第一位
-            const exists = window.state.students.some(s => s.id === window.state.parentSearch.studentId);
-            if (!exists) window.state.parentSearch.studentId = window.state.students[0].id;
-            select.value = window.state.parentSearch.studentId;
-
-            renderParentResults();
+            const ps = window.state.parentSearch;
+            if (ps.mode === 'teacher' && teacherView) {
+                const st = window.state.students.find(s => s.id === ps.studentId);
+                if (st) {
+                    document.getElementById('parent-student-select').value = st.id;
+                    renderParentView(buildParentView(st));
+                    return;
+                }
+                ps.mode = null;
+            } else if (ps.mode === 'local') {
+                // 教室裝置上用查詢碼查詢：直接用本機的整班資料即時更新
+                const st = window.state.students.find(s => s.parentCode === ps.code);
+                if (st) {
+                    renderParentView(buildParentView(st));
+                    return;
+                }
+                ps.mode = null;
+                setParentMessage('這個查詢碼已失效，請向老師確認。', 'error');
+            }
+            if (ps.mode !== 'cloud') hideParentResult();
         }
 
         function onSeatSelectChange() {
             window.soundEffect.playToggle();
-            window.state.parentSearch.studentId = parseInt(document.getElementById('parent-student-select').value, 10);
-            renderParentResults();
+            stopParentWatch();
+            const id = parseInt(document.getElementById('parent-student-select').value, 10);
+            const st = window.state.students.find(s => s.id === id);
+            const ps = window.state.parentSearch;
+            if (!st) {
+                ps.mode = null;
+                hideParentResult();
+                return;
+            }
+            ps.mode = 'teacher';
+            ps.studentId = id;
+            document.getElementById('parent-code-input').value = '';
+            setParentMessage(`此生的家長查詢碼：${st.parentCode || '（尚未產生）'}`);
+            renderParentView(buildParentView(st));
         }
 
-        function renderParentResults() {
-            const studentId = window.state.parentSearch.studentId;
-            const student = window.state.students.find(s => s.id === studentId);
-            if (!student) {
-                if (window.state.currentTab === 'parent') initParentView();
+        function rememberParentCode(code) {
+            if (!window.IS_PARENT_MODE) return;
+            try {
+                localStorage.setItem(PARENT_CODE_KEY, code);
+            } catch(e) {}
+        }
+
+        async function lookupParentCode(codeArg) {
+            const input = document.getElementById('parent-code-input');
+            const code = normalizeParentCode(codeArg !== undefined ? codeArg : input.value);
+            input.value = code;
+            stopParentWatch();
+            const ps = window.state.parentSearch;
+            ps.mode = null;
+            ps.code = code;
+            if (isTeacherViewing()) document.getElementById('parent-student-select').value = '';
+
+            if (!PARENT_CODE_RE.test(code)) {
+                hideParentResult();
+                setParentMessage('查詢碼是 8 碼英文字母與數字，請再確認一次。', 'error');
                 return;
             }
 
-            document.getElementById('parent-child-name').innerText = `${getPureSeatNumber(student.name)} 號 同學`;
+            // 教室裝置本身已有整班資料，直接用本機資料
+            const local = !window.IS_PARENT_MODE && window.state.students.find(s => s.parentCode === code);
+            if (local) {
+                ps.mode = 'local';
+                setParentMessage('');
+                renderParentView(buildParentView(local));
+                return;
+            }
 
-            const totalAssignments = window.state.assignments.length;
+            setParentMessage('查詢中…');
+            const token = parentLookupToken;
+            const unsub = await window.watchParentView(code, (view) => {
+                if (token !== parentLookupToken) return;
+                ps.mode = 'cloud';
+                setParentMessage('');
+                renderParentView(view);
+                rememberParentCode(code);
+            }, () => {
+                if (token !== parentLookupToken) return;
+                ps.mode = null;
+                hideParentResult();
+                setParentMessage('找不到這個查詢碼，請向老師確認。', 'error');
+            });
+
+            if (token !== parentLookupToken) {
+                if (unsub) unsub();
+                return;
+            }
+            if (unsub === null) {
+                hideParentResult();
+                setParentMessage('目前無法連線到雲端，請稍後再試。', 'error');
+                return;
+            }
+            parentWatchUnsub = unsub;
+        }
+
+        // 只依據單一學生摘要畫出結果（教師檢視、教室查詢、家長雲端查詢共用）
+        function renderParentView(view) {
+            const items = Array.isArray(view.items) ? view.items : [];
+            document.getElementById('parent-result-box').classList.remove('hidden');
+            document.getElementById('parent-child-name').innerText = `${view.seat ?? ''} 號 同學`;
+
+            const totalAssignments = items.length;
             let finishedAssignments = 0;
             const detailsList = document.getElementById('parent-assignment-list');
             detailsList.innerHTML = '';
 
-            const activeDashboardAssignments = new Set(window.state.slots.map(s => s.assignment));
-
-            window.state.assignments.forEach(assignment => {
-                const isFinished = getStudentStatus(assignment, studentId);
+            items.forEach(item => {
+                const isFinished = !!item.finished;
                 if (isFinished) finishedAssignments++;
-
-                const isTrackedOnBoard = activeDashboardAssignments.has(assignment);
 
                 const itemDiv = document.createElement('div');
                 itemDiv.className = "flex items-center justify-between p-3 rounded-xl border transition-all " +
@@ -1314,8 +1625,8 @@
                     <div class="flex items-center gap-2.5 min-w-0">
                         <span class="text-base">${isFinished ? '✅' : '🚨'}</span>
                         <div class="flex items-center gap-2 min-w-0">
-                            <span class="text-xs font-black text-slate-800 truncate">${escapeHtml(assignment)}</span>
-                            ${isTrackedOnBoard ? `<span class="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 whitespace-nowrap">看板中</span>` : ''}
+                            <span class="text-xs font-black text-slate-800 truncate">${escapeHtml(item.name ?? '')}</span>
+                            ${item.onBoard ? `<span class="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 whitespace-nowrap">看板中</span>` : ''}
                         </div>
                     </div>
                     <span class="text-xs font-bold px-2.5 py-0.5 rounded-full whitespace-nowrap ${isFinished ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}">
@@ -1338,14 +1649,37 @@
                 statusCard.className = "bg-emerald-50 border border-emerald-200 rounded-2xl p-3.5 text-center";
                 statusTitle.innerText = "所有作業項目均已訂正完成！";
                 statusTitle.className = "text-sm font-black text-emerald-800";
-                statusDesc.innerText = `全部 ${totalAssignments} 項作業中，該生目前無待訂正項目，表現優秀！`;
+                statusDesc.innerText = `全部 ${totalAssignments} 項作業中，目前沒有待訂正項目，表現優秀！`;
             } else {
                 statusCard.className = "bg-rose-50 border border-rose-200 rounded-2xl p-3.5 text-center";
                 statusTitle.innerText = `尚有 ${pendingCount} 項作業等待訂正！`;
                 statusTitle.className = "text-sm font-black text-rose-900";
-                statusDesc.innerText = `在全部 ${totalAssignments} 項作業中，有 ${pendingCount} 項尚未完成訂正，請記得消單。`;
+                statusDesc.innerText = `在全部 ${totalAssignments} 項作業中，有 ${pendingCount} 項尚未完成訂正。`;
+            }
+
+            const updatedEl = document.getElementById('parent-updated-at');
+            updatedEl.textContent = view.updatedAt ? `最後更新：${new Date(view.updatedAt).toLocaleString('zh-TW')}（資料會自動更新）` : '';
+
+            if (window.IS_PARENT_MODE && view.sloganTitle) {
+                window.state.sloganTitle = String(view.sloganTitle);
+                window.state.sloganSub = String(view.sloganSub ?? '');
+                renderSlogan();
             }
         }
+
+        // 家長查詢頁：隱藏看板與教師功能，自動帶入網址或上次的查詢碼
+        window.enterParentMode = function() {
+            document.body.classList.add('parent-mode');
+            document.title = '家長查詢 - 下課檢查站';
+            switchTab('parent', true);
+            let code = normalizeParentCode(new URLSearchParams(location.search).get('p'));
+            if (!code) {
+                try {
+                    code = normalizeParentCode(localStorage.getItem(PARENT_CODE_KEY));
+                } catch(e) {}
+            }
+            if (code) lookupParentCode(code);
+        };
 
         function renderSettingsAssignments() {
             const list = document.getElementById('settings-assignment-list');
@@ -1453,18 +1787,48 @@
             showToast('教師密碼已更新！');
         }
 
-        async function updateClassCode() {
-            const input = document.getElementById('settings-class-code');
-            const code = input.value.trim();
+        function fillRandomClassCode() {
+            document.getElementById('settings-class-code').value = 'class-' + randomString('abcdefghjkmnpqrstuvwxyz23456789', 10);
+        }
+
+        function readClassCodeInput() {
+            const code = document.getElementById('settings-class-code').value.trim();
             if (!/^[A-Za-z0-9_-]{1,40}$/.test(code)) {
                 window.soundEffect.playAlert();
                 showToast('代碼只能使用英文字母、數字、- 或 _', false);
-                return;
+                return null;
             }
             if (code === window.getClassCode()) {
                 showToast(`目前已是班級代碼【${code}】`);
-                return;
+                return null;
             }
+            return code;
+        }
+
+        async function moveClassCode() {
+            const code = readClassCodeInput();
+            if (!code) return;
+            const oldCode = window.getClassCode();
+            if (!confirm(`要把目前的看板資料搬到代碼【${code}】，並刪除舊代碼【${oldCode}】的雲端資料嗎？\n\n其他裝置（例如老師手機）也要改輸入新代碼。`)) return;
+            try {
+                const result = await window.moveBoardToClassCode(code);
+                if (result === 'exists') {
+                    window.soundEffect.playAlert();
+                    showToast(`代碼【${code}】已經有資料，為避免覆蓋已取消搬移`, false);
+                    return;
+                }
+                window.soundEffect.playSuccess();
+                showToast(result === 'moved' ? `已搬移到班級代碼【${code}】` : `已記錄代碼【${code}】(目前為本機模式)`);
+            } catch (err) {
+                console.error("搬移班級代碼失敗:", err);
+                window.soundEffect.playAlert();
+                showToast('搬移失敗，請稍後再試', false);
+            }
+        }
+
+        async function updateClassCode() {
+            const code = readClassCodeInput();
+            if (!code) return;
             window.soundEffect.playSuccess();
             await window.changeClassCode(code);
             showToast(window.isCloudConnected() ? `已切換到班級代碼【${code}】` : `已記錄代碼【${code}】(目前為本機模式)`);
@@ -1473,6 +1837,7 @@
         function renderSettingsStudents() {
             const tbody = document.getElementById('settings-student-table');
             tbody.innerHTML = '';
+            if (ensureParentCodes()) window.syncStateToCloud();
 
             window.state.students.forEach((st, index) => {
                 const tr = document.createElement('tr');
@@ -1482,6 +1847,17 @@
                     <td class="px-3 py-2 text-slate-400 font-bold">${index + 1}</td>
                     <td class="px-3 py-2">
                         <input type="text" maxlength="10" value="${escapeHtml(st.name)}" onchange="updateStudentName(${st.id}, this.value)" class="bg-transparent border-b border-transparent focus:border-sky-400 focus:outline-none font-bold text-slate-700 py-0.5 px-1 w-full max-w-[130px]">
+                    </td>
+                    <td class="px-3 py-2">
+                        <div class="flex items-center gap-1">
+                            <span class="font-mono font-black tracking-wider text-slate-700 mr-1">${escapeHtml(st.parentCode || '')}</span>
+                            <button onclick="copyParentLink(${st.id})" class="text-indigo-500 hover:bg-indigo-50 p-1 rounded-lg transition-all" title="複製家長查詢連結">
+                                <i class="fa-solid fa-link text-xs"></i>
+                            </button>
+                            <button onclick="regenerateParentCode(${st.id})" class="text-slate-400 hover:bg-slate-100 p-1 rounded-lg transition-all" title="重新產生查詢碼（舊的會失效）">
+                                <i class="fa-solid fa-rotate text-xs"></i>
+                            </button>
+                        </div>
                     </td>
                     <td class="px-3 py-2 text-center">
                         <button onclick="deleteStudent(${st.id})" class="text-rose-500 hover:bg-rose-50 p-1 rounded-lg transition-all" title="刪除">
@@ -1493,6 +1869,64 @@
             });
         }
 
+        async function copyParentLink(id) {
+            const st = window.state.students.find(s => s.id === id);
+            if (!st || !st.parentCode) return;
+            const link = getParentLink(st.parentCode);
+            try {
+                await navigator.clipboard.writeText(link);
+                showToast(`已複製 ${getPureSeatNumber(st.name)} 號的家長查詢連結`);
+            } catch(e) {
+                prompt('請複製這個連結：', link);
+            }
+        }
+
+        function regenerateParentCode(id) {
+            const st = window.state.students.find(s => s.id === id);
+            if (!st) return;
+            if (!confirm(`要重新產生 ${getPureSeatNumber(st.name)} 號的查詢碼嗎？舊的查詢碼會立即失效。`)) return;
+            if (window.queueParentViewDelete) window.queueParentViewDelete(st.parentCode);
+            st.parentCode = generateParentCode();
+            window.soundEffect.playSuccess();
+            renderSettingsStudents();
+            window.syncStateToCloud(true);
+            showToast(`${getPureSeatNumber(st.name)} 號的新查詢碼：${st.parentCode}`);
+        }
+
+        // 開一個可列印的頁面：每位學生一張小紙條，可剪下發給家長
+        function printParentCodes() {
+            if (ensureParentCodes()) window.syncStateToCloud(true);
+            const rows = window.state.students.map(st => {
+                const seat = escapeHtml(getPureSeatNumber(st.name));
+                const code = escapeHtml(st.parentCode);
+                const link = escapeHtml(getParentLink(st.parentCode));
+                return `<div class="slip"><div class="seat">${seat} 號 家長您好</div>
+                    <div>查詢網址：<span class="mono">${link}</span></div>
+                    <div>查詢碼：<span class="code">${code}</span></div>
+                    <div class="note">請妥善保管，查詢碼只能看到您孩子的訂正狀態。</div></div>`;
+            }).join('');
+            const win = window.open('', '_blank');
+            if (!win) {
+                showToast('瀏覽器擋住了新視窗，請允許彈出視窗後再試一次', false);
+                return;
+            }
+            win.document.write(`<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><title>家長查詢碼</title>
+                <style>
+                    body { font-family: 'Noto Sans TC', sans-serif; margin: 16px; color: #1e293b; }
+                    h1 { font-size: 18px; margin: 0 0 12px; }
+                    .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+                    .slip { border: 1.5px dashed #94a3b8; border-radius: 10px; padding: 10px 12px; font-size: 13px; line-height: 1.7; break-inside: avoid; }
+                    .seat { font-weight: 900; font-size: 15px; }
+                    .mono { font-family: monospace; word-break: break-all; }
+                    .code { font-family: monospace; font-weight: 900; font-size: 18px; letter-spacing: 3px; }
+                    .note { color: #64748b; font-size: 11px; }
+                    @media print { .noprint { display: none; } }
+                </style></head><body>
+                <h1>下課檢查站｜家長查詢碼 <button class="noprint" onclick="print()">列印</button></h1>
+                <div class="grid">${rows}</div></body></html>`);
+            win.document.close();
+        }
+
         function getNextStudentId() {
             const maxId = window.state.students.reduce((m, s) => Math.max(m, s.id), 0);
             return Math.max(window.state.nextStudentId || 1, maxId + 1);
@@ -1502,12 +1936,15 @@
             if (!confirm(`確定要把名冊重設為 1~${num} 號嗎？名冊外學生的訂正紀錄會一併清除。`)) return;
             window.soundEffect.playToggle();
             const newIds = new Set(Array.from({ length: num }, (_, i) => i + 1));
-            const removedIds = window.state.students.map(s => s.id).filter(id => !newIds.has(id));
-            removeStudentStatuses(removedIds);
-            window.state.students = Array.from({ length: num }, (_, i) => ({
-                id: i + 1,
-                name: `${i + 1}`
-            }));
+            const removed = window.state.students.filter(s => !newIds.has(s.id));
+            removeStudentStatuses(removed.map(s => s.id));
+            removed.forEach(s => window.queueParentViewDelete && window.queueParentViewDelete(s.parentCode));
+            const existingCodes = new Map(window.state.students.map(s => [s.id, s.parentCode]));
+            window.state.students = Array.from({ length: num }, (_, i) => {
+                const st = { id: i + 1, name: `${i + 1}` };
+                if (existingCodes.get(i + 1)) st.parentCode = existingCodes.get(i + 1);
+                return st;
+            });
             window.state.nextStudentId = Math.max(getNextStudentId(), num + 1);
             renderSettingsStudents();
             window.syncStateToCloud();
@@ -1547,7 +1984,8 @@
             window.soundEffect.playSuccess();
             window.state.students.push({
                 id: nextId,
-                name: name
+                name: name,
+                parentCode: generateParentCode()
             });
             nameInput.value = '';
             renderSettingsStudents();
@@ -1582,6 +2020,7 @@
             const index = window.state.students.findIndex(s => s.id === id);
             if (index === -1) return;
             const name = window.state.students[index].name;
+            if (window.queueParentViewDelete) window.queueParentViewDelete(window.state.students[index].parentCode);
             window.state.nextStudentId = getNextStudentId();
             window.state.students.splice(index, 1);
             removeStudentStatuses([id]);
