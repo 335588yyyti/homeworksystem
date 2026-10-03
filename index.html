@@ -765,7 +765,7 @@
     </header>
 
     <!-- 醒目主題標語橫幅 -->
-    <section class="max-w-[1920px] mx-auto px-3.5 pt-2 pb-1.5 w-full flex-shrink-0">
+    <section class="teacher-ui max-w-[1920px] mx-auto px-3.5 pt-2 pb-1.5 w-full flex-shrink-0">
         <div class="bg-gradient-to-r from-rose-500 via-rose-600 to-amber-500 rounded-2xl px-4 py-2 text-white shadow-sm flex items-center justify-between gap-3">
             <div class="flex items-center gap-2.5 min-w-0 flex-1">
                 <span class="text-xl sm:text-2xl flex-shrink-0 animate-bounce">⚠️</span>
@@ -1227,8 +1227,6 @@
             const onBoard = new Set(window.state.slots.map(s => s.assignment));
             return {
                 seat: getPureSeatNumber(student.name),
-                sloganTitle: window.state.sloganTitle,
-                sloganSub: window.state.sloganSub,
                 items: window.state.assignments.map(a => ({
                     name: a,
                     finished: !!getStudentStatus(a, student.id),
@@ -1463,11 +1461,11 @@
                 const headerHtml = `
                     <div class="flex items-center justify-between gap-2 pb-1.5 border-b border-slate-100 flex-shrink-0 min-w-0">
                         <div class="flex items-center gap-1.5 min-w-0 flex-1">
-                            <span class="w-6 h-6 rounded-lg bg-amber-400 text-white font-black text-xs flex items-center justify-center flex-shrink-0 shadow-sm">
+                            <span class="w-8 h-8 rounded-lg bg-amber-400 text-white font-black text-base flex items-center justify-center flex-shrink-0 shadow-sm">
                                 ${index + 1}
                             </span>
-                            <div class="relative min-w-0 flex-1 max-w-[170px]">
-                                <select onchange="onSlotAssignmentChange(${index}, this.value)" class="w-full appearance-none bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg pl-2.5 pr-6 py-1 font-black text-amber-950 text-sm focus:outline-none focus:border-amber-500 cursor-pointer truncate transition-all" title="${window.state.isTeacherUnlocked ? '' : '更換作業需教師密碼'}">
+                            <div class="relative min-w-0 flex-1 max-w-[220px]">
+                                <select onchange="onSlotAssignmentChange(${index}, this.value)" class="w-full appearance-none bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg pl-2.5 pr-7 py-0.5 font-black text-amber-950 text-xl focus:outline-none focus:border-amber-500 cursor-pointer truncate transition-all" title="${window.state.isTeacherUnlocked ? '' : '更換作業需教師密碼'}">
                                     ${optionsHtml}
                                 </select>
                                 <i class="fa-solid fa-chevron-down text-[12px] text-amber-700 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none"></i>
@@ -1795,12 +1793,6 @@
 
             const updatedEl = document.getElementById('parent-updated-at');
             updatedEl.textContent = view.updatedAt ? `最後更新：${new Date(view.updatedAt).toLocaleString('zh-TW')}（資料會自動更新）` : '';
-
-            if (window.IS_PARENT_MODE && view.sloganTitle) {
-                window.state.sloganTitle = String(view.sloganTitle);
-                window.state.sloganSub = String(view.sloganSub ?? '');
-                renderSlogan();
-            }
         }
 
         // 家長查詢頁：隱藏看板與教師功能，自動帶入網址或上次的查詢碼
