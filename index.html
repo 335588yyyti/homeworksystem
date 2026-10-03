@@ -285,7 +285,7 @@
                 badge.innerHTML = `<i class="fa-solid fa-arrows-rotate fa-spin text-amber-500 text-[10px]"></i><span class="hidden sm:inline">同步中</span>`;
             } else if (status === 'retired') {
                 badge.className = "flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold whitespace-nowrap bg-rose-50 text-rose-700 border border-rose-200";
-                badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span><span class="hidden sm:inline">班級代碼已停用</span>`;
+                badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span><span class="hidden sm:inline">班級代碼已清空</span>`;
             } else if (status === 'error') {
                 badge.className = "flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold whitespace-nowrap bg-rose-50 text-rose-700 border border-rose-200";
                 badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span><span class="hidden sm:inline">同步失敗 (已存本機)</span>`;
@@ -492,7 +492,8 @@
 
         // 連線到「班級共用看板」：同一個班級代碼的所有裝置讀寫同一份資料
         // startFreshIfMissing：切換到還沒有資料的新代碼時，從空白預設開始，而不是複製目前班級的資料
-        async function connectBoard(startFreshIfMissing = false) {
+        // reuseCleared：老師確認要重新使用一個「已清空」的代碼（例如下一屆的同一班）
+        async function connectBoard(startFreshIfMissing = false, reuseCleared = false) {
             if (!db || !currentUser) return;
 
             if (unsubscribeSnapshot) {
@@ -519,12 +520,13 @@
                 // 自己剛寫入的本機回音，略過
                 if (snapshot.metadata.hasPendingWrites) return;
 
-                if (snapshot.exists() && snapshot.data().retired) {
+                const cleared = snapshot.exists() && snapshot.data().retired;
+                if (cleared && !(firstSnapshot && reuseCleared)) {
                     retireCurrentBoard();
                     return;
                 }
 
-                if (snapshot.exists()) {
+                if (snapshot.exists() && !cleared) {
                     // 本機還有未寫上雲端的變更時，不要用雲端舊資料覆蓋
                     if (hasLocalPendingChanges()) return;
                     window.applyBoardData(snapshot.data());
@@ -533,8 +535,8 @@
                     window.updateCloudStatusBadge('synced');
                     // 開啟看板時同步一次家長查詢資料（沒變的不會重寫）
                     if (firstSnapshot) publishParentViews().catch(err => console.warn("家長查詢資料更新失敗:", err));
-                } else if (firstSnapshot && startFreshIfMissing) {
-                    // 新班級：全部重設為預設值（教師密碼回到 8888）
+                } else if (firstSnapshot && (startFreshIfMissing || cleared)) {
+                    // 新班級（或重新使用已清空的代碼）：全部重設為預設值（教師密碼回到 8888）
                     Object.assign(window.state, window.createDefaultBoard());
                     window.state.parentSearch.mode = null;
                     rerenderCurrentView();
@@ -559,7 +561,7 @@
             });
         }
 
-        // 這個班級代碼已被搬走：停止同步，不重建舊班級、也不覆蓋家長查詢資料
+        // 這個班級代碼的資料已搬走（清空）：停止同步，不把舊資料寫回去、也不覆蓋家長查詢資料
         function retireCurrentBoard() {
             if (unsubscribeSnapshot) {
                 unsubscribeSnapshot();
@@ -574,7 +576,7 @@
             rerenderCurrentView();
         }
 
-        window.changeClassCode = async function(code) {
+        window.changeClassCode = async function(code, reuseCleared = false) {
             // 切換前先把尚未寫入的變更存回原本的班級，避免寫到新班級去
             if (window.isCloudConnected() && hasLocalPendingChanges()) {
                 if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
@@ -589,7 +591,7 @@
             try {
                 localStorage.setItem(CLASS_CODE_KEY, code);
             } catch(e) {}
-            if (db && currentUser) await connectBoard(true);
+            if (db && currentUser) await connectBoard(true, reuseCleared);
         };
 
         // 查詢某個班級代碼是否已有資料（只回傳概要，給切換前確認用）。本機模式回傳 null
@@ -598,7 +600,7 @@
             const snap = await getDoc(boardRefFor(code));
             if (!snap.exists()) return { exists: false };
             const data = snap.data();
-            if (data.retired) return { exists: true, retired: true };
+            if (data.retired) return { exists: false, cleared: true };
             return {
                 exists: true,
                 studentCount: Array.isArray(data.students) ? data.students.length : 0,
@@ -606,8 +608,9 @@
             };
         };
 
-        // 把目前看板搬到新代碼，舊代碼只留下「已停用」標記（不含任何班級資料，也不寫出新代碼）。
-        // 新代碼已有資料時不覆蓋
+        // 把目前看板搬到新代碼，舊代碼清空，只留下「已清空」標記（不含任何班級資料，也不寫出新代碼）。
+        // 標記讓還在用舊代碼的裝置停止同步；之後老師仍可重新使用這個代碼建立新班級。
+        // 新代碼已有資料時不覆蓋（已清空的代碼可以搬進去）
         window.moveBoardToClassCode = async function(code) {
             if (window.state.boardRetired) return 'retired';
             if (!window.isCloudConnected()) {
@@ -617,7 +620,7 @@
             const oldRef = cloudDocRef;
             const newRef = boardRefFor(code);
             const existing = await getDoc(newRef);
-            if (existing.exists()) return 'exists';
+            if (existing.exists() && !existing.data().retired) return 'exists';
 
             if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
             syncDebounceTimer = null;
@@ -628,10 +631,10 @@
             } catch(e) {}
             await connectBoard();
             try {
-                // 不直接刪除：還在用舊代碼的裝置看到這個標記就會停止同步，不會把舊資料寫回來
+                // 清空舊代碼但留下標記：還在用舊代碼的裝置看到標記就會停止同步，不會把舊資料寫回來
                 await setDoc(oldRef, { retired: true, retiredAt: Date.now() });
             } catch(e) {
-                console.warn("停用舊班級代碼失敗:", e);
+                console.warn("清空舊班級代碼失敗:", e);
             }
             return 'moved';
         };
@@ -965,8 +968,8 @@
                             <div class="font-black text-slate-800 mb-1">📦「把目前資料搬過去」</div>
                             <ul class="list-disc pl-5 space-y-1">
                                 <li>把目前的看板搬到新代碼。</li>
-                                <li>舊代碼會清空，並標記為停用。</li>
-                                <li>還在用舊代碼的裝置會顯示「代碼已停用」，並停止同步。</li>
+                                <li>舊代碼會清空，之後可以再拿來建立新班級（例如下一屆的同一班）。</li>
+                                <li>還在用舊代碼的裝置會顯示「代碼已清空」，並停止同步。</li>
                                 <li>家長的查詢碼不受影響。</li>
                             </ul>
                         </div>
@@ -1415,7 +1418,7 @@
                     <div class="flex items-center justify-center p-4" style="grid-column: 1 / -1; grid-row: span 2;">
                         <div class="bg-white border-2 border-rose-200 rounded-3xl p-6 max-w-md text-center board-shadow">
                             <div class="text-4xl mb-2">🔒</div>
-                            <h3 class="text-lg font-black text-slate-800 mb-1">這個班級代碼已經停用</h3>
+                            <h3 class="text-lg font-black text-slate-800 mb-1">這個班級代碼的資料已經清空</h3>
                             <p class="text-sm text-slate-600 mb-1">班級資料已經搬到新的代碼，這台裝置的資料不會再同步。</p>
                             <p class="text-sm text-slate-600 mb-4">請老師到「設定後台」的「班級共用代碼」輸入新的代碼，按「切換到此代碼」。</p>
                             <button onclick="switchTab('settings')" class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold px-4 py-2 rounded-xl text-sm transition-all">
@@ -1937,7 +1940,7 @@
             document.getElementById('current-class-code').textContent = code;
             const warning = document.getElementById('current-class-code-warning');
             if (window.state.boardRetired) {
-                warning.textContent = '⚠ 這個代碼已經停用（資料已搬走）。請在下方輸入新的班級代碼，按「切換到此代碼」。';
+                warning.textContent = '⚠ 這個代碼的資料已經清空（搬到新代碼）。請在下方輸入新的班級代碼，按「切換到此代碼」。';
                 warning.classList.remove('hidden');
             } else {
                 warning.textContent = '⚠ 這個代碼太容易被猜到或和別班重複，建議換成自訂代碼並「把目前資料搬過去」。';
@@ -1973,7 +1976,7 @@
             const code = readClassCodeInput();
             if (!code) return;
             const oldCode = window.getClassCode();
-            if (!confirm(`要把目前的看板資料搬到代碼【${code}】，舊代碼【${oldCode}】會清空並停用嗎？\n\n其他還在用舊代碼的裝置（例如老師手機）會顯示「代碼已停用」，請在那些裝置的設定後台輸入新代碼。`)) return;
+            if (!confirm(`要把目前的看板資料搬到代碼【${code}】，舊代碼【${oldCode}】會清空嗎？\n\n其他還在用舊代碼的裝置（例如老師手機）會顯示「代碼已清空」，請在那些裝置的設定後台輸入新代碼。`)) return;
             try {
                 const result = await window.moveBoardToClassCode(code);
                 if (result === 'exists') {
@@ -1983,7 +1986,7 @@
                 }
                 if (result === 'retired') {
                     window.soundEffect.playAlert();
-                    showToast('目前的班級代碼已停用，請改用「切換到此代碼」輸入新代碼', false);
+                    showToast('目前的班級代碼已清空，請改用「切換到此代碼」輸入新代碼', false);
                     return;
                 }
                 window.soundEffect.playSuccess();
@@ -2011,12 +2014,9 @@
                 showToast('無法確認代碼狀態，請稍後再試', false);
                 return;
             }
-            if (info && info.retired) {
-                window.soundEffect.playAlert();
-                showToast(`代碼【${code}】已經停用（資料已搬到別的代碼），請輸入新的代碼`, false);
-                return;
-            }
-            if (info && info.exists) {
+            if (info && info.cleared) {
+                if (!confirm(`代碼【${code}】以前用過，資料已經清空。\n\n要用它建立一個新的空白班級嗎？（例如下一屆的同一班，教師密碼為預設的 8888）\n\n如果是要把目前的資料換到這個代碼，請改按「把目前資料搬過去」。`)) return;
+            } else if (info && info.exists) {
                 const updated = info.lastUpdated ? new Date(info.lastUpdated).toLocaleString('zh-TW') : '不明';
                 if (!confirm(`代碼【${code}】已經有一個班級在使用：\n・${info.studentCount} 位學生\n・最後更新：${updated}\n\n如果這是你自己的班級，按「確定」切換過去（需要輸入該班的教師密碼）。\n如果不是，請按「取消」，換一個代碼，避免改到別人的資料。`)) return;
             } else if (info) {
@@ -2024,7 +2024,7 @@
             }
 
             window.soundEffect.playSuccess();
-            await window.changeClassCode(code);
+            await window.changeClassCode(code, !!(info && info.cleared));
             renderCurrentClassCode();
             document.getElementById('settings-class-code').value = '';
             onClassCodeInput();
