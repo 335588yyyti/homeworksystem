@@ -104,7 +104,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, deleteDoc, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Firebase 專案設定：從 Firebase 主控台「專案設定 → 你的應用程式 → SDK 設定」複製過來。
         // 改成 null 即為純本機模式（資料只存在這台裝置的瀏覽器）。
@@ -283,6 +283,9 @@
             } else if (status === 'syncing') {
                 badge.className = "flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold whitespace-nowrap bg-amber-50 text-amber-700 border border-amber-200 animate-pulse";
                 badge.innerHTML = `<i class="fa-solid fa-arrows-rotate fa-spin text-amber-500 text-[10px]"></i><span class="hidden sm:inline">同步中</span>`;
+            } else if (status === 'retired') {
+                badge.className = "flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold whitespace-nowrap bg-rose-50 text-rose-700 border border-rose-200";
+                badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span><span class="hidden sm:inline">班級代碼已停用</span>`;
             } else if (status === 'error') {
                 badge.className = "flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold whitespace-nowrap bg-rose-50 text-rose-700 border border-rose-200";
                 badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span><span class="hidden sm:inline">同步失敗 (已存本機)</span>`;
@@ -302,7 +305,7 @@
 
         // 把每位學生的摘要寫到 parent_views/{查詢碼}；家長只讀得到自己孩子的那一份
         async function publishParentViews() {
-            if (!db || !currentUser || window.IS_PARENT_MODE) return;
+            if (!db || !currentUser || !cloudDocRef || window.IS_PARENT_MODE) return;
             const views = window.buildParentViews();
             const batch = writeBatch(db);
             const written = [];
@@ -475,6 +478,7 @@
             if (tab === 'dashboard') window.renderDashboard();
             if (tab === 'parent') window.initParentView();
             if (tab === 'settings') {
+                window.renderCurrentClassCode();
                 // 老師正在設定頁打字時，不要把輸入框整個重建掉
                 const active = document.activeElement;
                 const editing = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') &&
@@ -502,6 +506,7 @@
             // 舊版資料存在每個匿名使用者自己的路徑，首次連線時搬過來
             const legacyRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'checkpoint_data', 'main_board');
             cloudDocRef = boardRef;
+            window.state.boardRetired = false;
             let isFirstSnapshot = true;
 
             window.updateCloudStatusBadge('syncing');
@@ -513,6 +518,11 @@
 
                 // 自己剛寫入的本機回音，略過
                 if (snapshot.metadata.hasPendingWrites) return;
+
+                if (snapshot.exists() && snapshot.data().retired) {
+                    retireCurrentBoard();
+                    return;
+                }
 
                 if (snapshot.exists()) {
                     // 本機還有未寫上雲端的變更時，不要用雲端舊資料覆蓋
@@ -549,6 +559,21 @@
             });
         }
 
+        // 這個班級代碼已被搬走：停止同步，不重建舊班級、也不覆蓋家長查詢資料
+        function retireCurrentBoard() {
+            if (unsubscribeSnapshot) {
+                unsubscribeSnapshot();
+                unsubscribeSnapshot = null;
+            }
+            if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
+            syncDebounceTimer = null;
+            syncPending = false;
+            cloudDocRef = null;
+            window.state.boardRetired = true;
+            window.updateCloudStatusBadge('retired');
+            rerenderCurrentView();
+        }
+
         window.changeClassCode = async function(code) {
             // 切換前先把尚未寫入的變更存回原本的班級，避免寫到新班級去
             if (window.isCloudConnected() && hasLocalPendingChanges()) {
@@ -569,10 +594,11 @@
 
         // 查詢某個班級代碼是否已有資料（只回傳概要，給切換前確認用）。本機模式回傳 null
         window.peekClassCode = async function(code) {
-            if (!window.isCloudConnected()) return null;
+            if (!db || !currentUser) return null;
             const snap = await getDoc(boardRefFor(code));
             if (!snap.exists()) return { exists: false };
             const data = snap.data();
+            if (data.retired) return { exists: true, retired: true };
             return {
                 exists: true,
                 studentCount: Array.isArray(data.students) ? data.students.length : 0,
@@ -580,8 +606,10 @@
             };
         };
 
-        // 把目前看板搬到新代碼，並刪除舊代碼的雲端資料。新代碼已有資料時不覆蓋
+        // 把目前看板搬到新代碼，舊代碼只留下「已停用」標記（不含任何班級資料，也不寫出新代碼）。
+        // 新代碼已有資料時不覆蓋
         window.moveBoardToClassCode = async function(code) {
+            if (window.state.boardRetired) return 'retired';
             if (!window.isCloudConnected()) {
                 try { localStorage.setItem(CLASS_CODE_KEY, code); } catch(e) {}
                 return 'local';
@@ -600,9 +628,10 @@
             } catch(e) {}
             await connectBoard();
             try {
-                await deleteDoc(oldRef);
+                // 不直接刪除：還在用舊代碼的裝置看到這個標記就會停止同步，不會把舊資料寫回來
+                await setDoc(oldRef, { retired: true, retiredAt: Date.now() });
             } catch(e) {
-                console.warn("刪除舊班級資料失敗:", e);
+                console.warn("停用舊班級代碼失敗:", e);
             }
             return 'moved';
         };
@@ -913,7 +942,7 @@
                         <b>好記又不會和別班重複的取法：</b>學校英文縮寫＋班級＋自己的代號，例如 <span class="font-mono">lin601cs</span>、<span class="font-mono">hs602wang</span>。設定好後請抄在記事本保存。
                     </div>
                     <p class="text-[11px] text-slate-400">教室電腦和老師手機輸入相同代碼，就會共用同一份看板。<b class="text-rose-500">班級代碼等於整班資料的鑰匙，請勿告訴家長</b>；家長只需要各自孩子的查詢碼。</p>
-                    <p class="text-[11px] text-slate-400 mt-1">「切換」：代碼已有班級時會先顯示該班資訊讓你確認；沒人用過時會建立空白看板，教師密碼為預設的 8888。切換後需輸入該班的教師密碼。「搬移」：把目前的看板搬到新代碼，並刪除舊代碼的雲端資料；家長的查詢碼不受影響。</p>
+                    <p class="text-[11px] text-slate-400 mt-1">「切換」：代碼已有班級時會先顯示該班資訊讓你確認；沒人用過時會建立空白看板，教師密碼為預設的 8888。切換後需輸入該班的教師密碼。「搬移」：把目前的看板搬到新代碼，舊代碼會清空並標記為停用，還在用舊代碼的裝置會顯示「代碼已停用」並停止同步；家長的查詢碼不受影響。</p>
                 </div>
             </div>
 
@@ -1352,6 +1381,22 @@
             const container = document.getElementById('view-dashboard');
             if (!container) return;
             container.innerHTML = '';
+
+            if (window.state.boardRetired) {
+                container.innerHTML = `
+                    <div class="flex items-center justify-center p-4" style="grid-column: 1 / -1; grid-row: span 2;">
+                        <div class="bg-white border-2 border-rose-200 rounded-3xl p-6 max-w-md text-center board-shadow">
+                            <div class="text-4xl mb-2">🔒</div>
+                            <h3 class="text-lg font-black text-slate-800 mb-1">這個班級代碼已經停用</h3>
+                            <p class="text-sm text-slate-600 mb-1">班級資料已經搬到新的代碼，這台裝置的資料不會再同步。</p>
+                            <p class="text-sm text-slate-600 mb-4">請老師到「設定後台」的「班級共用代碼」輸入新的代碼，按「切換到此代碼」。</p>
+                            <button onclick="switchTab('settings')" class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold px-4 py-2 rounded-xl text-sm transition-all">
+                                前往設定後台
+                            </button>
+                        </div>
+                    </div>`;
+                return;
+            }
 
             const seatRows = getSeatRows();
 
@@ -1862,7 +1907,14 @@
         function renderCurrentClassCode() {
             const code = window.getClassCode();
             document.getElementById('current-class-code').textContent = code;
-            document.getElementById('current-class-code-warning').classList.toggle('hidden', isStrongClassCode(code));
+            const warning = document.getElementById('current-class-code-warning');
+            if (window.state.boardRetired) {
+                warning.textContent = '⚠ 這個代碼已經停用（資料已搬走）。請在下方輸入新的班級代碼，按「切換到此代碼」。';
+                warning.classList.remove('hidden');
+            } else {
+                warning.textContent = '⚠ 這個代碼太容易被猜到或和別班重複，建議換成自訂代碼並「把目前資料搬過去」。';
+                warning.classList.toggle('hidden', isStrongClassCode(code));
+            }
         }
 
         function copyCurrentClassCode() {
@@ -1893,12 +1945,17 @@
             const code = readClassCodeInput();
             if (!code) return;
             const oldCode = window.getClassCode();
-            if (!confirm(`要把目前的看板資料搬到代碼【${code}】，並刪除舊代碼【${oldCode}】的雲端資料嗎？\n\n其他裝置（例如老師手機）也要改輸入新代碼。`)) return;
+            if (!confirm(`要把目前的看板資料搬到代碼【${code}】，舊代碼【${oldCode}】會清空並停用嗎？\n\n其他還在用舊代碼的裝置（例如老師手機）會顯示「代碼已停用」，請在那些裝置的設定後台輸入新代碼。`)) return;
             try {
                 const result = await window.moveBoardToClassCode(code);
                 if (result === 'exists') {
                     window.soundEffect.playAlert();
-                    showToast(`代碼【${code}】已經有資料，為避免覆蓋已取消搬移`, false);
+                    showToast(`代碼【${code}】已經有人使用過，為避免覆蓋已取消搬移`, false);
+                    return;
+                }
+                if (result === 'retired') {
+                    window.soundEffect.playAlert();
+                    showToast('目前的班級代碼已停用，請改用「切換到此代碼」輸入新代碼', false);
                     return;
                 }
                 window.soundEffect.playSuccess();
@@ -1924,6 +1981,11 @@
             } catch (err) {
                 console.warn("查詢班級代碼失敗:", err);
                 showToast('無法確認代碼狀態，請稍後再試', false);
+                return;
+            }
+            if (info && info.retired) {
+                window.soundEffect.playAlert();
+                showToast(`代碼【${code}】已經停用（資料已搬到別的代碼），請輸入新的代碼`, false);
                 return;
             }
             if (info && info.exists) {
