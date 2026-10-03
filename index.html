@@ -907,24 +907,24 @@
                         <h3 class="text-sm font-black text-slate-800">4. 班級共用代碼</h3>
                     </div>
                     <div class="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 mb-3">
-                        <div class="text-[11px] font-bold text-slate-500">目前使用中的班級代碼</div>
+                        <div class="text-sm font-bold text-slate-500">目前使用中的班級代碼</div>
                         <div class="flex items-center gap-2">
                             <span id="current-class-code" class="font-mono font-black text-base text-slate-800 tracking-wide break-all"></span>
                             <button onclick="copyCurrentClassCode()" class="text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-1.5 py-0.5 rounded-md whitespace-nowrap transition-all flex-shrink-0">
                                 <i class="fa-regular fa-copy"></i> 複製
                             </button>
                         </div>
-                        <div id="current-class-code-warning" class="text-[11px] font-bold text-rose-600 mt-1 hidden">⚠ 這個代碼太容易被猜到或和別班重複，建議換成自訂代碼並「把目前資料搬過去」。</div>
+                        <div id="current-class-code-warning" class="text-sm font-bold text-rose-600 mt-1 leading-relaxed hidden">⚠ 這個代碼太容易被猜到或和別班重複，建議換成自訂代碼並「把目前資料搬過去」。</div>
                     </div>
 
-                    <label for="settings-class-code" class="block text-[11px] font-bold text-slate-500 mb-1">自訂新的班級代碼</label>
+                    <label for="settings-class-code" class="block text-sm font-bold text-slate-600 mb-1">自訂新的班級代碼</label>
                     <div class="flex gap-2 mb-1.5">
                         <input type="text" id="settings-class-code" maxlength="30" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="例如: lin601cs" oninput="onClassCodeInput()" class="flex-grow min-w-0 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-mono font-bold focus:outline-none focus:border-indigo-400">
                         <button onclick="fillRandomClassCode()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-2 rounded-xl text-xs whitespace-nowrap transition-all flex-shrink-0" title="產生一組不易猜到的代碼">
                             隨機產生
                         </button>
                     </div>
-                    <ul id="class-code-rules" class="text-[11px] font-bold space-y-0.5 mb-2">
+                    <ul id="class-code-rules" class="text-sm font-bold space-y-1 mb-3">
                         <li data-rule="length" class="text-slate-400">○ 6～30 個字元</li>
                         <li data-rule="letter" class="text-slate-400">○ 至少 1 個英文字母</li>
                         <li data-rule="digit" class="text-slate-400">○ 至少 1 個數字</li>
@@ -938,11 +938,39 @@
                             把目前資料搬過去
                         </button>
                     </div>
-                    <div class="text-[11px] text-slate-500 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-2 leading-relaxed">
-                        <b>好記又不會和別班重複的取法：</b>學校英文縮寫＋班級＋自己的代號，例如 <span class="font-mono">lin601cs</span>、<span class="font-mono">hs602wang</span>。設定好後請抄在記事本保存。
+                    <div class="text-sm text-slate-600 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-2 leading-relaxed">
+                        <div class="font-black text-slate-800">💡 好記又不會和別班重複的取法</div>
+                        <div>學校英文縮寫＋班級＋自己的代號</div>
+                        <div>例如 <span class="font-mono font-bold">lin601cs</span>、<span class="font-mono font-bold">hs602wang</span></div>
+                        <div>設定好後，請抄在記事本保存。</div>
                     </div>
-                    <p class="text-[11px] text-slate-400">教室電腦和老師手機輸入相同代碼，就會共用同一份看板。<b class="text-rose-500">班級代碼等於整班資料的鑰匙，請勿告訴家長</b>；家長只需要各自孩子的查詢碼。</p>
-                    <p class="text-[11px] text-slate-400 mt-1">「切換」：代碼已有班級時會先顯示該班資訊讓你確認；沒人用過時會建立空白看板，教師密碼為預設的 8888。切換後需輸入該班的教師密碼。「搬移」：把目前的看板搬到新代碼，舊代碼會清空並標記為停用，還在用舊代碼的裝置會顯示「代碼已停用」並停止同步；家長的查詢碼不受影響。</p>
+                    <div class="text-sm text-slate-600 leading-relaxed space-y-3 mt-3">
+                        <div>
+                            <div class="font-black text-slate-800 mb-1">📌 班級代碼是什麼</div>
+                            <ul class="list-disc pl-5 space-y-1">
+                                <li>教室電腦和老師手機輸入相同代碼，就會共用同一份看板。</li>
+                                <li><b class="text-rose-600">班級代碼等於整班資料的鑰匙，請勿告訴家長。</b></li>
+                                <li>家長只需要各自孩子的查詢碼。</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <div class="font-black text-slate-800 mb-1">🔀「切換到此代碼」</div>
+                            <ul class="list-disc pl-5 space-y-1">
+                                <li>代碼已有班級：會先顯示該班資訊，讓你確認。</li>
+                                <li>代碼沒人用過：建立空白看板，教師密碼為 8888。</li>
+                                <li>切換後，需輸入該班的教師密碼。</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <div class="font-black text-slate-800 mb-1">📦「把目前資料搬過去」</div>
+                            <ul class="list-disc pl-5 space-y-1">
+                                <li>把目前的看板搬到新代碼。</li>
+                                <li>舊代碼會清空，並標記為停用。</li>
+                                <li>還在用舊代碼的裝置會顯示「代碼已停用」，並停止同步。</li>
+                                <li>家長的查詢碼不受影響。</li>
+                            </ul>
+                        </div>
+                    </div>
                 </div>
             </div>
 
