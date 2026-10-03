@@ -98,3 +98,20 @@ test('待訂正的座號有「!」記號（紅綠色弱也能分辨）', async (
     const doneMarker = await page.evaluate(() => getComputedStyle(document.getElementById('btn-slot-0-student-6'), '::after').content);
     expect(doneMarker).toBe('none');
 });
+
+test('8 框加上「全部完成」按鈕時，作業名稱仍完整顯示', async ({ browser }) => {
+    for (const [width, height] of [[1920, 1080], [1366, 768], [1024, 600]]) {
+        const page = await openDevice(browser, createCloud(), { viewport: { width, height } });
+        await page.evaluate(() => { startTeacherSession(); switchTab('settings', true); setSlotCount(8); switchTab('dashboard', true); applyRoleUI('teacher'); });
+        for (let i = 0; i < 8; i++) await page.click(`#btn-slot-${i}-student-3`);
+        await page.waitForTimeout(200);
+        const fits = await page.evaluate(() => [...document.querySelectorAll('.slot-select')].map((s) => {
+            const st = getComputedStyle(s);
+            const ctx = document.createElement('canvas').getContext('2d');
+            ctx.font = `900 ${st.fontSize} ${st.fontFamily}`;
+            return ctx.measureText(s.options[s.selectedIndex].text).width <= s.clientWidth - parseFloat(st.paddingLeft) - parseFloat(st.paddingRight) + 1;
+        }));
+        expect(fits, `寬度 ${width}`).toEqual(Array(8).fill(true));
+        await page.context().close();
+    }
+});

@@ -13,20 +13,20 @@ test('斷線時顯示離線中，恢復連線後自動上傳修改', async ({ br
     await page.click('#btn-slot-0-student-8');
     await page.waitForTimeout(600);
     // 離線時還沒上傳
-    expect(JSON.parse(cloud.board('main').serializedStatuses['國習'] || '{}')[7]).not.toBe(false);
+    expect((cloud.board('main').statuses['國習'] || {})['7']).not.toBe(false);
     await expect(page.locator('#cloud-sync-status')).toContainText('離線中');
 
     await page.context().setOffline(false);
     await expect(page.locator('#cloud-sync-status')).toContainText('已連線存檔');
-    const statuses = JSON.parse(cloud.board('main').serializedStatuses['國習']);
-    expect(statuses[7]).toBe(false);
-    expect(statuses[8]).toBe(false);
+    const statuses = cloud.board('main').statuses['國習'];
+    expect(statuses['7']).toBe(false);
+    expect(statuses['8']).toBe(false);
 });
 
 test('離線開啟網頁、本機沒有快取時，不會把本機資料當成新班級上傳', async ({ browser }) => {
     const cloud = createCloud();
     // 雲端已有一份 3 人的班級
-    cloud.setBoard('main', { students: [{ id: 1, name: '1' }, { id: 2, name: '2' }, { id: 3, name: '3' }], assignments: ['國習'], slots: [{ id: 1, assignment: '國習' }], serializedStatuses: {}, teacherPin: '8888', lastUpdated: 1 });
+    cloud.setBoard('main', { students: [{ id: 1, name: '1' }, { id: 2, name: '2' }, { id: 3, name: '3' }], assignments: ['國習'], slots: [{ id: 1, assignment: '國習' }], statuses: {}, teacherPin: '8888', lastUpdated: 1 });
     const page = await openDevice(browser, cloud, { offline: true });
     await page.waitForTimeout(600);
     // 離線時沒有寫入任何資料

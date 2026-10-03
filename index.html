@@ -87,6 +87,10 @@
             text-align: center;
             font-weight: 900;
         }
+        /* 卡片較窄時（例如 8 框），「全部完成」只顯示 ✓，把空間留給作業名稱 */
+        .card-compact .slot-done-label {
+            display: none;
+        }
         /* 三個字以上的座號（少見）縮小，避免超出按鈕 */
         .seat-btn.seat-long {
             font-size: clamp(9px, calc(var(--seat-font) * 0.7), 50px);
@@ -144,7 +148,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, updateDoc, FieldPath, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Firebase 專案設定：從 Firebase 主控台「專案設定 → 你的應用程式 → SDK 設定」複製過來。
         // 改成 null 即為純本機模式（資料只存在這台裝置的瀏覽器）。
@@ -176,6 +180,9 @@
         // 同步狀態：存檔交給 Firebase 依序排隊寫入（離線時先存在這台裝置，恢復連線後自動上傳）
         let syncDebounceTimer = null;
         let pendingWrites = 0;
+        // 雲端看板是否已是新格式（statuses 巢狀資料）；舊格式要先整份轉換，才能逐格更新
+        let boardHasStatusMap = false;
+        let parentPublishTimer = null;
 
         // 乾淨音效合成器 (Web Audio API)
         // 音效開關存在這台裝置上（每台裝置各自設定，不會同步）
@@ -408,11 +415,17 @@
             });
         };
 
-        function buildPayload() {
-            const serializedStatuses = {};
-            Object.keys(window.state.assignmentStatuses).forEach(asgn => {
-                serializedStatuses[asgn] = JSON.stringify(window.state.assignmentStatuses[asgn]);
+        // 紅綠燈狀態以 statuses[作業][學生ID] = true/false 儲存，點一格只更新那一格
+        function copyStatuses() {
+            const statuses = {};
+            Object.entries(window.state.assignmentStatuses).forEach(([asgn, map]) => {
+                statuses[asgn] = {};
+                Object.entries(map || {}).forEach(([id, done]) => { statuses[asgn][id] = !!done; });
             });
+            return statuses;
+        }
+
+        function buildPayload() {
             return {
                 sloganTitle: window.state.sloganTitle,
                 sloganSub: window.state.sloganSub,
@@ -421,10 +434,11 @@
                 assignments: window.state.assignments,
                 slots: window.state.slots,
                 teacherPin: window.state.teacherPin,
-                serializedStatuses: serializedStatuses,
+                statuses: copyStatuses(),
                 lastUpdated: Date.now()
             };
         }
+        window.buildBoardPayload = buildPayload;
 
         function refreshSyncBadge() {
             if (!window.isCloudConnected()) return;
@@ -460,9 +474,40 @@
             if (!window.isCloudConnected()) return;
             // 不等雲端回應：Firebase 會依序排隊寫入，不會遺漏或亂序。
             // 不使用 merge：整份覆蓋，已刪除的作業狀態才會真的從雲端移除
+            boardHasStatusMap = true;
             trackWrite(setDoc(cloudDocRef, buildPayload())).catch(() => {});
             publishParentViews().catch(err => console.warn("家長查詢資料更新失敗:", err));
         }
+
+        function scheduleParentPublish() {
+            clearTimeout(parentPublishTimer);
+            parentPublishTimer = setTimeout(() => {
+                publishParentViews().catch(err => console.warn("家長查詢資料更新失敗:", err));
+            }, 300);
+        }
+
+        // 只更新變動的那幾格（例如點一個座號），兩台裝置同時操作不同座號時不會互相覆蓋。
+        // updates：[[作業名稱, 學生ID, true/false], ...]；學生ID 為 null 時代表整項作業（值為該作業的全部狀態）
+        window.syncStatusChange = function(updates) {
+            if (window.IS_PARENT_MODE) return;
+            window.saveLocalBackup();
+            if (!window.isCloudConnected()) return;
+            // 雲端還是舊格式，或已經有整份存檔在排隊（會包含這次的變更）：改用整份存檔
+            if (!boardHasStatusMap || syncDebounceTimer !== null) {
+                window.syncStateToCloud();
+                return;
+            }
+            const args = [];
+            updates.forEach(([asgn, id, value]) => {
+                args.push(id === null ? new FieldPath('statuses', asgn) : new FieldPath('statuses', asgn, String(id)), value);
+            });
+            args.push('lastUpdated', Date.now());
+            trackWrite(updateDoc(cloudDocRef, ...args)).catch(err => {
+                console.warn("逐格更新失敗，改為整份存檔:", err);
+                window.syncStateToCloud(true);
+            });
+            scheduleParentPublish();
+        };
 
         // 還有變更在等待送出（存檔前的 0.3 秒緩衝）時，不要用雲端資料覆蓋本機
         function hasLocalPendingChanges() {
@@ -521,7 +566,14 @@
             if (Array.isArray(d.slots)) window.state.slots = d.slots;
             if (d.teacherPin) window.state.teacherPin = String(d.teacherPin);
 
-            if (d.serializedStatuses) {
+            if (d.statuses && typeof d.statuses === 'object') {
+                const parsed = {};
+                Object.entries(d.statuses).forEach(([asgn, map]) => {
+                    parsed[asgn] = (map && typeof map === 'object') ? { ...map } : {};
+                });
+                window.state.assignmentStatuses = parsed;
+            } else if (d.serializedStatuses) {
+                // 舊格式：每項作業存成一段 JSON 文字
                 const parsed = {};
                 Object.keys(d.serializedStatuses).forEach(k => {
                     try {
@@ -583,6 +635,7 @@
             // 舊版資料存在每個匿名使用者自己的路徑，首次連線時搬過來
             const legacyRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'checkpoint_data', 'main_board');
             cloudDocRef = boardRef;
+            boardHasStatusMap = false;
             window.state.boardRetired = false;
             let isFirstSnapshot = true;
 
@@ -610,10 +663,14 @@
                 if (snapshot.exists() && !cleared) {
                     // 本機還有未寫上雲端的變更時，不要用雲端舊資料覆蓋
                     if (hasLocalPendingChanges()) return;
-                    window.applyBoardData(snapshot.data());
+                    const data = snapshot.data();
+                    window.applyBoardData(data);
                     window.saveLocalBackup();
                     rerenderCurrentView();
                     refreshSyncBadge();
+                    boardHasStatusMap = !!(data.statuses && typeof data.statuses === 'object');
+                    // 舊格式的看板：整份轉存成新格式，之後才能逐格更新
+                    if (!boardHasStatusMap) window.syncStateToCloud(true);
                     // 開啟看板時同步一次家長查詢資料（沒變的不會重寫）
                     if (firstSnapshot) publishParentViews().catch(err => console.warn("家長查詢資料更新失敗:", err));
                 } else if (firstSnapshot && (startFreshIfMissing || cleared)) {
@@ -1064,6 +1121,33 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- 備份與匯出 -->
+                <div class="settings-large bg-white border-2 border-slate-200 rounded-2xl p-4 board-shadow">
+                    <div class="flex items-center gap-2 mb-3">
+                        <div class="bg-emerald-50 text-emerald-600 p-1.5 rounded-lg border border-emerald-100">
+                            <i class="fa-solid fa-box-archive text-sm"></i>
+                        </div>
+                        <h3 class="text-sm font-black text-slate-800">6. 備份與匯出</h3>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
+                        <button onclick="exportBackup()" class="bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-3 py-2 rounded-xl text-xs transition-all">
+                            <i class="fa-solid fa-download"></i> 下載備份檔
+                        </button>
+                        <button onclick="document.getElementById('backup-file-input').click()" class="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 font-bold px-3 py-2 rounded-xl text-xs transition-all">
+                            <i class="fa-solid fa-upload"></i> 從備份檔還原
+                        </button>
+                        <button onclick="exportCsv()" class="bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-300 font-bold px-3 py-2 rounded-xl text-xs transition-all">
+                            <i class="fa-solid fa-file-excel"></i> 匯出 Excel
+                        </button>
+                    </div>
+                    <input type="file" id="backup-file-input" accept=".json,application/json" class="hidden" onchange="importBackup(this.files[0]); this.value = '';">
+                    <ul class="text-xs text-slate-600 leading-relaxed list-disc pl-5 space-y-1">
+                        <li><b>下載備份檔</b>：存下整個班級（名冊、作業、紅綠燈、標語、查詢碼）。建議每週或學期末下載一次。</li>
+                        <li><b>從備份檔還原</b>：用備份檔取代目前的班級資料，例如誤按「全班訂正歸零」時。</li>
+                        <li><b>匯出 Excel</b>：每位學生一列、每項作業一欄，可用 Excel 開啟、列印或留存紀錄。</li>
+                    </ul>
+                </div>
             </div>
 
             <!-- 右側學生座號管理 -->
@@ -1414,6 +1498,8 @@
                 btnStudent.className = "px-3 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1 text-slate-600 hover:text-slate-900";
                 if (indicatorText) indicatorText.textContent = "教師登記中 (點擊標記紅燈)";
             }
+            // 卡片上的「全部完成」按鈕只在教師登記模式顯示
+            if (window.state.currentTab === 'dashboard') renderDashboard();
         }
 
         function setRole(role) {
@@ -1560,6 +1646,9 @@
                 grid.style.setProperty('--cols', cols);
                 grid.style.setProperty('--rows', rows);
             });
+            document.querySelectorAll('#view-dashboard > div').forEach(card => {
+                card.classList.toggle('card-compact', card.clientWidth > 0 && card.clientWidth < 400);
+            });
             document.querySelectorAll('#view-dashboard .slot-select').forEach(fitSlotName);
         }
 
@@ -1617,16 +1706,21 @@
                             <span class="w-8 h-8 rounded-lg bg-amber-400 text-white font-black text-base flex items-center justify-center flex-shrink-0 shadow-sm">
                                 ${index + 1}
                             </span>
-                            <div class="relative min-w-0 flex-1 max-w-[220px]">
+                            <div class="relative min-w-[84px] flex-1 max-w-[220px]">
                                 <select onchange="onSlotAssignmentChange(${index}, this.value)" class="slot-select w-full appearance-none bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg pl-2.5 pr-7 py-0.5 font-black text-amber-950 text-xl focus:outline-none focus:border-amber-500 cursor-pointer truncate transition-colors" title="${window.state.isTeacherUnlocked ? '' : '更換作業需教師密碼'}">
                                     ${optionsHtml}
                                 </select>
                                 <i class="fa-solid fa-chevron-down text-[12px] text-amber-700 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none"></i>
                             </div>
                         </div>
-                        <span id="slot-badge-${index}" class="text-[13px] xl:text-xs font-black px-2 xl:px-2.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap ${pendingCount > 0 ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}">
-                            ${pendingCount > 0 ? `待訂正 ${pendingCount} 人` : '全員完成 🎉'}
-                        </span>
+                        <div class="flex items-center gap-1 flex-shrink-0">
+                            <span id="slot-badge-${index}" class="text-[13px] xl:text-xs font-black px-2 xl:px-2.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap ${pendingCount > 0 ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}">
+                                ${pendingCount > 0 ? `待訂正 ${pendingCount} 人` : '全員完成 🎉'}
+                            </span>
+                            <button id="slot-done-${index}" onclick="markSlotAllDone(${index})" class="${isTeacherMode() && pendingCount > 0 ? '' : 'hidden'} text-[13px] xl:text-xs font-black px-2 py-0.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white flex-shrink-0 whitespace-nowrap shadow-sm" title="把這項作業全班設為完成（綠燈）">
+                                ✓<span class="slot-done-label"> 全部完成</span>
+                            </button>
+                        </div>
                     </div>
                 `;
 
@@ -1780,9 +1874,33 @@
                     badge.className = `text-[13px] xl:text-xs font-black px-2 xl:px-2.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap ${pCount > 0 ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`;
                     badge.innerText = pCount > 0 ? `待訂正 ${pCount} 人` : '全員完成 🎉';
                 }
+                const doneBtn = document.getElementById(`slot-done-${idx}`);
+                if (doneBtn) doneBtn.classList.toggle('hidden', !(isTeacherMode() && pCount > 0));
             });
 
-            window.syncStateToCloud();
+            // 只上傳這一格，其他裝置同時點別的座號也不會被蓋掉
+            window.syncStatusChange([[assignment, studentId, nextStatus]]);
+        }
+
+        function isTeacherMode() {
+            return window.state.userRole === 'teacher' && window.state.isTeacherUnlocked;
+        }
+
+        // 卡片上的「全部完成」：把這項作業全班設為綠燈（只有教師登記模式看得到）
+        function markSlotAllDone(slotIndex) {
+            if (!isTeacherMode()) return;
+            const assignment = window.state.slots[slotIndex]?.assignment;
+            if (!assignment) return;
+            const pending = countPending(assignment);
+            if (pending === 0) return;
+            if (!confirm(`要把【${assignment}】全班設為完成（綠燈）嗎？\n目前有 ${pending} 位待訂正。`)) return;
+            const map = {};
+            window.state.students.forEach(st => { map[st.id] = true; });
+            window.state.assignmentStatuses[assignment] = { ...(window.state.assignmentStatuses[assignment] || {}), ...map };
+            window.soundEffect.playSuccess();
+            renderDashboard();
+            window.syncStatusChange([[assignment, null, window.state.assignmentStatuses[assignment]]]);
+            showToast(`【${assignment}】已全班完成 🎉`);
         }
 
         let parentWatchUnsub = null;
@@ -2376,6 +2494,90 @@
                 <div class="grid">${rows}</div>
                 </body></html>`);
             win.document.close();
+        }
+
+        function downloadFile(filename, content, type) {
+            const blob = new Blob([content], { type });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+
+        function fileDateStamp() {
+            const d = new Date();
+            const pad = n => String(n).padStart(2, '0');
+            return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
+        }
+
+        // 下載整個班級的備份檔（JSON）
+        function exportBackup() {
+            ensureParentCodes();
+            const backup = {
+                app: 'homeworksystem',
+                version: 1,
+                classCode: window.getClassCode(),
+                exportedAt: new Date().toISOString(),
+                board: window.buildBoardPayload()
+            };
+            // 檔名用英文：部分瀏覽器遇到中文檔名會改成沒有副檔名的「download」
+            downloadFile(`homework-backup-${window.getClassCode()}-${fileDateStamp()}.json`, JSON.stringify(backup, null, 2), 'application/json');
+            showToast('已下載備份檔');
+        }
+
+        // 用備份檔取代目前的班級資料
+        async function importBackup(file) {
+            if (!file) return;
+            let backup;
+            try {
+                backup = JSON.parse(await file.text());
+            } catch (e) {
+                window.soundEffect.playAlert();
+                showToast('無法讀取這個檔案，請確認是下課檢查站的備份檔', false);
+                return;
+            }
+            const board = backup && backup.app === 'homeworksystem' ? backup.board : null;
+            if (!board || !Array.isArray(board.students) || !Array.isArray(board.assignments) || !Array.isArray(board.slots)) {
+                window.soundEffect.playAlert();
+                showToast('這不是下課檢查站的備份檔', false);
+                return;
+            }
+            const when = backup.exportedAt ? new Date(backup.exportedAt).toLocaleString('zh-TW') : '不明';
+            if (!confirm(`要用這個備份檔取代目前的班級資料嗎？\n\n・備份時間：${when}\n・${board.students.length} 位學生、${board.assignments.length} 項作業\n\n目前看板上的資料會被覆蓋（教師密碼也會換成備份檔裡的）。`)) return;
+            window.state.assignmentStatuses = {};
+            window.applyBoardData(board);
+            ensureParentCodes();
+            window.soundEffect.playSuccess();
+            renderSlogan();
+            renderSettingsAssignments();
+            renderSettingsStudents();
+            renderSlotCountButtons();
+            window.syncStateToCloud(true);
+            showToast('已從備份檔還原');
+        }
+
+        function csvCell(value) {
+            const text = String(value ?? '');
+            return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+        }
+
+        // 匯出 Excel 可開啟的 CSV：每位學生一列、每項作業一欄
+        function exportCsv() {
+            const assignments = window.state.assignments;
+            const header = ['座號', ...assignments, '待訂正數'];
+            const rows = window.state.students.map(st => {
+                const cells = assignments.map(a => getStudentStatus(a, st.id) ? '完成' : '待訂正');
+                const pending = cells.filter(c => c === '待訂正').length;
+                return [getPureSeatNumber(st.name), ...cells, pending];
+            });
+            const csv = [header, ...rows].map(row => row.map(csvCell).join(',')).join('\r\n');
+            // 加上 BOM，Excel 才會用正確的中文編碼開啟
+            downloadFile(`homework-${window.getClassCode()}-${fileDateStamp()}.csv`, '\uFEFF' + csv, 'text/csv;charset=utf-8');
+            showToast('已匯出 Excel 檔');
         }
 
         function getNextStudentId() {
