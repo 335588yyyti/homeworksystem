@@ -65,21 +65,28 @@
             }
         }
 
-        /* 座號網格：以容器大小決定字級，卡片縮小時數字跟著縮小，不會溢出重疊 */
+        /* 座號網格：欄數、列數依人數與卡片大小自動決定（JS 設定 --cols、--rows），
+           字級依格子大小計算，人數多或卡片小時自動縮小，不會超出卡片 */
         .seat-grid {
             container-type: size;
             display: grid;
-            grid-template-columns: repeat(7, minmax(0, 1fr));
+            grid-template-columns: repeat(var(--cols, 7), minmax(0, 1fr));
             grid-template-rows: repeat(var(--rows, 4), minmax(0, 1fr));
         }
         .seat-btn {
             transition: transform 0.06s ease, background-color 0.12s ease;
             user-select: none;
             -webkit-user-select: none;
-            font-size: clamp(11px, min(6cqw, calc(52cqh / var(--rows, 4))), 34px);
+            /* 數字約佔格子寬、高的六成，綠色留白較少 */
+            --seat-font: min(calc(62cqw / var(--cols, 7)), calc(60cqh / var(--rows, 4)));
+            font-size: clamp(11px, var(--seat-font), 72px);
             line-height: 1;
             overflow: hidden;
             white-space: nowrap;
+        }
+        /* 三個字以上的座號（少見）縮小，避免超出按鈕 */
+        .seat-btn.seat-long {
+            font-size: clamp(9px, calc(var(--seat-font) * 0.7), 50px);
         }
         .seat-btn:active {
             transform: scale(0.93);
@@ -790,61 +797,53 @@
         <!-- JS 動態生成卡片 -->
     </main>
 
-    <!-- 家長查詢分頁：輸入查詢碼，只看得到自己孩子的狀態 -->
-    <main id="view-parent" class="max-w-3xl mx-auto px-4 py-5 w-full flex-1 min-h-0 overflow-y-auto hidden">
-        <div class="bg-white border-2 border-slate-200 rounded-3xl p-5 sm:p-8 board-shadow">
-            <div class="text-center mb-6">
-                <div class="bg-indigo-50 text-indigo-600 w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-2 border border-indigo-100">
-                    <i class="fa-solid fa-magnifying-glass-chart text-xl"></i>
-                </div>
-                <h3 class="text-xl font-black text-slate-800">家長查詢</h3>
-                <p class="text-xs text-slate-400 mt-0.5">請掃描紙條上的 QR Code，或輸入老師提供的查詢碼，只會顯示您孩子的訂正狀態</p>
+    <!-- 家長查詢分頁：輸入查詢碼，只看得到自己孩子的狀態。版面精簡，盡量一頁看完 -->
+    <main id="view-parent" class="max-w-xl mx-auto px-3 py-3 w-full flex-1 min-h-0 overflow-y-auto hidden">
+        <div class="bg-white border-2 border-slate-200 rounded-3xl p-4 board-shadow space-y-3">
+            <div>
+                <h3 class="text-lg font-black text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-magnifying-glass-chart text-indigo-500"></i> 家長查詢
+                </h3>
+                <p class="text-xs text-slate-500">掃描紙條上的 QR Code，或輸入老師提供的查詢碼</p>
             </div>
 
-            <div class="mb-5 bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                <label for="parent-code-input" class="block text-xs font-bold text-slate-600 mb-2">查詢碼：</label>
+            <div>
                 <div class="flex gap-2">
-                    <input type="text" id="parent-code-input" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="例如: K7P2QX" onkeydown="if(event.key === 'Enter') lookupParentCode()" class="flex-grow min-w-0 bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-base font-black tracking-widest uppercase text-slate-800 focus:outline-none focus:border-indigo-400 shadow-sm">
-                    <button onclick="lookupParentCode()" class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold px-4 py-2.5 rounded-xl text-sm whitespace-nowrap transition-all flex-shrink-0">
+                    <input type="text" id="parent-code-input" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="查詢碼，例如 K7P2QX" aria-label="查詢碼" onkeydown="if(event.key === 'Enter') lookupParentCode()" class="flex-grow min-w-0 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-base font-black tracking-widest uppercase text-slate-800 focus:outline-none focus:border-indigo-400">
+                    <button onclick="lookupParentCode()" class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold px-4 py-2 rounded-xl text-sm whitespace-nowrap transition-all flex-shrink-0">
                         查詢
                     </button>
                 </div>
-                <p id="parent-code-msg" class="text-xs font-bold mt-2 hidden"></p>
+                <p id="parent-code-msg" class="text-xs font-bold mt-1.5 hidden"></p>
             </div>
 
-            <div id="parent-teacher-picker" class="teacher-ui mb-5 bg-amber-50 p-4 rounded-2xl border border-amber-200 hidden">
-                <label class="block text-xs font-bold text-amber-800 mb-2">教師檢視：選擇座號（只有解鎖教師權限時看得到）</label>
-                <select id="parent-student-select" onchange="onSeatSelectChange()" class="w-full bg-white border border-amber-200 rounded-xl px-4 py-2.5 text-base font-black text-slate-800 focus:outline-none focus:border-amber-400 shadow-sm cursor-pointer">
+            <div id="parent-teacher-picker" class="teacher-ui bg-amber-50 p-3 rounded-2xl border border-amber-200 hidden">
+                <label class="block text-xs font-bold text-amber-800 mb-1.5">教師檢視：選擇座號（只有解鎖教師權限時看得到）</label>
+                <select id="parent-student-select" onchange="onSeatSelectChange()" class="w-full bg-white border border-amber-200 rounded-xl px-3 py-2 text-base font-black text-slate-800 focus:outline-none focus:border-amber-400 cursor-pointer">
                     <!-- 動態填入 -->
                 </select>
             </div>
 
-            <div id="parent-result-box" class="space-y-4 hidden">
-                <div class="bg-slate-800 text-white rounded-2xl p-4 flex justify-between items-center shadow-sm">
-                    <div>
-                        <span class="text-[13px] font-bold text-slate-400 uppercase tracking-widest block">當前學生</span>
-                        <h4 id="parent-child-name" class="text-xl font-black text-amber-300">1 號</h4>
+            <div id="parent-result-box" class="space-y-3 hidden">
+                <!-- 摘要：座號、總完成度、目前狀態 -->
+                <div id="parent-summary" class="rounded-2xl p-4 text-white">
+                    <div class="flex justify-between items-center gap-3">
+                        <div class="min-w-0">
+                            <span class="text-[13px] font-bold opacity-80 block">當前學生</span>
+                            <h4 id="parent-child-name" class="text-2xl font-black">1 號 同學</h4>
+                        </div>
+                        <div class="text-right flex-shrink-0">
+                            <span class="text-[13px] font-bold opacity-80 block">總完成度</span>
+                            <span id="parent-progress-percent" class="text-3xl font-black">100%</span>
+                        </div>
                     </div>
-                    <div class="text-right">
-                        <span class="text-[13px] font-bold text-slate-400 block">全科總完成度</span>
-                        <span id="parent-progress-percent" class="text-xl font-black text-emerald-400">100%</span>
-                    </div>
+                    <div id="parent-status-title" class="mt-2 text-base font-black">目前無需訂正 🎉</div>
                 </div>
 
-                <div class="w-full bg-slate-100 h-3 rounded-full overflow-hidden p-0.5 border border-slate-200">
-                    <div id="parent-progress-bar" class="bg-indigo-500 h-full rounded-full transition-all duration-300" style="width: 100%"></div>
-                </div>
-
-                <div id="parent-status-card" class="bg-emerald-50 border border-emerald-200 rounded-2xl p-3.5 text-center">
-                    <h5 id="parent-status-title" class="text-sm font-black text-emerald-800">所有作業皆已訂正完成！</h5>
-                    <p id="parent-status-desc" class="text-xs text-emerald-600 mt-0.5">該生目前沒有待訂正項目，表現優秀！</p>
-                </div>
-
-                <div>
-                    <h6 class="text-xs font-bold text-slate-600 mb-2 flex items-center gap-1.5">
-                        <i class="fa-solid fa-list-check text-indigo-500"></i> 各科目訂正明細：
-                    </h6>
-                    <div id="parent-assignment-list" class="space-y-2 max-h-[320px] overflow-y-auto pr-1">
+                <!-- 只列出需要訂正的作業；全部完成時整段隱藏 -->
+                <div id="parent-pending-section" class="hidden">
+                    <h6 class="text-sm font-black text-slate-700 mb-1.5">需要訂正的作業：</h6>
+                    <div id="parent-assignment-list" class="grid grid-cols-2 gap-2">
                         <!-- 動態細目 -->
                     </div>
                 </div>
@@ -1022,7 +1021,7 @@
 
                     <div class="grid grid-cols-12 gap-2 mb-3">
                         <div class="col-span-9">
-                            <input type="text" id="new-student-name" maxlength="10" placeholder="輸入純座號 (如: 29)" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-sky-400">
+                            <input type="text" id="new-student-name" maxlength="10" placeholder="輸入純座號 (如: 29，每班最多 40 人)" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-sky-400">
                         </div>
                         <div class="col-span-3">
                             <button onclick="addStudent()" class="w-full h-full bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl text-xs whitespace-nowrap transition-all flex items-center justify-center gap-1">
@@ -1120,7 +1119,9 @@
 
     <script>
         const TEACHER_IDLE_MS = 90000;
-        const SEAT_COLUMNS = 7;
+        const MAX_STUDENTS = 40;
+        const SLOT_NAME_MAX_FONT = 22;
+        const SLOT_NAME_MIN_FONT = 12;
 
         // 網址帶 ?p=查詢碼（或只有 ?p）時是家長查詢頁：不載入整班看板
         window.IS_PARENT_MODE = new URLSearchParams(location.search).has('p');
@@ -1130,6 +1131,11 @@
         // 新的查詢碼為 6 碼（約 10 億種組合）；早期發出的 8 碼仍然有效
         const PARENT_CODE_LENGTH = 6;
         const PARENT_CODE_RE = /^[A-Z0-9]{6,8}$/;
+
+        function seatButtonClass(isDone, name) {
+            const base = isDone ? SEAT_DONE_CLASS : SEAT_PENDING_CLASS;
+            return getPureSeatNumber(name).length > 2 ? `${base} seat-long` : base;
+        }
 
         const SEAT_DONE_CLASS = 'seat-btn bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm w-full h-full min-h-0 min-w-0 rounded-xl font-black flex items-center justify-center p-0';
         const SEAT_PENDING_CLASS = 'seat-btn bg-rose-500 hover:bg-rose-600 text-white shadow-sm ring-2 ring-rose-300/80 ring-offset-1 w-full h-full min-h-0 min-w-0 rounded-xl font-black flex items-center justify-center p-0';
@@ -1418,8 +1424,61 @@
             showToast('看板標語已更新！');
         }
 
-        function getSeatRows() {
-            return Math.max(1, Math.ceil(window.state.students.length / SEAT_COLUMNS));
+        // 依人數和網格實際大小，找出讓每格最大的欄數（接近正方形）
+        function bestSeatLayout(count, width, height) {
+            const n = Math.max(1, count);
+            if (!width || !height) {
+                const cols = n <= 28 ? 7 : 8;
+                return { cols, rows: Math.ceil(n / cols) };
+            }
+            let best = null;
+            for (let cols = 4; cols <= 10; cols++) {
+                const rows = Math.ceil(n / cols);
+                const cell = Math.min(width / cols, height / rows);
+                const empty = cols * rows - n;
+                if (!best || cell > best.cell + 0.5 || (Math.abs(cell - best.cell) <= 0.5 && empty < best.empty)) {
+                    best = { cols, rows, cell, empty };
+                }
+            }
+            return { cols: best.cols, rows: best.rows };
+        }
+
+        let measureCtx = null;
+        // 作業名稱太長、超出黃框時，自動縮小字級
+        function fitSlotName(select) {
+            const option = select.options[select.selectedIndex];
+            if (!option) return;
+            const style = getComputedStyle(select);
+            const available = select.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) - 2;
+            if (available <= 0) return;
+            measureCtx = measureCtx || document.createElement('canvas').getContext('2d');
+            measureCtx.font = `900 ${SLOT_NAME_MAX_FONT}px ${style.fontFamily}`;
+            const textWidth = measureCtx.measureText(option.text).width;
+            const size = textWidth <= available ? SLOT_NAME_MAX_FONT
+                : Math.max(SLOT_NAME_MIN_FONT, Math.floor(SLOT_NAME_MAX_FONT * available / textWidth));
+            select.style.fontSize = `${size}px`;
+        }
+
+        // 依目前卡片大小重新排座號、調整作業名稱字級（畫面縮放時也會執行）
+        function layoutDashboard() {
+            if (!window.state) return; // 頁面剛載入、資料還沒準備好
+            const count = window.state.students.length;
+            document.querySelectorAll('#view-dashboard .seat-grid').forEach(grid => {
+                const { cols, rows } = bestSeatLayout(count, grid.clientWidth, grid.clientHeight);
+                grid.style.setProperty('--cols', cols);
+                grid.style.setProperty('--rows', rows);
+            });
+            document.querySelectorAll('#view-dashboard .slot-select').forEach(fitSlotName);
+        }
+
+        if (window.ResizeObserver) {
+            let layoutFrame = null;
+            new ResizeObserver(() => {
+                cancelAnimationFrame(layoutFrame);
+                layoutFrame = requestAnimationFrame(layoutDashboard);
+            }).observe(document.getElementById('view-dashboard'));
+        } else {
+            window.addEventListener('resize', () => layoutDashboard());
         }
 
         // 渲染班級主看板
@@ -1444,7 +1503,7 @@
                 return;
             }
 
-            const seatRows = getSeatRows();
+            const initialLayout = bestSeatLayout(window.state.students.length);
 
             window.state.slots.forEach((slot, index) => {
                 const card = document.createElement('div');
@@ -1465,7 +1524,7 @@
                                 ${index + 1}
                             </span>
                             <div class="relative min-w-0 flex-1 max-w-[220px]">
-                                <select onchange="onSlotAssignmentChange(${index}, this.value)" class="w-full appearance-none bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg pl-2.5 pr-7 py-0.5 font-black text-amber-950 text-xl focus:outline-none focus:border-amber-500 cursor-pointer truncate transition-all" title="${window.state.isTeacherUnlocked ? '' : '更換作業需教師密碼'}">
+                                <select onchange="onSlotAssignmentChange(${index}, this.value)" class="slot-select w-full appearance-none bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg pl-2.5 pr-7 py-0.5 font-black text-amber-950 text-xl focus:outline-none focus:border-amber-500 cursor-pointer truncate transition-all" title="${window.state.isTeacherUnlocked ? '' : '更換作業需教師密碼'}">
                                     ${optionsHtml}
                                 </select>
                                 <i class="fa-solid fa-chevron-down text-[12px] text-amber-700 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none"></i>
@@ -1477,19 +1536,20 @@
                     </div>
                 `;
 
-                // 座號網格：每列 7 個，列數依人數自動增加；字級依格子大小自動縮放
-                let gridHtml = `<div class="seat-grid gap-1 xl:gap-1.5 w-full flex-1 min-h-0 pt-1.5" style="--rows: ${seatRows}">`;
+                // 座號網格：欄數、列數依人數與卡片大小自動決定；字級依格子大小自動縮放
+                let gridHtml = `<div class="seat-grid gap-1 xl:gap-1.5 w-full flex-1 min-h-0 pt-1.5" style="--cols: ${initialLayout.cols}; --rows: ${initialLayout.rows}">`;
                 window.state.students.forEach(st => {
                     const isDone = getStudentStatus(slot.assignment, st.id);
                     const pureNum = escapeHtml(getPureSeatNumber(st.name));
 
-                    gridHtml += `<button id="btn-slot-${index}-student-${st.id}" onclick="toggleStudentStatus(${index}, ${st.id})" class="${isDone ? SEAT_DONE_CLASS : SEAT_PENDING_CLASS}" title="座號 ${pureNum}">${pureNum}</button>`;
+                    gridHtml += `<button id="btn-slot-${index}-student-${st.id}" onclick="toggleStudentStatus(${index}, ${st.id})" class="${seatButtonClass(isDone, st.name)}" title="座號 ${pureNum}">${pureNum}</button>`;
                 });
                 gridHtml += `</div>`;
 
                 card.innerHTML = headerHtml + gridHtml;
                 container.appendChild(card);
             });
+            layoutDashboard();
         }
 
         function onSlotAssignmentChange(slotIndex, val) {
@@ -1586,7 +1646,7 @@
             window.state.slots.forEach((s, idx) => {
                 if (s.assignment !== assignment) return;
                 const btn = document.getElementById(`btn-slot-${idx}-student-${studentId}`);
-                if (btn) btn.className = nextStatus ? SEAT_DONE_CLASS : SEAT_PENDING_CLASS;
+                if (btn) btn.className = seatButtonClass(nextStatus, window.state.students.find(st => st.id === studentId)?.name);
 
                 const badge = document.getElementById(`slot-badge-${idx}`);
                 if (badge) {
@@ -1737,58 +1797,41 @@
         }
 
         // 只依據單一學生摘要畫出結果（教師檢視、教室查詢、家長雲端查詢共用）
+        // 全部完成：只顯示總完成度 100% 與「目前無需訂正」；有待訂正：只列出待訂正的作業
         function renderParentView(view) {
             const items = Array.isArray(view.items) ? view.items : [];
+            const pending = items.filter(item => !item.finished);
+            const total = items.length;
+            const percentage = total > 0 ? Math.round(((total - pending.length) / total) * 100) : 100;
+
             document.getElementById('parent-result-box').classList.remove('hidden');
             document.getElementById('parent-child-name').innerText = `${view.seat ?? ''} 號 同學`;
-
-            const totalAssignments = items.length;
-            let finishedAssignments = 0;
-            const detailsList = document.getElementById('parent-assignment-list');
-            detailsList.innerHTML = '';
-
-            items.forEach(item => {
-                const isFinished = !!item.finished;
-                if (isFinished) finishedAssignments++;
-
-                const itemDiv = document.createElement('div');
-                itemDiv.className = "flex items-center justify-between p-3 rounded-xl border transition-all " +
-                    (isFinished ? "bg-emerald-50/60 border-emerald-200" : "bg-rose-50 border-rose-200 shadow-sm");
-
-                itemDiv.innerHTML = `
-                    <div class="flex items-center gap-2.5 min-w-0">
-                        <span class="text-base">${isFinished ? '✅' : '🚨'}</span>
-                        <div class="flex items-center gap-2 min-w-0">
-                            <span class="text-xs font-black text-slate-800 truncate">${escapeHtml(item.name ?? '')}</span>
-                            ${item.onBoard ? `<span class="text-[12px] font-bold px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 whitespace-nowrap">看板中</span>` : ''}
-                        </div>
-                    </div>
-                    <span class="text-xs font-bold px-2.5 py-0.5 rounded-full whitespace-nowrap ${isFinished ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}">
-                        ${isFinished ? '已完成' : '待訂正'}
-                    </span>
-                `;
-                detailsList.appendChild(itemDiv);
-            });
-
-            const percentage = totalAssignments > 0 ? Math.round((finishedAssignments / totalAssignments) * 100) : 100;
             document.getElementById('parent-progress-percent').innerText = `${percentage}%`;
-            document.getElementById('parent-progress-bar').style.width = `${percentage}%`;
 
-            const statusCard = document.getElementById('parent-status-card');
+            const summary = document.getElementById('parent-summary');
             const statusTitle = document.getElementById('parent-status-title');
-            const statusDesc = document.getElementById('parent-status-desc');
-            const pendingCount = totalAssignments - finishedAssignments;
+            const pendingSection = document.getElementById('parent-pending-section');
+            const list = document.getElementById('parent-assignment-list');
+            list.innerHTML = '';
 
-            if (pendingCount === 0) {
-                statusCard.className = "bg-emerald-50 border border-emerald-200 rounded-2xl p-3.5 text-center";
-                statusTitle.innerText = "所有作業項目均已訂正完成！";
-                statusTitle.className = "text-sm font-black text-emerald-800";
-                statusDesc.innerText = `全部 ${totalAssignments} 項作業中，目前沒有待訂正項目，表現優秀！`;
+            if (pending.length === 0) {
+                summary.className = 'rounded-2xl p-4 text-white bg-emerald-600';
+                statusTitle.innerText = '目前無需訂正 🎉';
+                pendingSection.classList.add('hidden');
             } else {
-                statusCard.className = "bg-rose-50 border border-rose-200 rounded-2xl p-3.5 text-center";
-                statusTitle.innerText = `尚有 ${pendingCount} 項作業等待訂正！`;
-                statusTitle.className = "text-sm font-black text-rose-900";
-                statusDesc.innerText = `在全部 ${totalAssignments} 項作業中，有 ${pendingCount} 項尚未完成訂正。`;
+                summary.className = 'rounded-2xl p-4 text-white bg-rose-600';
+                statusTitle.innerText = `還有 ${pending.length} 項作業需要訂正`;
+                pendingSection.classList.remove('hidden');
+                pending.forEach(item => {
+                    const itemDiv = document.createElement('div');
+                    itemDiv.className = 'flex items-center gap-1.5 px-3 py-2 rounded-xl border bg-rose-50 border-rose-200 min-w-0';
+                    itemDiv.innerHTML = `
+                        <span class="text-base flex-shrink-0">🚨</span>
+                        <span class="text-base font-black text-slate-800 truncate">${escapeHtml(item.name ?? '')}</span>
+                        ${item.onBoard ? `<span class="ml-auto text-[12px] font-bold px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 whitespace-nowrap flex-shrink-0">看板中</span>` : ''}
+                    `;
+                    list.appendChild(itemDiv);
+                });
             }
 
             const updatedEl = document.getElementById('parent-updated-at');
@@ -2257,6 +2300,11 @@
             if (window.state.students.some(s => getPureSeatNumber(s.name) === getPureSeatNumber(name))) {
                 window.soundEffect.playAlert();
                 showToast(`座號【${name}】已存在！`, false);
+                return;
+            }
+            if (window.state.students.length >= MAX_STUDENTS) {
+                window.soundEffect.playAlert();
+                showToast(`每班最多 ${MAX_STUDENTS} 位學生`, false);
                 return;
             }
             const nextId = getNextStudentId();
