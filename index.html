@@ -115,6 +115,14 @@
         .settings-large .text-xs { font-size: 1rem; line-height: 1.5rem; }
         .settings-large .text-sm { font-size: 1.125rem; line-height: 1.75rem; }
         .settings-large .text-base { font-size: 1.25rem; line-height: 1.75rem; }
+        /* 電腦版：設定頁加寬後空間較多，字再大一些（手機維持上面的大小） */
+        @media (min-width: 1024px) {
+            .settings-large .text-\[12px\] { font-size: 15px; }
+            .settings-large .text-\[13px\] { font-size: 16px; }
+            .settings-large .text-xs { font-size: 1.125rem; line-height: 1.625rem; }
+            .settings-large .text-sm { font-size: 1.25rem; line-height: 1.875rem; }
+            .settings-large .text-base { font-size: 1.375rem; line-height: 1.875rem; }
+        }
         /* 美化 Scrollbar */
         ::-webkit-scrollbar {
             width: 6px;
@@ -859,7 +867,7 @@
     </main>
 
     <!-- 設定後台分頁 -->
-    <main id="view-settings" class="max-w-5xl mx-auto px-4 py-5 w-full flex-1 min-h-0 overflow-y-auto hidden">
+    <main id="view-settings" class="max-w-[1600px] mx-auto px-4 py-5 w-full flex-1 min-h-0 overflow-y-auto hidden">
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 pb-6">
 
             <!-- 左側設定 -->
@@ -1039,9 +1047,9 @@
 
                 <div class="roster-table overflow-x-auto border border-slate-200 rounded-xl overflow-y-auto">
                     <table class="w-full text-left text-xs font-medium text-slate-600">
-                        <thead class="bg-slate-50 text-slate-700 font-bold border-b border-slate-200 sticky top-0">
+                        <thead class="bg-slate-50 text-slate-700 font-bold border-b border-slate-200 sticky top-0 whitespace-nowrap">
                             <tr>
-                                <th class="px-3 py-2 w-14">序號</th>
+                                <th class="px-3 py-2 w-16 whitespace-nowrap">序號</th>
                                 <th class="px-3 py-2">學生座號</th>
                                 <th class="px-3 py-2">家長查詢碼</th>
                                 <th class="px-3 py-2 text-center w-16">刪除</th>
