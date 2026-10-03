@@ -8,11 +8,11 @@ service cloud.firestore {
         && classCode.matches('^[A-Za-z0-9_-]{1,40}$');
     }
 
-    // 家長查詢：每位學生一份摘要，只能用 8 碼查詢碼讀取單一份，不能列出
+    // 家長查詢：每位學生一份摘要，只能用 6～8 碼查詢碼讀取單一份，不能列出
     match /artifacts/{appId}/public/data/parent_views/{parentCode} {
       allow get: if request.auth != null;
       allow create, update, delete: if request.auth != null
-        && parentCode.matches('^[A-Z0-9]{8}$');
+        && parentCode.matches('^[A-Z0-9]{6,8}$');
     }
 
     // 舊版每台裝置自己的資料：只有本人能讀（首次連線時搬到班級看板用）
