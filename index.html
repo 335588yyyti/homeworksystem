@@ -211,6 +211,9 @@
         // 一份全新班級看板的預設內容（新代碼、首次使用時套用）
         window.createDefaultBoard = function() {
             return {
+                // 每個新班級的教師密碼一律從 8888 開始，不沿用其他班
+                teacherPin: '8888',
+
                 sloganTitle: '未訂正完成，不能下課！ 🔔',
                 sloganSub: '請自律完成訂正，完成後記得點擊個人座號銷單喔！',
 
@@ -244,7 +247,6 @@
         window.state = {
             currentTab: 'dashboard',
             userRole: 'student',
-            teacherPin: '8888',
             isTeacherUnlocked: false,
             teacherTimer: null,
             pendingTeacherAction: null,
@@ -522,7 +524,7 @@
                     // 開啟看板時同步一次家長查詢資料（沒變的不會重寫）
                     if (firstSnapshot) publishParentViews().catch(err => console.warn("家長查詢資料更新失敗:", err));
                 } else if (firstSnapshot && startFreshIfMissing) {
-                    // 新班級：沿用目前的教師密碼，其餘全部重設為預設值
+                    // 新班級：全部重設為預設值（教師密碼回到 8888）
                     Object.assign(window.state, window.createDefaultBoard());
                     window.state.parentSearch.mode = null;
                     rerenderCurrentView();
@@ -877,7 +879,7 @@
                         </button>
                     </div>
                     <p class="text-[11px] text-slate-400">教室電腦和老師手機輸入相同代碼，就會共用同一份看板。<b class="text-rose-500">班級代碼等於整班資料的鑰匙，請勿告訴家長</b>；家長只需要各自孩子的查詢碼。建議用「隨機產生」，不要用 main 或班級號碼這類容易猜到的代碼。</p>
-                    <p class="text-[11px] text-slate-400 mt-1">「切換」：新代碼沒用過時會建立空白看板。「搬移」：把目前的看板搬到新代碼，並刪除舊代碼的雲端資料；家長的查詢碼不受影響。</p>
+                    <p class="text-[11px] text-slate-400 mt-1">「切換」：新代碼沒用過時會建立空白看板，教師密碼為預設的 8888，請記得修改。「搬移」：把目前的看板搬到新代碼，並刪除舊代碼的雲端資料；家長的查詢碼不受影響。</p>
                 </div>
             </div>
 
