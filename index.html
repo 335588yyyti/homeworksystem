@@ -567,6 +567,19 @@
             if (db && currentUser) await connectBoard(true);
         };
 
+        // 查詢某個班級代碼是否已有資料（只回傳概要，給切換前確認用）。本機模式回傳 null
+        window.peekClassCode = async function(code) {
+            if (!window.isCloudConnected()) return null;
+            const snap = await getDoc(boardRefFor(code));
+            if (!snap.exists()) return { exists: false };
+            const data = snap.data();
+            return {
+                exists: true,
+                studentCount: Array.isArray(data.students) ? data.students.length : 0,
+                lastUpdated: data.lastUpdated || null
+            };
+        };
+
         // 把目前看板搬到新代碼，並刪除舊代碼的雲端資料。新代碼已有資料時不覆蓋
         window.moveBoardToClassCode = async function(code) {
             if (!window.isCloudConnected()) {
@@ -864,12 +877,30 @@
                         </div>
                         <h3 class="text-sm font-black text-slate-800">4. 班級共用代碼</h3>
                     </div>
-                    <div class="flex gap-2 mb-2">
-                        <input type="text" id="settings-class-code" maxlength="40" placeholder="例如: class-k7p2qx9a" class="flex-grow min-w-0 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-indigo-400">
+                    <div class="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 mb-3">
+                        <div class="text-[11px] font-bold text-slate-500">目前使用中的班級代碼</div>
+                        <div class="flex items-center gap-2">
+                            <span id="current-class-code" class="font-mono font-black text-base text-slate-800 tracking-wide break-all"></span>
+                            <button onclick="copyCurrentClassCode()" class="text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-1.5 py-0.5 rounded-md whitespace-nowrap transition-all flex-shrink-0">
+                                <i class="fa-regular fa-copy"></i> 複製
+                            </button>
+                        </div>
+                        <div id="current-class-code-warning" class="text-[11px] font-bold text-rose-600 mt-1 hidden">⚠ 這個代碼太容易被猜到或和別班重複，建議換成自訂代碼並「把目前資料搬過去」。</div>
+                    </div>
+
+                    <label for="settings-class-code" class="block text-[11px] font-bold text-slate-500 mb-1">自訂新的班級代碼</label>
+                    <div class="flex gap-2 mb-1.5">
+                        <input type="text" id="settings-class-code" maxlength="30" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="例如: lin601cs" oninput="onClassCodeInput()" class="flex-grow min-w-0 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-mono font-bold focus:outline-none focus:border-indigo-400">
                         <button onclick="fillRandomClassCode()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-2 rounded-xl text-xs whitespace-nowrap transition-all flex-shrink-0" title="產生一組不易猜到的代碼">
                             隨機產生
                         </button>
                     </div>
+                    <ul id="class-code-rules" class="text-[11px] font-bold space-y-0.5 mb-2">
+                        <li data-rule="length" class="text-slate-400">○ 6～30 個字元</li>
+                        <li data-rule="letter" class="text-slate-400">○ 至少 1 個英文字母</li>
+                        <li data-rule="digit" class="text-slate-400">○ 至少 1 個數字</li>
+                        <li data-rule="chars" class="text-slate-400">○ 只用英文字母、數字、- 或 _（英文不分大小寫）</li>
+                    </ul>
                     <div class="grid grid-cols-2 gap-2 mb-2">
                         <button onclick="updateClassCode()" class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold px-3 py-2 rounded-xl text-xs whitespace-nowrap transition-all">
                             切換到此代碼
@@ -878,8 +909,11 @@
                             把目前資料搬過去
                         </button>
                     </div>
-                    <p class="text-[11px] text-slate-400">教室電腦和老師手機輸入相同代碼，就會共用同一份看板。<b class="text-rose-500">班級代碼等於整班資料的鑰匙，請勿告訴家長</b>；家長只需要各自孩子的查詢碼。建議用「隨機產生」，不要用 main 或班級號碼這類容易猜到的代碼。</p>
-                    <p class="text-[11px] text-slate-400 mt-1">「切換」：新代碼沒用過時會建立空白看板，教師密碼為預設的 8888，請記得修改。「搬移」：把目前的看板搬到新代碼，並刪除舊代碼的雲端資料；家長的查詢碼不受影響。</p>
+                    <div class="text-[11px] text-slate-500 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-2 leading-relaxed">
+                        <b>好記又不會和別班重複的取法：</b>學校英文縮寫＋班級＋自己的代號，例如 <span class="font-mono">lin601cs</span>、<span class="font-mono">hs602wang</span>。設定好後請抄在記事本保存。
+                    </div>
+                    <p class="text-[11px] text-slate-400">教室電腦和老師手機輸入相同代碼，就會共用同一份看板。<b class="text-rose-500">班級代碼等於整班資料的鑰匙，請勿告訴家長</b>；家長只需要各自孩子的查詢碼。</p>
+                    <p class="text-[11px] text-slate-400 mt-1">「切換」：代碼已有班級時會先顯示該班資訊讓你確認；沒人用過時會建立空白看板，教師密碼為預設的 8888。切換後需輸入該班的教師密碼。「搬移」：把目前的看板搬到新代碼，並刪除舊代碼的雲端資料；家長的查詢碼不受影響。</p>
                 </div>
             </div>
 
@@ -1164,7 +1198,9 @@
                 renderSettingsStudents();
                 document.getElementById('settings-slogan-title').value = window.state.sloganTitle;
                 document.getElementById('settings-slogan-sub').value = window.state.sloganSub;
-                document.getElementById('settings-class-code').value = window.getClassCode();
+                document.getElementById('settings-class-code').value = '';
+                onClassCodeInput();
+                renderCurrentClassCode();
             }
         }
 
@@ -1794,15 +1830,56 @@
             showToast('教師密碼已更新！');
         }
 
+        // 自訂班級代碼的規則：夠長、英數混合，才不容易被猜到或和別班撞名
+        function checkClassCode(code) {
+            return {
+                length: code.length >= 6 && code.length <= 30,
+                letter: /[a-z]/.test(code),
+                digit: /[0-9]/.test(code),
+                chars: code.length > 0 && /^[a-z0-9_-]+$/.test(code)
+            };
+        }
+
+        function isStrongClassCode(code) {
+            return Object.values(checkClassCode(code)).every(Boolean);
+        }
+
+        function onClassCodeInput() {
+            const input = document.getElementById('settings-class-code');
+            // 英文一律轉小寫，避免大小寫打錯變成另一個班級
+            const lower = input.value.toLowerCase();
+            if (input.value !== lower) input.value = lower;
+            const code = lower.trim();
+            const result = checkClassCode(code);
+            document.querySelectorAll('#class-code-rules li').forEach(li => {
+                const passed = result[li.dataset.rule];
+                const text = li.textContent.replace(/^[○✓✗]\s*/, '');
+                li.textContent = `${!code ? '○' : passed ? '✓' : '✗'} ${text}`;
+                li.className = !code ? 'text-slate-400' : passed ? 'text-emerald-600' : 'text-rose-600';
+            });
+        }
+
+        function renderCurrentClassCode() {
+            const code = window.getClassCode();
+            document.getElementById('current-class-code').textContent = code;
+            document.getElementById('current-class-code-warning').classList.toggle('hidden', isStrongClassCode(code));
+        }
+
+        function copyCurrentClassCode() {
+            copyText(window.getClassCode(), `已複製班級代碼：${window.getClassCode()}`, '請複製這個班級代碼：');
+        }
+
         function fillRandomClassCode() {
-            document.getElementById('settings-class-code').value = 'class-' + randomString('abcdefghjkmnpqrstuvwxyz23456789', 10);
+            document.getElementById('settings-class-code').value = 'class' + randomString('23456789', 2) + randomString('abcdefghjkmnpqrstuvwxyz23456789', 6);
+            onClassCodeInput();
         }
 
         function readClassCodeInput() {
-            const code = document.getElementById('settings-class-code').value.trim();
-            if (!/^[A-Za-z0-9_-]{1,40}$/.test(code)) {
+            const code = document.getElementById('settings-class-code').value.trim().toLowerCase();
+            if (!isStrongClassCode(code)) {
                 window.soundEffect.playAlert();
-                showToast('代碼只能使用英文字母、數字、- 或 _', false);
+                showToast('代碼需 6～30 個字元，並同時包含英文字母和數字', false);
+                onClassCodeInput();
                 return null;
             }
             if (code === window.getClassCode()) {
@@ -1825,7 +1902,10 @@
                     return;
                 }
                 window.soundEffect.playSuccess();
-                showToast(result === 'moved' ? `已搬移到班級代碼【${code}】` : `已記錄代碼【${code}】(目前為本機模式)`);
+                renderCurrentClassCode();
+                document.getElementById('settings-class-code').value = '';
+                onClassCodeInput();
+                showToast(result === 'moved' ? `已搬移到班級代碼【${code}】，請記下新代碼` : `已記錄代碼【${code}】(目前為本機模式)`);
             } catch (err) {
                 console.error("搬移班級代碼失敗:", err);
                 window.soundEffect.playAlert();
@@ -1836,9 +1916,35 @@
         async function updateClassCode() {
             const code = readClassCodeInput();
             if (!code) return;
+
+            // 先查這個代碼有沒有人用，避免不小心切到別人的班級
+            let info = null;
+            try {
+                info = await window.peekClassCode(code);
+            } catch (err) {
+                console.warn("查詢班級代碼失敗:", err);
+                showToast('無法確認代碼狀態，請稍後再試', false);
+                return;
+            }
+            if (info && info.exists) {
+                const updated = info.lastUpdated ? new Date(info.lastUpdated).toLocaleString('zh-TW') : '不明';
+                if (!confirm(`代碼【${code}】已經有一個班級在使用：\n・${info.studentCount} 位學生\n・最後更新：${updated}\n\n如果這是你自己的班級，按「確定」切換過去（需要輸入該班的教師密碼）。\n如果不是，請按「取消」，換一個代碼，避免改到別人的資料。`)) return;
+            } else if (info) {
+                if (!confirm(`代碼【${code}】還沒有人使用。\n\n要用它建立一個新的空白班級嗎？（教師密碼為預設的 8888）\n\n如果是要把目前的資料換到這個代碼，請改按「把目前資料搬過去」。`)) return;
+            }
+
             window.soundEffect.playSuccess();
             await window.changeClassCode(code);
-            showToast(window.isCloudConnected() ? `已切換到班級代碼【${code}】` : `已記錄代碼【${code}】(目前為本機模式)`);
+            renderCurrentClassCode();
+            document.getElementById('settings-class-code').value = '';
+            onClassCodeInput();
+            if (window.isCloudConnected()) {
+                // 切換班級後要用該班自己的教師密碼重新解鎖
+                lockTeacherSession();
+                showToast(`已切換到班級代碼【${code}】，請用該班教師密碼解鎖`);
+            } else {
+                showToast(`已記錄代碼【${code}】(目前為本機模式)`);
+            }
         }
 
         function renderSettingsStudents() {
