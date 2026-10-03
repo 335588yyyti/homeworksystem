@@ -1,11 +1,18 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 班級共用看板：任何已登入（含匿名登入）的裝置都能讀寫，靠「班級代碼」區分各班
+    // 班級共用看板：只能用完整的班級代碼讀取單一份（get），不能列出所有班級（list）
     match /artifacts/{appId}/public/data/checkpoint_boards/{classCode} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null
+      allow get: if request.auth != null;
+      allow create, update, delete: if request.auth != null
         && classCode.matches('^[A-Za-z0-9_-]{1,40}$');
+    }
+
+    // 家長查詢：每位學生一份摘要，只能用 8 碼查詢碼讀取單一份，不能列出
+    match /artifacts/{appId}/public/data/parent_views/{parentCode} {
+      allow get: if request.auth != null;
+      allow create, update, delete: if request.auth != null
+        && parentCode.matches('^[A-Z0-9]{8}$');
     }
 
     // 舊版每台裝置自己的資料：只有本人能讀（首次連線時搬到班級看板用）
