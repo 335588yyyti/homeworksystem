@@ -8,7 +8,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         // 全站字級整體放大一級（座號按鈕的字級另外依格子大小自動計算，不受影響）
-        tailwind.config = {
+        if (window.tailwind) tailwind.config = {
             theme: {
                 extend: {
                     fontSize: {
