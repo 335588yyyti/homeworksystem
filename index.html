@@ -102,6 +102,10 @@
         import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
+        // Firebase 專案設定：從 Firebase 主控台「專案設定 → 你的應用程式 → SDK 設定」複製過來。
+        // 保持 null 時為純本機模式（資料只存在這台裝置的瀏覽器）。
+        const FIREBASE_CONFIG = null;
+
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'classroom-checkpoint-app';
         const CLASS_CODE_KEY = 'checkpoint_class_code';
         let db = null;
@@ -479,7 +483,7 @@
 
         async function initCloudFirebase() {
             try {
-                let firebaseConfig = null;
+                let firebaseConfig = FIREBASE_CONFIG;
                 if (typeof __firebase_config !== 'undefined') {
                     try {
                         firebaseConfig = JSON.parse(__firebase_config);
