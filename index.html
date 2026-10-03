@@ -171,6 +171,38 @@
             }
         };
 
+        // 一份全新班級看板的預設內容（新代碼、首次使用時套用）
+        window.createDefaultBoard = function() {
+            return {
+                sloganTitle: '未訂正完成，不能下課！ 🔔',
+                sloganSub: '請自律完成訂正，完成後記得點擊個人座號銷單喔！',
+
+                // 預設 28 人，座號純數字
+                students: Array.from({ length: 28 }, (_, i) => ({
+                    id: i + 1,
+                    name: `${i + 1}`
+                })),
+                // 只增不減的學生 ID 計數器，避免新學生沿用已刪除學生的 ID 與紅燈紀錄
+                nextStudentId: 29,
+
+                assignments: [
+                    '國習', '國作', '甲本', '乙本', '直行', '圈詞', '國卷',
+                    '閱讀', '數課', '數習', '數練', '數卷', '回條', '繳費', '讀報'
+                ],
+
+                assignmentStatuses: {},
+
+                slots: [
+                    { id: 1, assignment: '國習' },
+                    { id: 2, assignment: '國作' },
+                    { id: 3, assignment: '數課' },
+                    { id: 4, assignment: '數習' },
+                    { id: 5, assignment: '回條' },
+                    { id: 6, assignment: '閱讀' }
+                ]
+            };
+        };
+
         // 核心應用狀態
         window.state = {
             currentTab: 'dashboard',
@@ -181,32 +213,7 @@
             pendingTeacherAction: null,
             targetCustomSlotIndex: null,
 
-            sloganTitle: '未訂正完成，不能下課！ 🔔',
-            sloganSub: '請自律完成訂正，完成後記得點擊個人座號銷單喔！',
-
-            // 預設 28 人，座號純數字
-            students: Array.from({ length: 28 }, (_, i) => ({
-                id: i + 1,
-                name: `${i + 1}`
-            })),
-            // 只增不減的學生 ID 計數器，避免新學生沿用已刪除學生的 ID 與紅燈紀錄
-            nextStudentId: 29,
-
-            assignments: [
-                '國習', '國作', '甲本', '乙本', '直行', '圈詞', '國卷',
-                '閱讀', '數課', '數習', '數練', '數卷', '回條', '繳費', '讀報'
-            ],
-
-            assignmentStatuses: {},
-
-            slots: [
-                { id: 1, assignment: '國習' },
-                { id: 2, assignment: '國作' },
-                { id: 3, assignment: '數課' },
-                { id: 4, assignment: '數習' },
-                { id: 5, assignment: '回條' },
-                { id: 6, assignment: '閱讀' }
-            ],
+            ...window.createDefaultBoard(),
 
             parentSearch: {
                 studentId: 1
@@ -379,7 +386,8 @@
         }
 
         // 連線到「班級共用看板」：同一個班級代碼的所有裝置讀寫同一份資料
-        async function connectBoard() {
+        // startFreshIfMissing：切換到還沒有資料的新代碼時，從空白預設開始，而不是複製目前班級的資料
+        async function connectBoard(startFreshIfMissing = false) {
             if (!db || !currentUser) return;
 
             if (unsubscribeSnapshot) {
@@ -411,6 +419,12 @@
                     window.saveLocalBackup();
                     rerenderCurrentView();
                     window.updateCloudStatusBadge('synced');
+                } else if (firstSnapshot && startFreshIfMissing) {
+                    // 新班級：沿用目前的教師密碼，其餘全部重設為預設值
+                    Object.assign(window.state, window.createDefaultBoard());
+                    window.state.parentSearch.studentId = 1;
+                    rerenderCurrentView();
+                    window.syncStateToCloud(true);
                 } else {
                     if (firstSnapshot) {
                         try {
@@ -432,10 +446,21 @@
         }
 
         window.changeClassCode = async function(code) {
+            // 切換前先把尚未寫入的變更存回原本的班級，避免寫到新班級去
+            if (window.isCloudConnected() && hasLocalPendingChanges()) {
+                if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
+                syncDebounceTimer = null;
+                syncPending = false;
+                try {
+                    await setDoc(cloudDocRef, buildPayload());
+                } catch(e) {
+                    console.warn("切換前存檔失敗:", e);
+                }
+            }
             try {
                 localStorage.setItem(CLASS_CODE_KEY, code);
             } catch(e) {}
-            if (db && currentUser) await connectBoard();
+            if (db && currentUser) await connectBoard(true);
         };
 
         async function initCloudFirebase() {
@@ -691,7 +716,7 @@
                             套用
                         </button>
                     </div>
-                    <p class="text-[11px] text-slate-400">教室電腦、老師手機、家長手機輸入相同代碼，就會看到同一份看板。切換到新代碼時，會用目前的資料建立該班看板。</p>
+                    <p class="text-[11px] text-slate-400">教室電腦、老師手機、家長手機輸入相同代碼，就會看到同一份看板。輸入還沒用過的新代碼時，會建立一份全新的空白看板（教師密碼沿用目前的）。</p>
                 </div>
             </div>
 
