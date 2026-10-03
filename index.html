@@ -4,25 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        // 全站字級整體放大一級（座號按鈕的字級另外依格子大小自動計算，不受影響）
-        if (window.tailwind) tailwind.config = {
-            theme: {
-                extend: {
-                    fontSize: {
-                        xs: ['0.875rem', { lineHeight: '1.25rem' }],
-                        sm: ['1rem', { lineHeight: '1.5rem' }],
-                        base: ['1.125rem', { lineHeight: '1.75rem' }],
-                        lg: ['1.25rem', { lineHeight: '1.75rem' }],
-                        xl: ['1.375rem', { lineHeight: '1.875rem' }],
-                        '2xl': ['1.625rem', { lineHeight: '2rem' }]
-                    }
-                }
-            }
-        };
-    </script>
+    <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
+    <link href="assets/tailwind.css" rel="stylesheet">
     <!-- Font Awesome Icons -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <!-- Google Fonts -->
@@ -60,7 +43,8 @@
         }
         @media (min-width: 1024px) {
             .dash-grid:not(.hidden) {
-                grid-template-columns: repeat(3, minmax(0, 1fr));
+                /* 欄數依作業框數量決定（4 框 2 欄、6 框 3 欄、8 框 4 欄），固定排成兩列 */
+                grid-template-columns: repeat(var(--slot-cols, 3), minmax(0, 1fr));
                 grid-auto-rows: minmax(220px, 1fr);
             }
         }
@@ -83,6 +67,25 @@
             line-height: 1;
             overflow: hidden;
             white-space: nowrap;
+        }
+        /* 待訂正的座號右上角加「!」記號，紅綠色弱的學生也能分辨 */
+        .seat-pending {
+            position: relative;
+        }
+        .seat-pending::after {
+            content: '!';
+            position: absolute;
+            top: 6%;
+            right: 8%;
+            width: 1.1em;
+            height: 1.1em;
+            border-radius: 9999px;
+            background: #fff;
+            color: #e11d48;
+            font-size: max(10px, calc(var(--seat-font) * 0.38));
+            line-height: 1.1em;
+            text-align: center;
+            font-weight: 900;
         }
         /* 三個字以上的座號（少見）縮小，避免超出按鈕 */
         .seat-btn.seat-long {
@@ -141,7 +144,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Firebase 專案設定：從 Firebase 主控台「專案設定 → 你的應用程式 → SDK 設定」複製過來。
         // 改成 null 即為純本機模式（資料只存在這台裝置的瀏覽器）。
@@ -170,14 +173,28 @@
         let resolveFirebaseReady;
         window.firebaseReady = new Promise(r => { resolveFirebaseReady = r; });
 
-        // 同步狀態：寫入進行中時不丟棄新的變更，改為完成後再補寫一次
-        let syncInFlight = false;
-        let syncPending = false;
+        // 同步狀態：存檔交給 Firebase 依序排隊寫入（離線時先存在這台裝置，恢復連線後自動上傳）
         let syncDebounceTimer = null;
+        let pendingWrites = 0;
 
         // 乾淨音效合成器 (Web Audio API)
+        // 音效開關存在這台裝置上（每台裝置各自設定，不會同步）
+        let soundEnabled = true;
+        try {
+            soundEnabled = localStorage.getItem('checkpoint_sound') !== 'off';
+        } catch(e) {}
+
         window.soundEffect = {
             ctx: null,
+            get enabled() {
+                return soundEnabled;
+            },
+            setEnabled(on) {
+                soundEnabled = on;
+                try {
+                    localStorage.setItem('checkpoint_sound', on ? 'on' : 'off');
+                } catch(e) {}
+            },
             init() {
                 if (!this.ctx) {
                     const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -188,6 +205,7 @@
                 }
             },
             playSuccess() {
+                if (!soundEnabled) return;
                 try {
                     this.init();
                     if (!this.ctx) return;
@@ -208,6 +226,7 @@
                 } catch(e) {}
             },
             playAlert() {
+                if (!soundEnabled) return;
                 try {
                     this.init();
                     if (!this.ctx) return;
@@ -226,6 +245,7 @@
                 } catch(e) {}
             },
             playToggle() {
+                if (!soundEnabled) return;
                 try {
                     this.init();
                     if (!this.ctx) return;
@@ -320,6 +340,9 @@
             } else if (status === 'syncing') {
                 badge.className = "flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[13px] font-bold whitespace-nowrap bg-amber-50 text-amber-700 border border-amber-200 animate-pulse";
                 badge.innerHTML = `<i class="fa-solid fa-arrows-rotate fa-spin text-amber-500 text-[12px]"></i><span class="hidden sm:inline">同步中</span>`;
+            } else if (status === 'offline') {
+                badge.className = "flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[13px] font-bold whitespace-nowrap bg-amber-50 text-amber-800 border border-amber-300";
+                badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span><span class="hidden sm:inline">離線中（修改已暫存）</span>`;
             } else if (status === 'retired') {
                 badge.className = "flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[13px] font-bold whitespace-nowrap bg-rose-50 text-rose-700 border border-rose-200";
                 badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span><span class="hidden sm:inline">班級代碼已清空</span>`;
@@ -355,11 +378,16 @@
             const deletes = [...pendingParentViewDeletes].filter(code => !views[code]);
             deletes.forEach(code => batch.delete(parentViewRef(code)));
             if (written.length === 0 && deletes.length === 0) return;
-            await batch.commit();
+            // 先記下已送出的內容，避免下一次存檔重複寫入；寫入失敗時再清掉，下次重送
             written.forEach(([code, key]) => publishedParentViews.set(code, key));
             deletes.forEach(code => {
                 pendingParentViewDeletes.delete(code);
                 publishedParentViews.delete(code);
+            });
+            await trackWrite(batch.commit()).catch(err => {
+                console.warn("家長查詢資料更新失敗:", err);
+                written.forEach(([code]) => publishedParentViews.delete(code));
+                deletes.forEach(code => pendingParentViewDeletes.add(code));
             });
         }
 
@@ -398,36 +426,47 @@
             };
         }
 
-        async function performSync() {
-            syncDebounceTimer = null;
+        function refreshSyncBadge() {
             if (!window.isCloudConnected()) return;
-            if (syncInFlight) {
-                // 上一筆還沒寫完：記下來，完成後再補寫，不丟棄這次的變更
-                syncPending = true;
-                return;
-            }
-            syncInFlight = true;
-            syncPending = false;
-            try {
-                // 不使用 merge：整份覆蓋，已刪除的作業狀態才會真的從雲端移除
-                await setDoc(cloudDocRef, buildPayload());
-                try {
-                    await publishParentViews();
-                } catch (err) {
-                    console.warn("家長查詢資料更新失敗:", err);
-                }
-                if (!syncPending) window.updateCloudStatusBadge('synced');
-            } catch (err) {
-                console.error("雲端存檔異常:", err);
-                window.updateCloudStatusBadge('error');
-            } finally {
-                syncInFlight = false;
-                if (syncPending) performSync();
+            if (!navigator.onLine) {
+                window.updateCloudStatusBadge('offline');
+            } else if (pendingWrites > 0 || syncDebounceTimer !== null) {
+                window.updateCloudStatusBadge('syncing');
+            } else {
+                window.updateCloudStatusBadge('synced');
             }
         }
 
+        // 追蹤送出的寫入：全部被雲端確認後狀態燈才變回「已連線存檔」
+        function trackWrite(promise) {
+            pendingWrites++;
+            refreshSyncBadge();
+            return promise.then(() => {
+                pendingWrites--;
+                refreshSyncBadge();
+            }, (err) => {
+                pendingWrites--;
+                console.error("雲端存檔異常:", err);
+                window.updateCloudStatusBadge('error');
+                throw err;
+            });
+        }
+
+        window.addEventListener('online', refreshSyncBadge);
+        window.addEventListener('offline', refreshSyncBadge);
+
+        function performSync() {
+            syncDebounceTimer = null;
+            if (!window.isCloudConnected()) return;
+            // 不等雲端回應：Firebase 會依序排隊寫入，不會遺漏或亂序。
+            // 不使用 merge：整份覆蓋，已刪除的作業狀態才會真的從雲端移除
+            trackWrite(setDoc(cloudDocRef, buildPayload())).catch(() => {});
+            publishParentViews().catch(err => console.warn("家長查詢資料更新失敗:", err));
+        }
+
+        // 還有變更在等待送出（存檔前的 0.3 秒緩衝）時，不要用雲端資料覆蓋本機
         function hasLocalPendingChanges() {
-            return syncInFlight || syncPending || syncDebounceTimer !== null;
+            return syncDebounceTimer !== null;
         }
 
         window.syncStateToCloud = function(immediate = false) {
@@ -436,14 +475,13 @@
             window.saveLocalBackup();
             if (!window.isCloudConnected()) return;
 
-            window.updateCloudStatusBadge('syncing');
-
             if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
             if (immediate) {
                 syncDebounceTimer = null;
                 performSync();
             } else {
                 syncDebounceTimer = setTimeout(performSync, 300);
+                refreshSyncBadge();
             }
         };
 
@@ -516,6 +554,7 @@
             if (tab === 'parent') window.initParentView();
             if (tab === 'settings') {
                 window.renderCurrentClassCode();
+                window.renderSlotCountButtons();
                 // 老師正在設定頁打字時，不要把輸入框整個重建掉
                 const active = document.activeElement;
                 const editing = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') &&
@@ -551,6 +590,11 @@
 
             unsubscribeSnapshot = onSnapshot(boardRef, async (snapshot) => {
                 if (cloudDocRef !== boardRef) return;
+                // 離線時本機快取還沒有這份看板：先等連上雲端再判斷，避免誤把本機資料當成新班級上傳
+                if (!snapshot.exists() && snapshot.metadata.fromCache) {
+                    refreshSyncBadge();
+                    return;
+                }
                 const firstSnapshot = isFirstSnapshot;
                 isFirstSnapshot = false;
 
@@ -569,7 +613,7 @@
                     window.applyBoardData(snapshot.data());
                     window.saveLocalBackup();
                     rerenderCurrentView();
-                    window.updateCloudStatusBadge('synced');
+                    refreshSyncBadge();
                     // 開啟看板時同步一次家長查詢資料（沒變的不會重寫）
                     if (firstSnapshot) publishParentViews().catch(err => console.warn("家長查詢資料更新失敗:", err));
                 } else if (firstSnapshot && (startFreshIfMissing || cleared)) {
@@ -606,7 +650,6 @@
             }
             if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
             syncDebounceTimer = null;
-            syncPending = false;
             cloudDocRef = null;
             window.state.boardRetired = true;
             window.updateCloudStatusBadge('retired');
@@ -614,16 +657,10 @@
         }
 
         window.changeClassCode = async function(code, reuseCleared = false) {
-            // 切換前先把尚未寫入的變更存回原本的班級，避免寫到新班級去
+            // 切換前先把尚未送出的變更存回原本的班級，避免寫到新班級去
             if (window.isCloudConnected() && hasLocalPendingChanges()) {
-                if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
-                syncDebounceTimer = null;
-                syncPending = false;
-                try {
-                    await setDoc(cloudDocRef, buildPayload());
-                } catch(e) {
-                    console.warn("切換前存檔失敗:", e);
-                }
+                clearTimeout(syncDebounceTimer);
+                performSync();
             }
             try {
                 localStorage.setItem(CLASS_CODE_KEY, code);
@@ -661,8 +698,7 @@
 
             if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
             syncDebounceTimer = null;
-            syncPending = false;
-            await setDoc(newRef, buildPayload());
+            await trackWrite(setDoc(newRef, buildPayload()));
             try {
                 localStorage.setItem(CLASS_CODE_KEY, code);
             } catch(e) {}
@@ -694,11 +730,21 @@
 
                 const app = initializeApp(firebaseConfig);
                 auth = getAuth(app);
-                db = getFirestore(app);
+                try {
+                    // 離線儲存：資料和尚未上傳的修改存在這台裝置，斷線、關掉網頁都不會遺失
+                    db = initializeFirestore(app, {
+                        localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+                    });
+                } catch (e) {
+                    console.warn("無法啟用離線儲存，改用一般模式:", e);
+                    db = getFirestore(app);
+                }
 
+                // 先還原上次的登入狀態（離線時也能用），沒有才重新匿名登入
+                if (auth.authStateReady) await auth.authStateReady();
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                     await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
+                } else if (!auth.currentUser) {
                     await signInAnonymously(auth);
                 }
 
@@ -733,6 +779,7 @@
             window.loadLocalBackup();
             window.renderSlogan();
             window.renderDashboard();
+            window.renderSoundToggle();
             initCloudFirebase();
         });
     </script>
@@ -751,6 +798,11 @@
                         <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> 連線中
                     </span>
                 </div>
+                <!-- 音效開關：放在標題旁的空白處，上課時可一鍵靜音 -->
+                <button id="sound-toggle" onclick="toggleSound()" class="teacher-ui ml-1 sm:ml-3 flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-xl border-2 text-sm sm:text-base font-black whitespace-nowrap shadow-sm transition-all bg-emerald-50 text-emerald-700 border-emerald-400 hover:bg-emerald-100" title="開啟／關閉點擊音效">
+                    <span id="sound-toggle-icon" class="text-lg leading-none">🔊</span>
+                    <span id="sound-toggle-text">音效：開</span>
+                </button>
             </div>
 
             <!-- 頁籤切換鈕 -->
@@ -870,7 +922,7 @@
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 pb-6">
 
             <!-- 左側設定 -->
-            <div class="settings-left lg:col-span-5 xl:col-span-7 2xl:col-span-8 flex flex-col gap-4">
+            <div class="settings-left lg:col-span-6 flex flex-col gap-4">
                 <!-- 作業項目設定 -->
                 <div class="settings-large bg-white border-2 border-slate-200 rounded-2xl p-4 board-shadow">
                     <div class="flex items-center gap-2 mb-3">
@@ -896,9 +948,17 @@
                         <div class="bg-amber-50 text-amber-600 p-1.5 rounded-lg border border-amber-100">
                             <i class="fa-solid fa-pen-to-square text-sm"></i>
                         </div>
-                        <h3 class="text-sm font-black text-slate-800">2. 看板標語編輯</h3>
+                        <h3 class="text-sm font-black text-slate-800">2. 看板設定</h3>
                     </div>
                     <div class="space-y-2.5">
+                        <div>
+                            <label class="block text-[13px] font-bold text-slate-500 mb-1">看板作業框數量（作業少時選 4 框，座號會更大）</label>
+                            <div id="slot-count-buttons" class="grid grid-cols-3 gap-2">
+                                <button onclick="setSlotCount(4)" data-count="4" class="py-2 rounded-xl text-sm font-black border-2 transition-all">4 框</button>
+                                <button onclick="setSlotCount(6)" data-count="6" class="py-2 rounded-xl text-sm font-black border-2 transition-all">6 框</button>
+                                <button onclick="setSlotCount(8)" data-count="8" class="py-2 rounded-xl text-sm font-black border-2 transition-all">8 框</button>
+                            </div>
+                        </div>
                         <div>
                             <label class="block text-[13px] font-bold text-slate-500 mb-1">主標語</label>
                             <input type="text" id="settings-slogan-title" maxlength="40" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-amber-400">
@@ -1007,7 +1067,7 @@
             </div>
 
             <!-- 右側學生座號管理 -->
-            <div class="settings-large roster-card lg:col-span-7 xl:col-span-5 2xl:col-span-4 bg-white border-2 border-slate-200 rounded-2xl p-4 board-shadow flex flex-col">
+            <div class="settings-large roster-card lg:col-span-6 bg-white border-2 border-slate-200 rounded-2xl p-4 board-shadow flex flex-col">
                 <div>
                     <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
                         <div class="flex items-center gap-2">
@@ -1018,16 +1078,16 @@
                         </div>
                         <div class="flex flex-wrap gap-2">
                             <button onclick="regenerateAllParentCodes()" class="bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200 text-xs font-bold px-2.5 py-1.5 rounded-xl whitespace-nowrap transition-all" title="全班重新產生查詢碼，舊的全部失效">
-                                <i class="fa-solid fa-rotate"></i> 全部重新產生
+                                <i class="fa-solid fa-rotate"></i> 全部連結重新產生
                             </button>
                             <button onclick="printParentCodes()" class="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 text-xs font-bold px-2.5 py-1.5 rounded-xl whitespace-nowrap transition-all">
                                 <i class="fa-solid fa-print"></i> 列印家長查詢碼
                             </button>
                             <button onclick="resetAllStudentsToGreen()" class="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-xs font-bold px-2.5 py-1.5 rounded-xl whitespace-nowrap transition-all">
-                                <i class="fa-solid fa-check-double"></i> 全班歸零(綠燈)
+                                <i class="fa-solid fa-check-double"></i> 全班訂正歸零
                             </button>
                             <button onclick="quickGenerateStudents(28)" class="bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200 text-xs font-bold px-2.5 py-1.5 rounded-xl whitespace-nowrap transition-all">
-                                重設28人
+                                全班人數重設為28人
                             </button>
                         </div>
                     </div>
@@ -1150,7 +1210,7 @@
         }
 
         const SEAT_DONE_CLASS = 'seat-btn bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm w-full h-full min-h-0 min-w-0 rounded-xl font-black flex items-center justify-center p-0';
-        const SEAT_PENDING_CLASS = 'seat-btn bg-rose-500 hover:bg-rose-600 text-white shadow-sm ring-2 ring-rose-300/80 ring-offset-1 w-full h-full min-h-0 min-w-0 rounded-xl font-black flex items-center justify-center p-0';
+        const SEAT_PENDING_CLASS = 'seat-btn seat-pending bg-rose-500 hover:bg-rose-600 text-white shadow-sm ring-2 ring-rose-300/80 ring-offset-1 w-full h-full min-h-0 min-w-0 rounded-xl font-black flex items-center justify-center p-0';
 
         // 使用者輸入的文字放進 innerHTML 前一律跳脫，避免破版或被注入腳本
         function escapeHtml(value) {
@@ -1262,6 +1322,25 @@
             return views;
         };
 
+        function renderSoundToggle() {
+            const btn = document.getElementById('sound-toggle');
+            if (!btn) return;
+            const on = window.soundEffect.enabled;
+            document.getElementById('sound-toggle-icon').textContent = on ? '🔊' : '🔇';
+            document.getElementById('sound-toggle-text').textContent = on ? '音效：開' : '音效：關';
+            btn.className = 'teacher-ui ml-1 sm:ml-3 flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-xl border-2 text-sm sm:text-base font-black whitespace-nowrap shadow-sm transition-all ' +
+                (on ? 'bg-emerald-50 text-emerald-700 border-emerald-400 hover:bg-emerald-100'
+                    : 'bg-rose-50 text-rose-700 border-rose-400 hover:bg-rose-100');
+            btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+        }
+
+        function toggleSound() {
+            window.soundEffect.setEnabled(!window.soundEffect.enabled);
+            renderSoundToggle();
+            if (window.soundEffect.enabled) window.soundEffect.playToggle();
+            showToast(window.soundEffect.enabled ? '已開啟音效' : '已關閉音效');
+        }
+
         function switchTab(tab, silent = false) {
             if (!silent) window.soundEffect.playToggle();
 
@@ -1294,6 +1373,7 @@
                 document.getElementById('settings-class-code').value = '';
                 onClassCodeInput();
                 renderCurrentClassCode();
+                renderSlotCountButtons();
             }
         }
 
@@ -1516,6 +1596,8 @@
             }
 
             const initialLayout = bestSeatLayout(window.state.students.length);
+            // 大螢幕固定兩列：4 框 2 欄、6 框 3 欄、8 框 4 欄
+            container.style.setProperty('--slot-cols', Math.max(1, Math.ceil(window.state.slots.length / 2)));
 
             window.state.slots.forEach((slot, index) => {
                 const card = document.createElement('div');
@@ -1536,7 +1618,7 @@
                                 ${index + 1}
                             </span>
                             <div class="relative min-w-0 flex-1 max-w-[220px]">
-                                <select onchange="onSlotAssignmentChange(${index}, this.value)" class="slot-select w-full appearance-none bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg pl-2.5 pr-7 py-0.5 font-black text-amber-950 text-xl focus:outline-none focus:border-amber-500 cursor-pointer truncate transition-all" title="${window.state.isTeacherUnlocked ? '' : '更換作業需教師密碼'}">
+                                <select onchange="onSlotAssignmentChange(${index}, this.value)" class="slot-select w-full appearance-none bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg pl-2.5 pr-7 py-0.5 font-black text-amber-950 text-xl focus:outline-none focus:border-amber-500 cursor-pointer truncate transition-colors" title="${window.state.isTeacherUnlocked ? '' : '更換作業需教師密碼'}">
                                     ${optionsHtml}
                                 </select>
                                 <i class="fa-solid fa-chevron-down text-[12px] text-amber-700 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none"></i>
@@ -1562,6 +1644,39 @@
                 container.appendChild(card);
             });
             layoutDashboard();
+        }
+
+        const SLOT_COUNT_OPTIONS = [4, 6, 8];
+
+        function renderSlotCountButtons() {
+            const current = window.state.slots.length;
+            document.querySelectorAll('#slot-count-buttons button').forEach(btn => {
+                const active = Number(btn.dataset.count) === current;
+                btn.className = 'py-2 rounded-xl text-sm font-black border-2 transition-all ' +
+                    (active ? 'bg-amber-400 border-amber-500 text-slate-900' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50');
+                btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+            });
+        }
+
+        // 調整看板上的作業框數量：增加時自動補上還沒放上看板的作業，減少時從最後一框移除
+        function setSlotCount(count) {
+            if (!SLOT_COUNT_OPTIONS.includes(count)) return;
+            const slots = window.state.slots;
+            if (count === slots.length) return;
+            if (count > slots.length) {
+                const used = new Set(slots.map(s => s.assignment));
+                const unused = window.state.assignments.filter(a => !used.has(a));
+                let nextId = slots.reduce((m, s) => Math.max(m, Number(s.id) || 0), 0) + 1;
+                while (slots.length < count) {
+                    slots.push({ id: nextId++, assignment: unused.shift() || window.state.assignments[0] || '未命名' });
+                }
+            } else {
+                slots.splice(count);
+            }
+            window.soundEffect.playSuccess();
+            renderSlotCountButtons();
+            window.syncStateToCloud();
+            showToast(`看板改為 ${count} 個作業框`);
         }
 
         function onSlotAssignmentChange(slotIndex, val) {

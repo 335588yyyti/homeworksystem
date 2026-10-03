@@ -1,0 +1,15 @@
+{
+  "name": "homeworksystem",
+  "private": true,
+  "description": "下課檢查站：作業與訂正追蹤看板",
+  "scripts": {
+    "build:css": "tailwindcss -c tailwind.config.js -i src/tailwind.css -o assets/tailwind.css --minify",
+    "check:css": "npm run build:css && git diff --exit-code -- assets/tailwind.css",
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "tailwindcss": "3.4.19",
+    "qrcodejs": "1.0.0"
+  }
+}

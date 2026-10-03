@@ -1,0 +1,37 @@
+name: 自動測試
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: 安裝套件
+        run: npm ci
+
+      - name: 確認 assets/tailwind.css 是最新的（改了 index.html 的 class 要執行 npm run build:css）
+        run: npm run check:css
+
+      - name: 安裝測試用瀏覽器
+        run: npx playwright install --with-deps chromium
+
+      - name: 執行測試
+        run: npm test
+
+      - name: 上傳測試報告
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report
+          retention-days: 7
