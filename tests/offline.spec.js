@@ -40,3 +40,14 @@ test('離線開啟網頁、本機沒有快取時，不會把本機資料當成�
     expect(cloud.board('main').students).toHaveLength(3);
     expect(page.writes.filter((p) => p.includes('checkpoint_boards'))).toEqual([]);
 });
+
+test('雲端額度用完時，狀態燈清楚提示', async ({ browser }) => {
+    const page = await openDevice(browser, createCloud());
+    await page.evaluate(() => { startTeacherSession(); applyRoleUI('teacher'); });
+    // 模擬 Firebase 回報「免費額度用完」
+    await page.evaluate(() => { window.__failWritesWith = 'resource-exhausted'; });
+    await page.click('#btn-slot-0-student-3');
+    await expect(page.locator('#cloud-sync-status')).toContainText('今日雲端額度已用完');
+    // 修改仍保留在這台電腦上
+    expect(await page.evaluate(() => state.assignmentStatuses['國習'][3])).toBe(false);
+});

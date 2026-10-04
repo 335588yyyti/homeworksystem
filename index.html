@@ -341,12 +341,17 @@
         window.updateCloudStatusBadge = function(status) {
             const badge = document.getElementById('cloud-sync-status');
             if (!badge) return;
+            badge.title = '';
             if (status === 'synced') {
                 badge.className = "flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[13px] font-bold whitespace-nowrap bg-emerald-50 text-emerald-700 border border-emerald-200";
                 badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span><span class="hidden sm:inline">已連線存檔</span>`;
             } else if (status === 'syncing') {
                 badge.className = "flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[13px] font-bold whitespace-nowrap bg-amber-50 text-amber-700 border border-amber-200 animate-pulse";
                 badge.innerHTML = `<i class="fa-solid fa-arrows-rotate fa-spin text-amber-500 text-[12px]"></i><span class="hidden sm:inline">同步中</span>`;
+            } else if (status === 'quota') {
+                badge.className = "flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[13px] font-bold whitespace-nowrap bg-rose-50 text-rose-700 border border-rose-200";
+                badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span><span class="hidden sm:inline">今日雲端額度已用完（修改先存在這台電腦）</span>`;
+                badge.title = 'Firebase 免費額度每天台灣時間下午 3～4 點重置，重置後會自動上傳';
             } else if (status === 'offline') {
                 badge.className = "flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[13px] font-bold whitespace-nowrap bg-amber-50 text-amber-800 border border-amber-300";
                 badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span><span class="hidden sm:inline">離線中（修改已暫存）</span>`;
@@ -496,9 +501,14 @@
             }, (err) => {
                 pendingWrites--;
                 console.error("雲端存檔異常:", err);
-                window.updateCloudStatusBadge('error');
+                window.updateCloudStatusBadge(isQuotaError(err) ? 'quota' : 'error');
                 throw err;
             });
+        }
+
+        // Firebase 免費方案當日額度用完時的錯誤（台灣時間下午 3～4 點重置）
+        function isQuotaError(err) {
+            return !!err && (err.code === 'resource-exhausted' || /quota/i.test(err.message || ''));
         }
 
         window.addEventListener('online', refreshSyncBadge);
@@ -514,11 +524,12 @@
             publishParentViews().catch(err => console.warn("家長查詢資料更新失敗:", err));
         }
 
+        // 家長查詢資料集中 2 秒後再上傳：老師連續點同一位學生（例如點錯又改回來）只算一次寫入
         function scheduleParentPublish() {
             clearTimeout(parentPublishTimer);
             parentPublishTimer = setTimeout(() => {
                 publishParentViews().catch(err => console.warn("家長查詢資料更新失敗:", err));
-            }, 300);
+            }, 2000);
         }
 
         // 只更新變動的那幾格（例如點一個座號），兩台裝置同時操作不同座號時不會互相覆蓋。
@@ -731,7 +742,7 @@
                 }
             }, (error) => {
                 console.warn("即時監聽異常:", error);
-                window.updateCloudStatusBadge('error');
+                window.updateCloudStatusBadge(isQuotaError(error) ? 'quota' : 'error');
             });
         }
 
@@ -1286,6 +1297,7 @@
     <script>
         const TEACHER_IDLE_MS = 90000;
         const MAX_STUDENTS = 40;
+        const MAX_ASSIGNMENTS = 50; // 與 firestore.rules 的上限一致
         const SLOT_NAME_MAX_FONT = 22;
         const SLOT_NAME_MIN_FONT = 12;
 
@@ -1824,6 +1836,13 @@
                 const name = document.getElementById('custom-assignment-name').value.trim();
                 if (name) {
                     if (!window.state.assignments.includes(name)) {
+                        if (window.state.assignments.length >= MAX_ASSIGNMENTS) {
+                            window.soundEffect.playAlert();
+                            showToast(`作業項目最多 ${MAX_ASSIGNMENTS} 項，請先到設定後台刪除用不到的`, false);
+                            renderDashboard();
+                            window.state.targetCustomSlotIndex = null;
+                            return;
+                        }
                         window.state.assignments.push(name);
                     }
                     applyAssignmentToSlot(window.state.targetCustomSlotIndex, name);
@@ -2139,6 +2158,11 @@
             if (window.state.assignments.includes(val)) {
                 window.soundEffect.playAlert();
                 showToast('作業已存在！', false);
+                return;
+            }
+            if (window.state.assignments.length >= MAX_ASSIGNMENTS) {
+                window.soundEffect.playAlert();
+                showToast(`作業項目最多 ${MAX_ASSIGNMENTS} 項，請先刪除用不到的`, false);
                 return;
             }
             window.soundEffect.playSuccess();

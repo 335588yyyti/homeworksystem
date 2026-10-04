@@ -16,6 +16,8 @@ const VIEWS = 'artifacts/classroom-checkpoint-app/public/data/parent_views/';
 const FIREBASE_STUB = `
 const call = (...args) => window.__fs(...args);
 const waitOnline = async () => { while (!navigator.onLine) await new Promise(r => setTimeout(r, 50)); };
+// 測試用：window.__failWritesWith = 'resource-exhausted' 時，寫入會像 Firebase 額度用完一樣失敗
+const maybeFail = () => { if (window.__failWritesWith) throw Object.assign(new Error('Quota exceeded.'), { code: window.__failWritesWith }); };
 const snap = (data, fromCache = false) => ({ exists: () => data !== null, data: () => data, metadata: { hasPendingWrites: false, fromCache } });
 export const initializeApp = () => ({});
 export const getAuth = () => ({ currentUser: { uid: 'user-' + Math.random().toString(36).slice(2) }, authStateReady: async () => {} });
@@ -34,16 +36,17 @@ export const updateDoc = async (ref, ...pairs) => {
         fields.push([field instanceof FieldPath ? field.segments : field.split('.'), JSON.parse(JSON.stringify(pairs[i + 1]))]);
     }
     await waitOnline();
+    maybeFail();
     await call('update', ref.path, fields);
 };
 export const getDoc = async (ref) => { await waitOnline(); return snap(await call('get', ref.path)); };
-export const setDoc = async (ref, data) => { const copy = JSON.parse(JSON.stringify(data)); await waitOnline(); await call('set', ref.path, copy); };
+export const setDoc = async (ref, data) => { const copy = JSON.parse(JSON.stringify(data)); await waitOnline(); maybeFail(); await call('set', ref.path, copy); };
 export const writeBatch = () => {
     const ops = [];
     return {
         set: (ref, data) => ops.push(['set', ref.path, JSON.parse(JSON.stringify(data))]),
         delete: (ref) => ops.push(['del', ref.path]),
-        commit: async () => { await waitOnline(); for (const op of ops) await call(...op); }
+        commit: async () => { await waitOnline(); maybeFail(); for (const op of ops) await call(...op); }
     };
 };
 export const onSnapshot = (ref, onNext) => {

@@ -1,23 +1,67 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // ---- 共用檢查：限制資料大小，避免有人亂寫入大量資料占用雲端空間 ----
+    function signedIn() {
+      return request.auth != null;
+    }
+    // 欄位不存在，或是長度不超過上限的清單
+    function listMax(data, field, max) {
+      return !(field in data) || (data[field] is list && data[field].size() <= max);
+    }
+    // 欄位不存在，或是項目數不超過上限的對照表
+    function mapMax(data, field, max) {
+      return !(field in data) || (data[field] is map && data[field].size() <= max);
+    }
+    // 欄位不存在，或是長度不超過上限的文字
+    function textMax(data, field, max) {
+      return !(field in data) || (data[field] is string && data[field].size() <= max);
+    }
+
+    // 班級看板：最多 40 位學生、50 項作業、8 個作業框
+    function validBoard(d) {
+      return d.size() <= 15
+        && listMax(d, 'students', 40)
+        && listMax(d, 'assignments', 50)
+        && listMax(d, 'slots', 8)
+        && mapMax(d, 'statuses', 60)
+        && mapMax(d, 'serializedStatuses', 60)
+        && textMax(d, 'teacherPin', 30)
+        && textMax(d, 'sloganTitle', 100)
+        && textMax(d, 'sloganSub', 200);
+    }
+
+    // 家長查詢摘要：一位學生的座號和各作業狀態
+    function validParentView(d) {
+      return d.size() <= 6
+        && listMax(d, 'items', 50)
+        && textMax(d, 'seat', 10);
+    }
+
     // 班級共用看板：只能用完整的班級代碼讀取單一份（get），不能列出所有班級（list）
     match /artifacts/{appId}/public/data/checkpoint_boards/{classCode} {
-      allow get: if request.auth != null;
-      allow create, update, delete: if request.auth != null
+      allow get: if signedIn();
+      allow create, update: if signedIn()
+        && classCode.matches('^[A-Za-z0-9_-]{1,40}$')
+        && validBoard(request.resource.data);
+      allow delete: if signedIn()
         && classCode.matches('^[A-Za-z0-9_-]{1,40}$');
     }
 
     // 家長查詢：每位學生一份摘要，只能用 6～8 碼查詢碼讀取單一份，不能列出
     match /artifacts/{appId}/public/data/parent_views/{parentCode} {
-      allow get: if request.auth != null;
-      allow create, update, delete: if request.auth != null
+      allow get: if signedIn();
+      allow create, update: if signedIn()
+        && parentCode.matches('^[A-Z0-9]{6,8}$')
+        && validParentView(request.resource.data);
+      allow delete: if signedIn()
         && parentCode.matches('^[A-Z0-9]{6,8}$');
     }
 
-    // 舊版每台裝置自己的資料：只有本人能讀（首次連線時搬到班級看板用）
+    // 舊版每台裝置自己的資料：只有本人能讀取或刪除（首次連線時搬到班級看板用），不再寫入新資料
     match /artifacts/{appId}/users/{userId}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, delete: if signedIn() && request.auth.uid == userId;
     }
 
     // 其他路徑一律禁止

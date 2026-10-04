@@ -81,8 +81,10 @@ test('重新開網頁時不重寫全班的家長查詢資料，只上傳有變�
 
     await page.evaluate(() => { startTeacherSession(); applyRoleUI('teacher'); });
     await page.click('#btn-slot-0-student-4');
-    await page.waitForTimeout(800);
-    expect(viewWrites()).toBe(1); // 點一格：只更新那位學生
+    await page.click('#btn-slot-0-student-4'); // 點錯又改回來
+    await page.click('#btn-slot-0-student-4');
+    await page.waitForTimeout(2600);
+    expect(viewWrites()).toBe(1); // 2 秒內連點同一位學生：只上傳一次
 
     // 超過 7 天：整份重新上傳一次，以防雲端資料被手動刪除或不一致
     page.writes.length = 0;

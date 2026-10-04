@@ -115,3 +115,15 @@ test('8 框加上「全部完成」按鈕時，作業名稱仍完整顯示', asy
         await page.context().close();
     }
 });
+
+test('作業項目最多 50 項（與雲端安全規則一致）', async ({ browser }) => {
+    const page = await openDevice(browser, createCloud());
+    await unlockTeacher(page, 'settings');
+    await page.evaluate(() => {
+        state.assignments = Array.from({ length: 50 }, (_, i) => '作業' + i);
+        document.getElementById('new-assignment-input').value = '第51項';
+        addAssignment();
+    });
+    expect(await page.evaluate(() => state.assignments.length)).toBe(50);
+    await expect(page.locator('#toast-msg')).toContainText('最多 50 項');
+});
