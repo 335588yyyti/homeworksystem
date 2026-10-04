@@ -96,3 +96,16 @@ test('重新開網頁時不重寫全班的家長查詢資料，只上傳有變�
     await page.reload();
     await expect.poll(viewWrites).toBe(28);
 });
+
+test('輸入框的範例查詢碼不可能是真的查詢碼', async ({ browser }) => {
+    const parent = await openDevice(browser, createCloud(), { query: '?p' });
+    const placeholder = await parent.getAttribute('#parent-code-input', 'placeholder');
+    const example = placeholder.match(/[A-Z0-9]{6,8}/)[0];
+    // 查詢碼只會用到不容易看錯的字元，範例必須含有其中沒有的字元（例如 0、1、I、O）
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    expect([...example].some((ch) => !alphabet.includes(ch))).toBe(true);
+    // 產生 2000 組查詢碼，確認沒有一組是範例
+    const codes = await parent.evaluate(() => Array.from({ length: 2000 }, () => generateParentCode()));
+    expect(codes).not.toContain(example);
+    expect(codes.every((c) => [...c].every((ch) => alphabet.includes(ch)))).toBe(true);
+});

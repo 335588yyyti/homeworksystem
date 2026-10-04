@@ -978,7 +978,7 @@
 
             <div>
                 <div class="flex gap-2">
-                    <input type="text" id="parent-code-input" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="查詢碼，例如 K7P2QX" aria-label="查詢碼" onkeydown="if(event.key === 'Enter') lookupParentCode()" class="flex-grow min-w-0 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-base font-black tracking-widest uppercase text-slate-800 focus:outline-none focus:border-indigo-400">
+                    <input type="text" id="parent-code-input" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="查詢碼，例如 ABC123" aria-label="查詢碼" onkeydown="if(event.key === 'Enter') lookupParentCode()" class="flex-grow min-w-0 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-base font-black tracking-widest uppercase text-slate-800 focus:outline-none focus:border-indigo-400">
                     <button onclick="lookupParentCode()" class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold px-4 py-2 rounded-xl text-sm whitespace-nowrap transition-all flex-shrink-0">
                         查詢
                     </button>
@@ -1305,6 +1305,7 @@
         window.IS_PARENT_MODE = new URLSearchParams(location.search).has('p');
         const PARENT_CODE_KEY = 'checkpoint_parent_code';
         // 去掉容易看錯的 I、O、0、1
+        // 輸入框的範例「ABC123」含有數字 1，所以永遠不會是真正的查詢碼
         const PARENT_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
         // 新的查詢碼為 6 碼（約 10 億種組合）；早期發出的 8 碼仍然有效
         const PARENT_CODE_LENGTH = 6;
