@@ -1023,7 +1023,12 @@
             try { history.replaceState(null, '', location.pathname); } catch(e) {}
             let existing = null;
             try { existing = localStorage.getItem(CLASS_CODE_KEY); } catch(e) {}
-            if (existing && !confirm(`這個連結會幫你建立一個全新的空白班級看板。\n\n這台裝置目前使用班級代碼【${existing}】，建立後會切換到新的班級（原班級的資料仍保留在雲端，之後在設定後台輸入原代碼就能切回）。\n\n要建立全新的班級看板嗎？`)) return;
+            if (existing && !confirm(`這個連結會幫你建立一個全新的空白班級看板。\n\n這台裝置目前使用班級代碼【${existing}】，建立後會切換到新的班級（原班級的資料仍保留在雲端，之後在設定後台輸入原代碼就能切回）。\n\n要建立全新的班級看板嗎？`)) {
+                // 不建立：回到這台裝置原本的班級
+                window.loadLocalBackup();
+                rerenderCurrentView();
+                return;
+            }
             let code = '';
             for (let i = 0; i < 5; i++) {
                 code = window.generateClassCode();
@@ -1108,7 +1113,8 @@
                 initCloudFirebase();
                 return;
             }
-            window.loadLocalBackup();
+            // 打開「分享全新看板」連結：一開始就顯示全新的空白看板（全部綠燈），不顯示這台裝置原本班級的進度
+            if (!NEW_BOARD_REQUESTED) window.loadLocalBackup();
             window.renderSlogan();
             window.renderDashboard();
             window.renderSoundToggle();
