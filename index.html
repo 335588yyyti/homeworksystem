@@ -647,6 +647,7 @@
 
         function rerenderCurrentView() {
             window.renderSlogan();
+            window.refreshPendingList();
             const tab = window.state.currentTab;
             if (tab === 'dashboard') window.renderDashboard();
             if (tab === 'parent') window.initParentView();
@@ -906,6 +907,12 @@
                 <button id="sound-toggle" onclick="toggleSound()" class="teacher-ui ml-1 sm:ml-3 flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-xl border-2 text-sm sm:text-base font-black whitespace-nowrap shadow-sm transition-all bg-emerald-50 text-emerald-700 border-emerald-400 hover:bg-emerald-100" title="開啟／關閉點擊音效">
                     <span id="sound-toggle-icon" class="text-lg leading-none">🔊</span>
                     <span id="sound-toggle-text">音效：開</span>
+                </button>
+                <!-- 未訂正名單：一眼看出每位同學還有幾項要訂正 -->
+                <button id="pending-list-button" onclick="openPendingList()" class="teacher-ui ml-1 sm:ml-2 flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-xl border-2 text-sm sm:text-base font-black whitespace-nowrap shadow-sm transition-all bg-indigo-50 text-indigo-700 border-indigo-400 hover:bg-indigo-100" title="查看所有還有作業要訂正的同學">
+                    <span class="text-lg leading-none">📋</span>
+                    <span>未訂正名單</span>
+                    <span id="pending-list-count" class="hidden min-w-[1.5rem] px-1.5 rounded-full bg-rose-500 text-white text-sm leading-6 text-center"></span>
                 </button>
             </div>
 
@@ -1250,6 +1257,24 @@
         </div>
     </div>
 
+    <!-- 未訂正名單（全螢幕，方便投影給全班看） -->
+    <div id="modal-pending-list" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-stretch justify-center p-3 sm:p-6 hidden" onclick="if (event.target === this) closePendingList()">
+        <div class="bg-white border-2 border-slate-200 rounded-3xl w-full max-w-[1600px] flex flex-col min-h-0 board-shadow">
+            <div class="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-slate-100 flex-shrink-0">
+                <div>
+                    <h3 class="text-2xl font-black text-slate-800">📋 未訂正名單</h3>
+                    <p id="pending-list-summary" class="text-base font-bold text-slate-500"></p>
+                </div>
+                <button onclick="closePendingList()" class="bg-slate-800 hover:bg-slate-900 text-white font-black px-5 py-2 rounded-xl text-base transition-all">
+                    關閉
+                </button>
+            </div>
+            <div id="pending-list-body" class="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5">
+                <!-- 動態產生 -->
+            </div>
+        </div>
+    </div>
+
     <!-- 2. 重複警告 Alert Modal -->
     <div id="modal-alert" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
         <div class="bg-white border-2 border-slate-200 rounded-3xl p-5 w-full max-w-sm board-shadow text-center">
@@ -1440,6 +1465,10 @@
                     : 'bg-rose-50 text-rose-700 border-rose-400 hover:bg-rose-100');
             btn.setAttribute('aria-pressed', on ? 'true' : 'false');
         }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && isPendingListOpen()) closePendingList();
+        });
 
         function toggleSound() {
             window.soundEffect.setEnabled(!window.soundEffect.enabled);
@@ -1761,6 +1790,7 @@
                 container.appendChild(card);
             });
             layoutDashboard();
+            refreshPendingList();
         }
 
         const SLOT_COUNT_OPTIONS = [4, 6, 8];
@@ -1794,6 +1824,71 @@
             renderSlotCountButtons();
             window.syncStateToCloud();
             showToast(`看板改為 ${count} 個作業框`);
+        }
+
+        // ---- 未訂正名單 ----
+        // 每位同學還沒訂正的作業（依名冊順序），全部完成的同學不列出
+        function getPendingByStudent() {
+            const onBoard = new Set(window.state.slots.map(s => s.assignment));
+            return window.state.students.map(st => ({
+                student: st,
+                pending: window.state.assignments
+                    .filter(a => !getStudentStatus(a, st.id))
+                    .map(a => ({ name: a, onBoard: onBoard.has(a) }))
+            })).filter(row => row.pending.length > 0);
+        }
+
+        function isPendingListOpen() {
+            return !document.getElementById('modal-pending-list').classList.contains('hidden');
+        }
+
+        function openPendingList() {
+            window.soundEffect.playToggle();
+            document.getElementById('modal-pending-list').classList.remove('hidden');
+            renderPendingList();
+        }
+
+        function closePendingList() {
+            document.getElementById('modal-pending-list').classList.add('hidden');
+        }
+
+        // 標題列按鈕上的人數，以及（開著時）名單內容
+        function refreshPendingList() {
+            const rows = getPendingByStudent();
+            const badge = document.getElementById('pending-list-count');
+            if (badge) {
+                badge.textContent = rows.length;
+                badge.classList.toggle('hidden', rows.length === 0);
+            }
+            if (isPendingListOpen()) renderPendingList(rows);
+        }
+
+        function renderPendingList(rows = getPendingByStudent()) {
+            const body = document.getElementById('pending-list-body');
+            const summary = document.getElementById('pending-list-summary');
+            const totalItems = rows.reduce((sum, row) => sum + row.pending.length, 0);
+            if (rows.length === 0) {
+                summary.textContent = '全班都訂正完成了！';
+                body.innerHTML = `
+                    <div class="h-full flex flex-col items-center justify-center text-center py-10">
+                        <div class="text-6xl mb-3">🎉</div>
+                        <div class="text-3xl font-black text-emerald-700">全班都訂正完成了！</div>
+                    </div>`;
+                return;
+            }
+            summary.textContent = `共 ${rows.length} 位同學、${totalItems} 項作業還沒訂正（依座號排列，畫面會自動更新）`;
+            body.innerHTML = `<div class="grid gap-3" style="grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));">${
+                rows.map(({ student, pending }) => `
+                    <div class="border-2 border-rose-200 bg-rose-50 rounded-2xl p-3 flex gap-3 items-start">
+                        <div class="flex-shrink-0 w-16 h-16 rounded-2xl bg-rose-500 text-white flex items-center justify-center text-3xl font-black">${escapeHtml(getPureSeatNumber(student.name))}</div>
+                        <div class="min-w-0 flex-1">
+                            <div class="text-lg font-black text-rose-800 mb-1">還有 ${pending.length} 項</div>
+                            <div class="flex flex-wrap gap-1.5">${
+                                pending.map(item => `<span class="px-2 py-0.5 rounded-lg text-base font-bold ${item.onBoard ? 'bg-white text-slate-800 border border-rose-300' : 'bg-white/60 text-slate-600 border border-slate-200'}">${escapeHtml(item.name)}</span>`).join('')
+                            }</div>
+                        </div>
+                    </div>`).join('')
+            }</div>`;
         }
 
         function onSlotAssignmentChange(slotIndex, val) {
@@ -1908,6 +2003,7 @@
                 if (doneBtn) doneBtn.classList.toggle('hidden', !(isTeacherMode() && pCount > 0));
             });
 
+            refreshPendingList();
             // 只上傳這一格，其他裝置同時點別的座號也不會被蓋掉
             window.syncStatusChange([[assignment, studentId, nextStatus]]);
         }
