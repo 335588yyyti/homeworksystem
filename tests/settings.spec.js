@@ -1,19 +1,29 @@
-// 設定後台：左右平分、名冊對齊左欄底部、複製查詢碼與連結、名冊按鈕名稱
+// 設定後台：三欄版面、各欄底部對齊、複製查詢碼與連結、名冊按鈕名稱
 const { test, expect } = require('@playwright/test');
 const { createCloud, openDevice, unlockTeacher } = require('./helpers');
 
-test('電腦版設定頁左右平分，名冊底部對齊左欄', async ({ browser }) => {
+test('電腦版設定頁分三欄（設定｜作業項目｜名冊），三欄底部對齊；平板兩欄', async ({ browser }) => {
     for (const width of [1024, 1366, 1920]) {
         const page = await openDevice(browser, createCloud(), { viewport: { width, height: 1000 } });
         await unlockTeacher(page, 'settings');
         const r = await page.evaluate(() => {
-            const left = document.querySelector('.settings-left').getBoundingClientRect();
-            const right = document.querySelector('.roster-card').getBoundingClientRect();
+            const box = (sel) => document.querySelector(sel).getBoundingClientRect();
+            const left = box('.settings-left'), middle = box('.settings-middle'), right = box('.roster-card');
             const view = document.getElementById('view-settings');
-            return { left: left.width, right: right.width, leftBottom: left.bottom, rightBottom: right.bottom, hscroll: view.scrollWidth > view.clientWidth };
+            return { left, middle, right, hscroll: view.scrollWidth > view.clientWidth };
         });
-        expect(Math.abs(r.left - r.right), `寬度 ${width}`).toBeLessThan(2);
-        expect(Math.abs(r.leftBottom - r.rightBottom), `寬度 ${width}`).toBeLessThan(2);
+        if (width >= 1280) {
+            // 三欄並排：作業項目在中間，三欄底部對齊
+            expect(r.middle.left).toBeGreaterThan(r.left.right - 1);
+            expect(r.right.left).toBeGreaterThan(r.middle.right - 1);
+            expect(Math.abs(r.middle.bottom - r.left.bottom), `寬度 ${width}`).toBeLessThan(2);
+            expect(Math.abs(r.right.bottom - r.left.bottom), `寬度 ${width}`).toBeLessThan(2);
+            expect(r.middle.width).toBeLessThan(r.left.width); // 作業項目較窄
+        } else {
+            // 平板：作業項目接在左欄下方，名冊在右邊對齊到底
+            expect(Math.abs(r.middle.left - r.left.left)).toBeLessThan(2);
+            expect(Math.abs(r.right.bottom - r.middle.bottom), `寬度 ${width}`).toBeLessThan(2);
+        }
         expect(r.hscroll).toBe(false);
         await page.context().close();
     }

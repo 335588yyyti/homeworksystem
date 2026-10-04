@@ -143,6 +143,8 @@ async function openDevice(browser, cloud, opts = {}) {
 async function unlockTeacher(page, tab) {
     await page.evaluate((t) => {
         startTeacherSession();
+        // 預設密碼 8888 進設定後台會被要求改密碼；測試先換成其他密碼
+        if (t === 'settings' && state.teacherPin === '8888') state.teacherPin = '1357';
         if (t) switchTab(t, true);
     }, tab);
 }

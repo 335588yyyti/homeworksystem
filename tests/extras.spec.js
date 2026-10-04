@@ -67,17 +67,42 @@ test('看板「新增並放上看板」：預設換掉全班已完成的框，�
     await expect(page.locator('#modal-new-on-board')).toBeVisible();
 });
 
-test('教師密碼還是 8888 時提醒更改，改掉後提醒消失', async ({ browser }) => {
-    const page = await openDevice(browser, createCloud());
+test('驗證視窗提示預設密碼 8888；第一次進設定後台必須先改密碼', async ({ browser }) => {
+    const cloud = createCloud();
+    const page = await openDevice(browser, cloud);
     await page.click('#role-teacher');
+    await expect(page.locator('#auth-default-hint')).toContainText('8888');
     await page.fill('#teacher-password-input', '8888');
     await page.press('#teacher-password-input', 'Enter');
-    await expect(page.locator('#toast-msg')).toContainText('預設 8888');
-    await page.evaluate(() => switchTab('settings', true));
-    await expect(page.locator('#pin-default-warning')).toBeVisible();
-    await page.fill('#settings-teacher-pin', '2468');
-    await page.evaluate(() => updateTeacherPin());
+
+    // 進設定後台：跳出強制改密碼，按「先不要」回到看板
+    await page.click('#tab-settings');
+    await expect(page.locator('#modal-force-pin')).toBeVisible();
+    await page.click('#modal-force-pin button:has-text("先不要")');
+    await expect(page.locator('#modal-force-pin')).toBeHidden();
+    await expect(page.locator('#view-dashboard')).toBeVisible();
+
+    // 再進一次：不能沿用 8888、兩次要一致
+    await page.click('#tab-settings');
+    await page.fill('#force-pin-new', '8888');
+    await page.fill('#force-pin-confirm', '8888');
+    await page.press('#force-pin-confirm', 'Enter');
+    await expect(page.locator('#force-pin-msg')).toContainText('8888');
+    await page.fill('#force-pin-new', '2468');
+    await page.fill('#force-pin-confirm', '2460');
+    await page.press('#force-pin-confirm', 'Enter');
+    await expect(page.locator('#force-pin-msg')).toContainText('不一樣');
+    await page.fill('#force-pin-confirm', '2468');
+    await page.press('#force-pin-confirm', 'Enter');
+    await expect(page.locator('#modal-force-pin')).toBeHidden();
+    await expect(page.locator('#view-settings')).toBeVisible();
     await expect(page.locator('#pin-default-warning')).toBeHidden();
+    await expect.poll(() => cloud.board('main').teacherPin).toBe('2468');
+
+    // 改過之後：不再提示預設密碼，也不再強制
+    await page.evaluate(() => lockTeacherSession());
+    await page.click('#role-teacher');
+    await expect(page.locator('#auth-default-hint')).toBeHidden();
 });
 
 test('家長頁可以加到手機主畫面（有圖示與 manifest），老師的頁面不會', async ({ browser }) => {
