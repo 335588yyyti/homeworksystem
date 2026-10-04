@@ -76,6 +76,7 @@ test('重新開網頁時不重寫全班的家長查詢資料，只上傳有變�
 
     page.writes.length = 0;
     await page.reload();
+    await expect(page.locator('#cloud-sync-status')).toContainText('已連線存檔'); // 等雲端連上再操作
     await page.waitForTimeout(800);
     expect(viewWrites()).toBe(0); // 重新開網頁：沒有變動就不上傳
 
@@ -83,8 +84,10 @@ test('重新開網頁時不重寫全班的家長查詢資料，只上傳有變�
     await page.click('#btn-slot-0-student-4');
     await page.click('#btn-slot-0-student-4'); // 點錯又改回來
     await page.click('#btn-slot-0-student-4');
-    await page.waitForTimeout(2600);
-    expect(viewWrites()).toBe(1); // 2 秒內連點同一位學生：只上傳一次
+    // 2 秒內連點同一位學生：只上傳一次（等上傳發生，再多等一下確認沒有第二次）
+    await expect.poll(viewWrites, { timeout: 10000 }).toBe(1);
+    await page.waitForTimeout(2500);
+    expect(viewWrites()).toBe(1);
 
     // 超過 7 天：整份重新上傳一次，以防雲端資料被手動刪除或不一致
     page.writes.length = 0;
