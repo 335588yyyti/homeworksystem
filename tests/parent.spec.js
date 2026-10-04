@@ -67,3 +67,45 @@ test('列印紙條的 QR Code 內容就是家長連結', async ({ browser }) => 
         expect(slip.link).toMatch(/\?p=[A-Z0-9]{6}$/);
     }
 });
+
+test('重新開網頁時不重寫全班的家長查詢資料，只上傳有變動的', async ({ browser }) => {
+    const cloud = createCloud();
+    const page = await openDevice(browser, cloud);
+    const viewWrites = () => page.writes.filter((p) => p.includes('/parent_views/')).length;
+    await expect.poll(viewWrites).toBe(28); // 第一次使用：上傳全班
+
+    page.writes.length = 0;
+    await page.reload();
+    await page.waitForTimeout(800);
+    expect(viewWrites()).toBe(0); // 重新開網頁：沒有變動就不上傳
+
+    await page.evaluate(() => { startTeacherSession(); applyRoleUI('teacher'); });
+    await page.click('#btn-slot-0-student-4');
+    await page.click('#btn-slot-0-student-4'); // 點錯又改回來
+    await page.click('#btn-slot-0-student-4');
+    await page.waitForTimeout(2600);
+    expect(viewWrites()).toBe(1); // 2 秒內連點同一位學生：只上傳一次
+
+    // 超過 7 天：整份重新上傳一次，以防雲端資料被手動刪除或不一致
+    page.writes.length = 0;
+    await page.evaluate(() => {
+        const cache = JSON.parse(localStorage.getItem('checkpoint_published_views'));
+        cache.bornAt = Date.now() - 8 * 24 * 60 * 60 * 1000;
+        localStorage.setItem('checkpoint_published_views', JSON.stringify(cache));
+    });
+    await page.reload();
+    await expect.poll(viewWrites).toBe(28);
+});
+
+test('輸入框的範例查詢碼不可能是真的查詢碼', async ({ browser }) => {
+    const parent = await openDevice(browser, createCloud(), { query: '?p' });
+    const placeholder = await parent.getAttribute('#parent-code-input', 'placeholder');
+    const example = placeholder.match(/[A-Z0-9]{6,8}/)[0];
+    // 查詢碼只會用到不容易看錯的字元，範例必須含有其中沒有的字元（例如 0、1、I、O）
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    expect([...example].some((ch) => !alphabet.includes(ch))).toBe(true);
+    // 產生 2000 組查詢碼，確認沒有一組是範例
+    const codes = await parent.evaluate(() => Array.from({ length: 2000 }, () => generateParentCode()));
+    expect(codes).not.toContain(example);
+    expect(codes.every((c) => [...c].every((ch) => alphabet.includes(ch)))).toBe(true);
+});

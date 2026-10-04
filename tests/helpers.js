@@ -3,7 +3,11 @@
 const fs = require('fs');
 const path = require('path');
 
-const INDEX_URL = 'file://' + path.resolve(__dirname, '..', 'index.html');
+// 網址只是給瀏覽器看的，實際檔案由下方的 route 直接從專案資料夾提供
+const BASE_URL = 'http://localhost:4173/';
+const ROOT = path.resolve(__dirname, '..');
+const CONTENT_TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'application/javascript' };
+const INDEX_URL = BASE_URL + 'index.html';
 const QR_LIB = fs.readFileSync(require.resolve('qrcodejs/qrcode.min.js'), 'utf8');
 const BOARDS = 'artifacts/classroom-checkpoint-app/public/data/checkpoint_boards/';
 const VIEWS = 'artifacts/classroom-checkpoint-app/public/data/parent_views/';
@@ -12,6 +16,8 @@ const VIEWS = 'artifacts/classroom-checkpoint-app/public/data/parent_views/';
 const FIREBASE_STUB = `
 const call = (...args) => window.__fs(...args);
 const waitOnline = async () => { while (!navigator.onLine) await new Promise(r => setTimeout(r, 50)); };
+// 測試用：window.__failWritesWith = 'resource-exhausted' 時，寫入會像 Firebase 額度用完一樣失敗
+const maybeFail = () => { if (window.__failWritesWith) throw Object.assign(new Error('Quota exceeded.'), { code: window.__failWritesWith }); };
 const snap = (data, fromCache = false) => ({ exists: () => data !== null, data: () => data, metadata: { hasPendingWrites: false, fromCache } });
 export const initializeApp = () => ({});
 export const getAuth = () => ({ currentUser: { uid: 'user-' + Math.random().toString(36).slice(2) }, authStateReady: async () => {} });
@@ -22,14 +28,25 @@ export const initializeFirestore = () => ({});
 export const persistentLocalCache = () => ({});
 export const persistentMultipleTabManager = () => ({});
 export const doc = (db, ...parts) => ({ path: parts.join('/') });
+export class FieldPath { constructor(...segments) { this.segments = segments; } }
+export const updateDoc = async (ref, ...pairs) => {
+    const fields = [];
+    for (let i = 0; i < pairs.length; i += 2) {
+        const field = pairs[i];
+        fields.push([field instanceof FieldPath ? field.segments : field.split('.'), JSON.parse(JSON.stringify(pairs[i + 1]))]);
+    }
+    await waitOnline();
+    maybeFail();
+    await call('update', ref.path, fields);
+};
 export const getDoc = async (ref) => { await waitOnline(); return snap(await call('get', ref.path)); };
-export const setDoc = async (ref, data) => { const copy = JSON.parse(JSON.stringify(data)); await waitOnline(); await call('set', ref.path, copy); };
+export const setDoc = async (ref, data) => { const copy = JSON.parse(JSON.stringify(data)); await waitOnline(); maybeFail(); await call('set', ref.path, copy); };
 export const writeBatch = () => {
     const ops = [];
     return {
         set: (ref, data) => ops.push(['set', ref.path, JSON.parse(JSON.stringify(data))]),
         delete: (ref) => ops.push(['del', ref.path]),
-        commit: async () => { await waitOnline(); for (const op of ops) await call(...op); }
+        commit: async () => { await waitOnline(); maybeFail(); for (const op of ops) await call(...op); }
     };
 };
 export const onSnapshot = (ref, onNext) => {
@@ -38,7 +55,9 @@ export const onSnapshot = (ref, onNext) => {
     let sentOfflineEmpty = false;
     const tick = async () => {
         if (!alive) return;
-        if (!navigator.onLine) {
+        if (window.__pauseSnapshots) {
+            // 測試用：暫停接收雲端更新，模擬兩台裝置在同一瞬間操作
+        } else if (!navigator.onLine) {
             // 離線且本機沒有快取：回傳「來自快取、不存在」
             if (last === '__init__' && !sentOfflineEmpty) { sentOfflineEmpty = true; onNext(snap(null, true)); }
         } else {
@@ -81,12 +100,29 @@ async function openDevice(browser, cloud, opts = {}) {
         page.writes.push(docPath);
         if (op === 'set') cloud.store[docPath] = data;
         if (op === 'del') delete cloud.store[docPath];
+        if (op === 'update') {
+            const target = cloud.store[docPath];
+            if (!target) throw new Error('No document to update: ' + docPath);
+            for (const [segments, value] of data) {
+                let node = target;
+                segments.slice(0, -1).forEach((key) => {
+                    if (typeof node[key] !== 'object' || node[key] === null) node[key] = {};
+                    node = node[key];
+                });
+                node[segments[segments.length - 1]] = value;
+            }
+        }
         return null;
     });
     await context.addInitScript(() => { window.__firebase_config = '{}'; });
     await context.route('**/*', (route) => {
         const url = route.request().url();
-        if (url.startsWith('file:')) return route.continue();
+        if (url.startsWith(BASE_URL)) {
+            // 網站本身的檔案直接從專案資料夾讀取（不需要另開伺服器，離線測試也能開啟）
+            const file = path.join(ROOT, decodeURIComponent(new URL(url).pathname));
+            if (!file.startsWith(ROOT + path.sep) || !fs.existsSync(file)) return route.fulfill({ status: 404, body: 'Not found' });
+            return route.fulfill({ contentType: CONTENT_TYPES[path.extname(file)] || 'application/octet-stream', body: fs.readFileSync(file) });
+        }
         if (url.includes('gstatic.com/firebasejs')) {
             return route.fulfill({ contentType: 'application/javascript', headers: { 'access-control-allow-origin': '*' }, body: FIREBASE_STUB });
         }

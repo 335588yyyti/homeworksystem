@@ -87,6 +87,10 @@
             text-align: center;
             font-weight: 900;
         }
+        /* 卡片較窄時（例如 8 框），「全部完成」只顯示 ✓，把空間留給作業名稱 */
+        .card-compact .slot-done-label {
+            display: none;
+        }
         /* 三個字以上的座號（少見）縮小，避免超出按鈕 */
         .seat-btn.seat-long {
             font-size: clamp(9px, calc(var(--seat-font) * 0.7), 50px);
@@ -144,7 +148,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, updateDoc, FieldPath, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Firebase 專案設定：從 Firebase 主控台「專案設定 → 你的應用程式 → SDK 設定」複製過來。
         // 改成 null 即為純本機模式（資料只存在這台裝置的瀏覽器）。
@@ -176,6 +180,9 @@
         // 同步狀態：存檔交給 Firebase 依序排隊寫入（離線時先存在這台裝置，恢復連線後自動上傳）
         let syncDebounceTimer = null;
         let pendingWrites = 0;
+        // 雲端看板是否已是新格式（statuses 巢狀資料）；舊格式要先整份轉換，才能逐格更新
+        let boardHasStatusMap = false;
+        let parentPublishTimer = null;
 
         // 乾淨音效合成器 (Web Audio API)
         // 音效開關存在這台裝置上（每台裝置各自設定，不會同步）
@@ -334,12 +341,17 @@
         window.updateCloudStatusBadge = function(status) {
             const badge = document.getElementById('cloud-sync-status');
             if (!badge) return;
+            badge.title = '';
             if (status === 'synced') {
                 badge.className = "flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[13px] font-bold whitespace-nowrap bg-emerald-50 text-emerald-700 border border-emerald-200";
                 badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span><span class="hidden sm:inline">已連線存檔</span>`;
             } else if (status === 'syncing') {
                 badge.className = "flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[13px] font-bold whitespace-nowrap bg-amber-50 text-amber-700 border border-amber-200 animate-pulse";
                 badge.innerHTML = `<i class="fa-solid fa-arrows-rotate fa-spin text-amber-500 text-[12px]"></i><span class="hidden sm:inline">同步中</span>`;
+            } else if (status === 'quota') {
+                badge.className = "flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[13px] font-bold whitespace-nowrap bg-rose-50 text-rose-700 border border-rose-200";
+                badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span><span class="hidden sm:inline">今日雲端額度已用完（修改先存在這台電腦）</span>`;
+                badge.title = 'Firebase 免費額度每天台灣時間下午 3～4 點重置，重置後會自動上傳';
             } else if (status === 'offline') {
                 badge.className = "flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[13px] font-bold whitespace-nowrap bg-amber-50 text-amber-800 border border-amber-300";
                 badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span><span class="hidden sm:inline">離線中（修改已暫存）</span>`;
@@ -363,6 +375,40 @@
             return doc(db, 'artifacts', appId, 'public', 'data', 'parent_views', parentCode);
         }
 
+        // 記住這台裝置已經上傳過的家長查詢資料（存在瀏覽器裡），重新開網頁時只上傳有變動的，
+        // 不必每次都重寫全班，節省 Firebase 每日寫入額度。每 7 天整份重新上傳一次，以防萬一。
+        const PUBLISHED_CACHE_KEY = 'checkpoint_published_views';
+        const PUBLISHED_CACHE_DAYS = 7;
+        let publishedCacheBornAt = Date.now();
+
+        function hashText(text) {
+            let h = 5381;
+            for (let i = 0; i < text.length; i++) h = ((h * 33) ^ text.charCodeAt(i)) >>> 0;
+            return h.toString(36);
+        }
+
+        function loadPublishedCache(classCode) {
+            publishedCacheBornAt = Date.now();
+            try {
+                const cache = JSON.parse(localStorage.getItem(PUBLISHED_CACHE_KEY));
+                const fresh = cache && cache.classCode === classCode &&
+                    Date.now() - cache.bornAt < PUBLISHED_CACHE_DAYS * 24 * 60 * 60 * 1000;
+                if (!fresh) return;
+                publishedCacheBornAt = cache.bornAt;
+                Object.entries(cache.views || {}).forEach(([code, key]) => publishedParentViews.set(code, key));
+            } catch(e) {}
+        }
+
+        function savePublishedCache() {
+            try {
+                localStorage.setItem(PUBLISHED_CACHE_KEY, JSON.stringify({
+                    classCode: window.getClassCode(),
+                    bornAt: publishedCacheBornAt,
+                    views: Object.fromEntries(publishedParentViews)
+                }));
+            } catch(e) {}
+        }
+
         // 把每位學生的摘要寫到 parent_views/{查詢碼}；家長只讀得到自己孩子的那一份
         async function publishParentViews() {
             if (!db || !currentUser || !cloudDocRef || window.IS_PARENT_MODE) return;
@@ -370,7 +416,7 @@
             const batch = writeBatch(db);
             const written = [];
             Object.entries(views).forEach(([code, view]) => {
-                const key = JSON.stringify(view);
+                const key = hashText(JSON.stringify(view));
                 if (publishedParentViews.get(code) === key) return;
                 batch.set(parentViewRef(code), { ...view, updatedAt: Date.now() });
                 written.push([code, key]);
@@ -384,10 +430,12 @@
                 pendingParentViewDeletes.delete(code);
                 publishedParentViews.delete(code);
             });
+            savePublishedCache();
             await trackWrite(batch.commit()).catch(err => {
                 console.warn("家長查詢資料更新失敗:", err);
                 written.forEach(([code]) => publishedParentViews.delete(code));
                 deletes.forEach(code => pendingParentViewDeletes.add(code));
+                savePublishedCache();
             });
         }
 
@@ -408,11 +456,17 @@
             });
         };
 
-        function buildPayload() {
-            const serializedStatuses = {};
-            Object.keys(window.state.assignmentStatuses).forEach(asgn => {
-                serializedStatuses[asgn] = JSON.stringify(window.state.assignmentStatuses[asgn]);
+        // 紅綠燈狀態以 statuses[作業][學生ID] = true/false 儲存，點一格只更新那一格
+        function copyStatuses() {
+            const statuses = {};
+            Object.entries(window.state.assignmentStatuses).forEach(([asgn, map]) => {
+                statuses[asgn] = {};
+                Object.entries(map || {}).forEach(([id, done]) => { statuses[asgn][id] = !!done; });
             });
+            return statuses;
+        }
+
+        function buildPayload() {
             return {
                 sloganTitle: window.state.sloganTitle,
                 sloganSub: window.state.sloganSub,
@@ -421,7 +475,7 @@
                 assignments: window.state.assignments,
                 slots: window.state.slots,
                 teacherPin: window.state.teacherPin,
-                serializedStatuses: serializedStatuses,
+                statuses: copyStatuses(),
                 lastUpdated: Date.now()
             };
         }
@@ -447,9 +501,14 @@
             }, (err) => {
                 pendingWrites--;
                 console.error("雲端存檔異常:", err);
-                window.updateCloudStatusBadge('error');
+                window.updateCloudStatusBadge(isQuotaError(err) ? 'quota' : 'error');
                 throw err;
             });
+        }
+
+        // Firebase 免費方案當日額度用完時的錯誤（台灣時間下午 3～4 點重置）
+        function isQuotaError(err) {
+            return !!err && (err.code === 'resource-exhausted' || /quota/i.test(err.message || ''));
         }
 
         window.addEventListener('online', refreshSyncBadge);
@@ -460,9 +519,41 @@
             if (!window.isCloudConnected()) return;
             // 不等雲端回應：Firebase 會依序排隊寫入，不會遺漏或亂序。
             // 不使用 merge：整份覆蓋，已刪除的作業狀態才會真的從雲端移除
+            boardHasStatusMap = true;
             trackWrite(setDoc(cloudDocRef, buildPayload())).catch(() => {});
             publishParentViews().catch(err => console.warn("家長查詢資料更新失敗:", err));
         }
+
+        // 家長查詢資料集中 2 秒後再上傳：老師連續點同一位學生（例如點錯又改回來）只算一次寫入
+        function scheduleParentPublish() {
+            clearTimeout(parentPublishTimer);
+            parentPublishTimer = setTimeout(() => {
+                publishParentViews().catch(err => console.warn("家長查詢資料更新失敗:", err));
+            }, 2000);
+        }
+
+        // 只更新變動的那幾格（例如點一個座號），兩台裝置同時操作不同座號時不會互相覆蓋。
+        // updates：[[作業名稱, 學生ID, true/false], ...]；學生ID 為 null 時代表整項作業（值為該作業的全部狀態）
+        window.syncStatusChange = function(updates) {
+            if (window.IS_PARENT_MODE) return;
+            window.saveLocalBackup();
+            if (!window.isCloudConnected()) return;
+            // 雲端還是舊格式，或已經有整份存檔在排隊（會包含這次的變更）：改用整份存檔
+            if (!boardHasStatusMap || syncDebounceTimer !== null) {
+                window.syncStateToCloud();
+                return;
+            }
+            const args = [];
+            updates.forEach(([asgn, id, value]) => {
+                args.push(id === null ? new FieldPath('statuses', asgn) : new FieldPath('statuses', asgn, String(id)), value);
+            });
+            args.push('lastUpdated', Date.now());
+            trackWrite(updateDoc(cloudDocRef, ...args)).catch(err => {
+                console.warn("逐格更新失敗，改為整份存檔:", err);
+                window.syncStateToCloud(true);
+            });
+            scheduleParentPublish();
+        };
 
         // 還有變更在等待送出（存檔前的 0.3 秒緩衝）時，不要用雲端資料覆蓋本機
         function hasLocalPendingChanges() {
@@ -521,7 +612,14 @@
             if (Array.isArray(d.slots)) window.state.slots = d.slots;
             if (d.teacherPin) window.state.teacherPin = String(d.teacherPin);
 
-            if (d.serializedStatuses) {
+            if (d.statuses && typeof d.statuses === 'object') {
+                const parsed = {};
+                Object.entries(d.statuses).forEach(([asgn, map]) => {
+                    parsed[asgn] = (map && typeof map === 'object') ? { ...map } : {};
+                });
+                window.state.assignmentStatuses = parsed;
+            } else if (d.serializedStatuses) {
+                // 舊格式：每項作業存成一段 JSON 文字
                 const parsed = {};
                 Object.keys(d.serializedStatuses).forEach(k => {
                     try {
@@ -580,9 +678,11 @@
             const code = window.getClassCode();
             const boardRef = boardRefFor(code);
             publishedParentViews.clear();
+            loadPublishedCache(code);
             // 舊版資料存在每個匿名使用者自己的路徑，首次連線時搬過來
             const legacyRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'checkpoint_data', 'main_board');
             cloudDocRef = boardRef;
+            boardHasStatusMap = false;
             window.state.boardRetired = false;
             let isFirstSnapshot = true;
 
@@ -610,10 +710,14 @@
                 if (snapshot.exists() && !cleared) {
                     // 本機還有未寫上雲端的變更時，不要用雲端舊資料覆蓋
                     if (hasLocalPendingChanges()) return;
-                    window.applyBoardData(snapshot.data());
+                    const data = snapshot.data();
+                    window.applyBoardData(data);
                     window.saveLocalBackup();
                     rerenderCurrentView();
                     refreshSyncBadge();
+                    boardHasStatusMap = !!(data.statuses && typeof data.statuses === 'object');
+                    // 舊格式的看板：整份轉存成新格式，之後才能逐格更新
+                    if (!boardHasStatusMap) window.syncStateToCloud(true);
                     // 開啟看板時同步一次家長查詢資料（沒變的不會重寫）
                     if (firstSnapshot) publishParentViews().catch(err => console.warn("家長查詢資料更新失敗:", err));
                 } else if (firstSnapshot && (startFreshIfMissing || cleared)) {
@@ -638,7 +742,7 @@
                 }
             }, (error) => {
                 console.warn("即時監聽異常:", error);
-                window.updateCloudStatusBadge('error');
+                window.updateCloudStatusBadge(isQuotaError(error) ? 'quota' : 'error');
             });
         }
 
@@ -874,7 +978,7 @@
 
             <div>
                 <div class="flex gap-2">
-                    <input type="text" id="parent-code-input" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="查詢碼，例如 K7P2QX" aria-label="查詢碼" onkeydown="if(event.key === 'Enter') lookupParentCode()" class="flex-grow min-w-0 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-base font-black tracking-widest uppercase text-slate-800 focus:outline-none focus:border-indigo-400">
+                    <input type="text" id="parent-code-input" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="查詢碼，例如 ABC123" aria-label="查詢碼" onkeydown="if(event.key === 'Enter') lookupParentCode()" class="flex-grow min-w-0 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-base font-black tracking-widest uppercase text-slate-800 focus:outline-none focus:border-indigo-400">
                     <button onclick="lookupParentCode()" class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold px-4 py-2 rounded-xl text-sm whitespace-nowrap transition-all flex-shrink-0">
                         查詢
                     </button>
@@ -1064,6 +1168,7 @@
                         </div>
                     </div>
                 </div>
+
             </div>
 
             <!-- 右側學生座號管理 -->
@@ -1192,6 +1297,7 @@
     <script>
         const TEACHER_IDLE_MS = 90000;
         const MAX_STUDENTS = 40;
+        const MAX_ASSIGNMENTS = 50; // 與 firestore.rules 的上限一致
         const SLOT_NAME_MAX_FONT = 22;
         const SLOT_NAME_MIN_FONT = 12;
 
@@ -1199,6 +1305,7 @@
         window.IS_PARENT_MODE = new URLSearchParams(location.search).has('p');
         const PARENT_CODE_KEY = 'checkpoint_parent_code';
         // 去掉容易看錯的 I、O、0、1
+        // 輸入框的範例「ABC123」含有數字 1，所以永遠不會是真正的查詢碼
         const PARENT_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
         // 新的查詢碼為 6 碼（約 10 億種組合）；早期發出的 8 碼仍然有效
         const PARENT_CODE_LENGTH = 6;
@@ -1414,6 +1521,8 @@
                 btnStudent.className = "px-3 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1 text-slate-600 hover:text-slate-900";
                 if (indicatorText) indicatorText.textContent = "教師登記中 (點擊標記紅燈)";
             }
+            // 卡片上的「全部完成」按鈕只在教師登記模式顯示
+            if (window.state.currentTab === 'dashboard') renderDashboard();
         }
 
         function setRole(role) {
@@ -1560,6 +1669,9 @@
                 grid.style.setProperty('--cols', cols);
                 grid.style.setProperty('--rows', rows);
             });
+            document.querySelectorAll('#view-dashboard > div').forEach(card => {
+                card.classList.toggle('card-compact', card.clientWidth > 0 && card.clientWidth < 400);
+            });
             document.querySelectorAll('#view-dashboard .slot-select').forEach(fitSlotName);
         }
 
@@ -1617,16 +1729,21 @@
                             <span class="w-8 h-8 rounded-lg bg-amber-400 text-white font-black text-base flex items-center justify-center flex-shrink-0 shadow-sm">
                                 ${index + 1}
                             </span>
-                            <div class="relative min-w-0 flex-1 max-w-[220px]">
+                            <div class="relative min-w-[84px] flex-1 max-w-[220px]">
                                 <select onchange="onSlotAssignmentChange(${index}, this.value)" class="slot-select w-full appearance-none bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg pl-2.5 pr-7 py-0.5 font-black text-amber-950 text-xl focus:outline-none focus:border-amber-500 cursor-pointer truncate transition-colors" title="${window.state.isTeacherUnlocked ? '' : '更換作業需教師密碼'}">
                                     ${optionsHtml}
                                 </select>
                                 <i class="fa-solid fa-chevron-down text-[12px] text-amber-700 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none"></i>
                             </div>
                         </div>
-                        <span id="slot-badge-${index}" class="text-[13px] xl:text-xs font-black px-2 xl:px-2.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap ${pendingCount > 0 ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}">
-                            ${pendingCount > 0 ? `待訂正 ${pendingCount} 人` : '全員完成 🎉'}
-                        </span>
+                        <div class="flex items-center gap-1 flex-shrink-0">
+                            <span id="slot-badge-${index}" class="text-[13px] xl:text-xs font-black px-2 xl:px-2.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap ${pendingCount > 0 ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}">
+                                ${pendingCount > 0 ? `待訂正 ${pendingCount} 人` : '全員完成 🎉'}
+                            </span>
+                            <button id="slot-done-${index}" onclick="markSlotAllDone(${index})" class="${isTeacherMode() && pendingCount > 0 ? '' : 'hidden'} text-[13px] xl:text-xs font-black px-2 py-0.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white flex-shrink-0 whitespace-nowrap shadow-sm" title="把這項作業全班設為完成（綠燈）">
+                                ✓<span class="slot-done-label"> 全部完成</span>
+                            </button>
+                        </div>
                     </div>
                 `;
 
@@ -1720,6 +1837,13 @@
                 const name = document.getElementById('custom-assignment-name').value.trim();
                 if (name) {
                     if (!window.state.assignments.includes(name)) {
+                        if (window.state.assignments.length >= MAX_ASSIGNMENTS) {
+                            window.soundEffect.playAlert();
+                            showToast(`作業項目最多 ${MAX_ASSIGNMENTS} 項，請先到設定後台刪除用不到的`, false);
+                            renderDashboard();
+                            window.state.targetCustomSlotIndex = null;
+                            return;
+                        }
                         window.state.assignments.push(name);
                     }
                     applyAssignmentToSlot(window.state.targetCustomSlotIndex, name);
@@ -1780,9 +1904,33 @@
                     badge.className = `text-[13px] xl:text-xs font-black px-2 xl:px-2.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap ${pCount > 0 ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`;
                     badge.innerText = pCount > 0 ? `待訂正 ${pCount} 人` : '全員完成 🎉';
                 }
+                const doneBtn = document.getElementById(`slot-done-${idx}`);
+                if (doneBtn) doneBtn.classList.toggle('hidden', !(isTeacherMode() && pCount > 0));
             });
 
-            window.syncStateToCloud();
+            // 只上傳這一格，其他裝置同時點別的座號也不會被蓋掉
+            window.syncStatusChange([[assignment, studentId, nextStatus]]);
+        }
+
+        function isTeacherMode() {
+            return window.state.userRole === 'teacher' && window.state.isTeacherUnlocked;
+        }
+
+        // 卡片上的「全部完成」：把這項作業全班設為綠燈（只有教師登記模式看得到）
+        function markSlotAllDone(slotIndex) {
+            if (!isTeacherMode()) return;
+            const assignment = window.state.slots[slotIndex]?.assignment;
+            if (!assignment) return;
+            const pending = countPending(assignment);
+            if (pending === 0) return;
+            if (!confirm(`要把【${assignment}】全班設為完成（綠燈）嗎？\n目前有 ${pending} 位待訂正。`)) return;
+            const map = {};
+            window.state.students.forEach(st => { map[st.id] = true; });
+            window.state.assignmentStatuses[assignment] = { ...(window.state.assignmentStatuses[assignment] || {}), ...map };
+            window.soundEffect.playSuccess();
+            renderDashboard();
+            window.syncStatusChange([[assignment, null, window.state.assignmentStatuses[assignment]]]);
+            showToast(`【${assignment}】已全班完成 🎉`);
         }
 
         let parentWatchUnsub = null;
@@ -2011,6 +2159,11 @@
             if (window.state.assignments.includes(val)) {
                 window.soundEffect.playAlert();
                 showToast('作業已存在！', false);
+                return;
+            }
+            if (window.state.assignments.length >= MAX_ASSIGNMENTS) {
+                window.soundEffect.playAlert();
+                showToast(`作業項目最多 ${MAX_ASSIGNMENTS} 項，請先刪除用不到的`, false);
                 return;
             }
             window.soundEffect.playSuccess();
