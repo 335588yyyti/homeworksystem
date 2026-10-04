@@ -47,16 +47,18 @@ test('全班訂正完時出現「換下一項」，按下後換成還有人沒�
 
 test('學生模式看不到「換下一項」，8 框時按鈕不會擠壞作業名稱', async ({ browser }) => {
     const page = await openDevice(browser, createCloud(), { viewport: { width: 1366, height: 768 } });
+    await page.evaluate(() => { startTeacherSession(); switchTab('settings', true); setSlotCount(8); switchTab('dashboard', true); });
     await page.evaluate(() => {
         const off = state.assignments.filter((a) => !state.slots.some((s) => s.assignment === a));
-        setStudentStatus(off[off.length - 1], 1, false); // 8 框時也不會被放上看板
+        setStudentStatus(off[off.length - 1], 1, false); // 看板外還有人沒訂正的作業
         renderDashboard();
         syncStateToCloud(true);
     });
     await page.waitForTimeout(500);
+    await page.evaluate(() => applyRoleUI('student'));
     await expect(page.locator('#slot-next-0')).toBeHidden();
 
-    await page.evaluate(() => { startTeacherSession(); switchTab('settings', true); setSlotCount(8); switchTab('dashboard', true); applyRoleUI('teacher'); });
+    await page.evaluate(() => applyRoleUI('teacher'));
     await expect(page.locator('#slot-next-0')).toBeVisible();
     const fits = await page.evaluate(() => [...document.querySelectorAll('.slot-select')].map((s) => {
         const st = getComputedStyle(s);
