@@ -67,3 +67,30 @@ test('列印紙條的 QR Code 內容就是家長連結', async ({ browser }) => 
         expect(slip.link).toMatch(/\?p=[A-Z0-9]{6}$/);
     }
 });
+
+test('重新開網頁時不重寫全班的家長查詢資料，只上傳有變動的', async ({ browser }) => {
+    const cloud = createCloud();
+    const page = await openDevice(browser, cloud);
+    const viewWrites = () => page.writes.filter((p) => p.includes('/parent_views/')).length;
+    await expect.poll(viewWrites).toBe(28); // 第一次使用：上傳全班
+
+    page.writes.length = 0;
+    await page.reload();
+    await page.waitForTimeout(800);
+    expect(viewWrites()).toBe(0); // 重新開網頁：沒有變動就不上傳
+
+    await page.evaluate(() => { startTeacherSession(); applyRoleUI('teacher'); });
+    await page.click('#btn-slot-0-student-4');
+    await page.waitForTimeout(800);
+    expect(viewWrites()).toBe(1); // 點一格：只更新那位學生
+
+    // 超過 7 天：整份重新上傳一次，以防雲端資料被手動刪除或不一致
+    page.writes.length = 0;
+    await page.evaluate(() => {
+        const cache = JSON.parse(localStorage.getItem('checkpoint_published_views'));
+        cache.bornAt = Date.now() - 8 * 24 * 60 * 60 * 1000;
+        localStorage.setItem('checkpoint_published_views', JSON.stringify(cache));
+    });
+    await page.reload();
+    await expect.poll(viewWrites).toBe(28);
+});

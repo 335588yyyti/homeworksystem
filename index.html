@@ -370,6 +370,40 @@
             return doc(db, 'artifacts', appId, 'public', 'data', 'parent_views', parentCode);
         }
 
+        // 記住這台裝置已經上傳過的家長查詢資料（存在瀏覽器裡），重新開網頁時只上傳有變動的，
+        // 不必每次都重寫全班，節省 Firebase 每日寫入額度。每 7 天整份重新上傳一次，以防萬一。
+        const PUBLISHED_CACHE_KEY = 'checkpoint_published_views';
+        const PUBLISHED_CACHE_DAYS = 7;
+        let publishedCacheBornAt = Date.now();
+
+        function hashText(text) {
+            let h = 5381;
+            for (let i = 0; i < text.length; i++) h = ((h * 33) ^ text.charCodeAt(i)) >>> 0;
+            return h.toString(36);
+        }
+
+        function loadPublishedCache(classCode) {
+            publishedCacheBornAt = Date.now();
+            try {
+                const cache = JSON.parse(localStorage.getItem(PUBLISHED_CACHE_KEY));
+                const fresh = cache && cache.classCode === classCode &&
+                    Date.now() - cache.bornAt < PUBLISHED_CACHE_DAYS * 24 * 60 * 60 * 1000;
+                if (!fresh) return;
+                publishedCacheBornAt = cache.bornAt;
+                Object.entries(cache.views || {}).forEach(([code, key]) => publishedParentViews.set(code, key));
+            } catch(e) {}
+        }
+
+        function savePublishedCache() {
+            try {
+                localStorage.setItem(PUBLISHED_CACHE_KEY, JSON.stringify({
+                    classCode: window.getClassCode(),
+                    bornAt: publishedCacheBornAt,
+                    views: Object.fromEntries(publishedParentViews)
+                }));
+            } catch(e) {}
+        }
+
         // 把每位學生的摘要寫到 parent_views/{查詢碼}；家長只讀得到自己孩子的那一份
         async function publishParentViews() {
             if (!db || !currentUser || !cloudDocRef || window.IS_PARENT_MODE) return;
@@ -377,7 +411,7 @@
             const batch = writeBatch(db);
             const written = [];
             Object.entries(views).forEach(([code, view]) => {
-                const key = JSON.stringify(view);
+                const key = hashText(JSON.stringify(view));
                 if (publishedParentViews.get(code) === key) return;
                 batch.set(parentViewRef(code), { ...view, updatedAt: Date.now() });
                 written.push([code, key]);
@@ -391,10 +425,12 @@
                 pendingParentViewDeletes.delete(code);
                 publishedParentViews.delete(code);
             });
+            savePublishedCache();
             await trackWrite(batch.commit()).catch(err => {
                 console.warn("家長查詢資料更新失敗:", err);
                 written.forEach(([code]) => publishedParentViews.delete(code));
                 deletes.forEach(code => pendingParentViewDeletes.add(code));
+                savePublishedCache();
             });
         }
 
@@ -632,6 +668,7 @@
             const code = window.getClassCode();
             const boardRef = boardRefFor(code);
             publishedParentViews.clear();
+            loadPublishedCache(code);
             // 舊版資料存在每個匿名使用者自己的路徑，首次連線時搬過來
             const legacyRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'checkpoint_data', 'main_board');
             cloudDocRef = boardRef;
