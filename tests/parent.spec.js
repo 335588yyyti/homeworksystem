@@ -76,6 +76,7 @@ test('重新開網頁時不重寫全班的家長查詢資料，只上傳有變�
 
     page.writes.length = 0;
     await page.reload();
+    await expect(page.locator('#cloud-sync-status')).toContainText('已連線存檔'); // 等雲端連上再操作
     await page.waitForTimeout(800);
     expect(viewWrites()).toBe(0); // 重新開網頁：沒有變動就不上傳
 
