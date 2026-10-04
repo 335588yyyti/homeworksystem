@@ -112,6 +112,31 @@
                 max-height: none;
             }
         }
+        /* 個別查詢（教師專用）電腦版：左右兩欄加寬，盡量一頁看完不用捲動；手機維持原樣 */
+        @media (min-width: 1024px) {
+            #view-parent.teacher-wide {
+                max-width: 1600px;
+                padding: 0.75rem 1rem;
+            }
+            #view-parent.teacher-wide .parent-card {
+                display: grid;
+                grid-template-columns: minmax(340px, 1fr) 2.2fr;
+                grid-auto-rows: min-content;
+                column-gap: 1.25rem;
+                row-gap: 0.75rem;
+                align-items: start;
+            }
+            #view-parent.teacher-wide .parent-card > * { margin-top: 0; grid-column: 1; }
+            #view-parent.teacher-wide #parent-result-box:not(.hidden) { display: contents; }
+            #view-parent.teacher-wide #parent-result-box > * { margin-top: 0; grid-column: 1; }
+            #view-parent.teacher-wide #parent-pending-section {
+                grid-column: 2;
+                grid-row: 1 / span 8;
+            }
+            #view-parent.teacher-wide #parent-assignment-list {
+                grid-template-columns: repeat(auto-fill, minmax(165px, 1fr));
+            }
+        }
         /* 家長查詢頁：只顯示查詢區，隱藏看板與教師功能 */
         .parent-mode .teacher-ui {
             display: none !important;
@@ -1056,7 +1081,7 @@
                     <i class="fa-solid fa-chalkboard-user text-amber-500"></i> 班級看板
                 </button>
                 <button onclick="switchTab('parent')" id="tab-parent" class="px-3 py-1 rounded-lg text-xs sm:text-sm font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900">
-                    <i class="fa-solid fa-id-card text-indigo-500"></i> 家長查詢
+                    <i class="fa-solid fa-id-card text-indigo-500"></i> 個別查詢
                 </button>
                 <button onclick="switchTab('settings')" id="tab-settings" class="px-3 py-1 rounded-lg text-xs sm:text-sm font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900">
                     <i class="fa-solid fa-gears text-slate-500"></i> 設定後台
@@ -1107,32 +1132,41 @@
         <!-- JS 動態生成卡片 -->
     </main>
 
-    <!-- 家長查詢分頁：輸入查詢碼，只看得到自己孩子的狀態。版面精簡，盡量一頁看完 -->
+    <!-- 個別查詢分頁：家長輸入查詢碼，只看得到自己孩子的狀態；老師解鎖後改為教師專用（輸入座號查詢）。版面精簡，盡量一頁看完 -->
     <main id="view-parent" class="max-w-xl mx-auto px-3 py-3 w-full flex-1 min-h-0 overflow-y-auto hidden">
-        <div class="bg-white border-2 border-slate-200 rounded-3xl p-4 board-shadow space-y-3">
-            <div>
+        <div class="parent-card bg-white border-2 border-slate-200 rounded-3xl p-4 board-shadow space-y-3">
+            <div class="parent-head">
                 <h3 class="text-lg font-black text-slate-800 flex items-center gap-2">
-                    <i class="fa-solid fa-magnifying-glass-chart text-indigo-500"></i> 家長查詢
+                    <i class="fa-solid fa-magnifying-glass-chart text-indigo-500"></i> 個別查詢
                 </h3>
-                <p class="text-xs text-slate-500">掃描紙條上的 QR Code，或輸入老師提供的查詢碼</p>
+                <p id="parent-intro" class="text-xs text-slate-500">掃描紙條上的 QR Code，或輸入老師提供的查詢碼</p>
             </div>
 
-            <div>
+            <!-- 家長用：輸入查詢碼（老師解鎖教師權限時隱藏） -->
+            <div id="parent-code-section">
                 <div class="flex gap-2">
                     <input type="text" id="parent-code-input" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="查詢碼，例如 ABC123" aria-label="查詢碼" onkeydown="if(event.key === 'Enter') lookupParentCode()" class="flex-grow min-w-0 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-base font-black tracking-widest uppercase text-slate-800 focus:outline-none focus:border-indigo-400">
                     <button onclick="lookupParentCode()" class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold px-4 py-2 rounded-xl text-sm whitespace-nowrap transition-all flex-shrink-0">
                         查詢
                     </button>
                 </div>
-                <p id="parent-code-msg" class="text-xs font-bold mt-1.5 hidden"></p>
             </div>
 
+            <!-- 教師專用：輸入座號或從清單選擇 -->
             <div id="parent-teacher-picker" class="teacher-ui bg-amber-50 p-3 rounded-2xl border border-amber-200 hidden">
-                <label class="block text-xs font-bold text-amber-800 mb-1.5">教師檢視：選擇座號（只有解鎖教師權限時看得到）</label>
+                <label for="teacher-seat-input" class="block text-sm font-black text-amber-800 mb-1.5">教師專用：輸入座號查詢</label>
+                <div class="flex gap-2 mb-2">
+                    <input type="text" id="teacher-seat-input" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="座號，例如 5" onkeydown="if(event.key === 'Enter') lookupSeatNumber()" class="flex-grow min-w-0 bg-white border-2 border-amber-300 rounded-xl px-3 py-2 text-xl font-black text-slate-800 focus:outline-none focus:border-amber-500">
+                    <button onclick="lookupSeatNumber()" class="bg-amber-500 hover:bg-amber-600 text-white font-black px-4 py-2 rounded-xl text-base whitespace-nowrap transition-all flex-shrink-0">
+                        查詢
+                    </button>
+                </div>
+                <label for="parent-student-select" class="block text-xs font-bold text-amber-700 mb-1">或從清單選擇</label>
                 <select id="parent-student-select" onchange="onSeatSelectChange()" class="w-full bg-white border border-amber-200 rounded-xl px-3 py-2 text-base font-black text-slate-800 focus:outline-none focus:border-amber-400 cursor-pointer">
                     <!-- 動態填入 -->
                 </select>
             </div>
+            <p id="parent-code-msg" class="text-xs font-bold hidden"></p>
 
             <div id="parent-result-box" class="space-y-3 hidden">
                 <!-- 摘要：座號、總完成度、目前狀態 -->
@@ -1980,14 +2014,20 @@
             const slots = window.state.slots;
             if (count === slots.length) return;
             if (count > slots.length) {
+                // 加框時，優先放上還有人沒訂正的作業
                 const used = new Set(slots.map(s => s.assignment));
-                const unused = window.state.assignments.filter(a => !used.has(a));
+                const unusedAll = window.state.assignments.filter(a => !used.has(a));
+                const unused = [...unusedAll.filter(a => countPending(a) > 0), ...unusedAll.filter(a => countPending(a) === 0)];
                 let nextId = slots.reduce((m, s) => Math.max(m, Number(s.id) || 0), 0) + 1;
                 while (slots.length < count) {
                     slots.push({ id: nextId++, assignment: unused.shift() || window.state.assignments[0] || '未命名' });
                 }
             } else {
-                slots.splice(count);
+                // 減框時，優先保留還有人沒訂正的作業框（從後面開始拿掉全班已完成的）
+                const removeCount = slots.length - count;
+                const order = slots.map((s, i) => i).reverse();
+                const toRemove = [...order.filter(i => countPending(slots[i].assignment) === 0), ...order.filter(i => countPending(slots[i].assignment) > 0)].slice(0, removeCount);
+                window.state.slots = slots.filter((s, i) => !toRemove.includes(i));
             }
             window.soundEffect.playSuccess();
             renderSlotCountButtons();
@@ -2263,6 +2303,12 @@
             const picker = document.getElementById('parent-teacher-picker');
             const teacherView = isTeacherViewing() && window.state.students.length > 0;
             picker.classList.toggle('hidden', !teacherView);
+            // 教師專用：不顯示家長的查詢碼輸入區，電腦版加寬成左右兩欄
+            document.getElementById('parent-code-section').classList.toggle('hidden', teacherView);
+            document.getElementById('parent-intro').textContent = teacherView
+                ? '教師專用：輸入座號，查看該生還沒訂正的作業'
+                : '掃描紙條上的 QR Code，或輸入老師提供的查詢碼';
+            document.getElementById('view-parent').classList.toggle('teacher-wide', teacherView);
 
             if (teacherView) {
                 const select = document.getElementById('parent-student-select');
@@ -2284,7 +2330,7 @@
                     return;
                 }
                 ps.mode = null;
-            } else if (ps.mode === 'local') {
+            } else if (ps.mode === 'local' && !teacherView) {
                 // 教室裝置上用查詢碼查詢：直接用本機的整班資料即時更新
                 const st = window.state.students.find(s => s.parentCode === ps.code);
                 if (st) {
@@ -2294,7 +2340,29 @@
                 ps.mode = null;
                 setParentMessage('這個查詢碼已失效，請向老師確認。', 'error');
             }
-            if (ps.mode !== 'cloud') hideParentResult();
+            if (ps.mode !== 'cloud' || teacherView) hideParentResult();
+        }
+
+        // 教師專用：直接輸入座號查詢，避免從清單點錯人
+        function lookupSeatNumber() {
+            const input = document.getElementById('teacher-seat-input');
+            const raw = input.value.trim().replace(/[０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+            const st = /^\d+$/.test(raw) && window.state.students.find(s => {
+                const seat = getPureSeatNumber(s.name);
+                return /^\d+$/.test(seat) && Number(seat) === Number(raw);
+            });
+            if (!st) {
+                window.soundEffect.playAlert();
+                hideParentResult();
+                window.state.parentSearch.mode = null;
+                document.getElementById('parent-student-select').value = '';
+                setParentMessage(raw ? `找不到 ${raw} 號，請確認座號。` : '請輸入座號。', 'error');
+                input.select();
+                return;
+            }
+            document.getElementById('parent-student-select').value = st.id;
+            onSeatSelectChange();
+            input.select(); // 直接再輸入下一個座號
         }
 
         function onSeatSelectChange() {
@@ -2311,6 +2379,7 @@
             ps.mode = 'teacher';
             ps.studentId = id;
             document.getElementById('parent-code-input').value = '';
+            document.getElementById('teacher-seat-input').value = getPureSeatNumber(st.name);
             setParentMessage(`此生的家長查詢碼：${st.parentCode || '（尚未產生）'}`);
             renderParentView(buildParentView(st));
         }
