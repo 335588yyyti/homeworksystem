@@ -47,7 +47,7 @@ test('雲端額度用完時，狀態燈清楚提示', async ({ browser }) => {
     // 模擬 Firebase 回報「免費額度用完」
     await page.evaluate(() => { window.__failWritesWith = 'resource-exhausted'; });
     await page.click('#btn-slot-0-student-3');
-    await expect(page.locator('#cloud-sync-status')).toContainText('今日雲端額度已用完');
+    await expect(page.locator('#cloud-sync-status')).toContainText('今日雲端額度已用完', { timeout: 10000 });
     // 修改仍保留在這台電腦上
     expect(await page.evaluate(() => state.assignmentStatuses['國習'][3])).toBe(false);
 });

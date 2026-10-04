@@ -7,12 +7,11 @@ test('家長頁只讀自己孩子的摘要，不讀整班看板', async ({ brows
     const teacher = await openDevice(browser, cloud);
     await teacher.evaluate(() => { startTeacherSession(); applyRoleUI('teacher'); });
     await teacher.click('#btn-slot-0-student-5');
-    await teacher.waitForTimeout(500);
     const code = await teacher.evaluate(() => state.students.find((s) => s.id === 5).parentCode);
 
     const parent = await openDevice(browser, cloud, { query: '?p=' + code.toLowerCase(), viewport: { width: 390, height: 700 } });
     await expect(parent.locator('#parent-child-name')).toContainText('5 號');
-    await expect(parent.locator('#parent-status-title')).toContainText('1 項');
+    await expect(parent.locator('#parent-status-title')).toContainText('1 項', { timeout: 15000 });
     await expect(parent.locator('#parent-assignment-list > div')).toHaveCount(1);
     expect(parent.reads.some((p) => p.includes('checkpoint_boards'))).toBe(false);
     expect(parent.reads.every((p) => p.endsWith(code))).toBe(true);
@@ -25,7 +24,7 @@ test('家長頁只讀自己孩子的摘要，不讀整班看板', async ({ brows
 
     // 老師改回綠燈，家長頁即時更新；全部完成時不列出作業
     await teacher.click('#btn-slot-0-student-5');
-    await expect(parent.locator('#parent-status-title')).toContainText('無需訂正');
+    await expect(parent.locator('#parent-status-title')).toContainText('無需訂正', { timeout: 15000 });
     await expect(parent.locator('#parent-progress-percent')).toHaveText('100%');
     await expect(parent.locator('#parent-pending-section')).toBeHidden();
     const scrolls = await parent.evaluate(() => { const v = document.getElementById('view-parent'); return v.scrollHeight > v.clientHeight; });
@@ -84,8 +83,8 @@ test('重新開網頁時不重寫全班的家長查詢資料，只上傳有變�
     await page.click('#btn-slot-0-student-4');
     await page.click('#btn-slot-0-student-4'); // 點錯又改回來
     await page.click('#btn-slot-0-student-4');
-    // 2 秒內連點同一位學生：只上傳一次（等上傳發生，再多等一下確認沒有第二次）
-    await expect.poll(viewWrites, { timeout: 10000 }).toBe(1);
+    // 連點同一位學生：只上傳一次（等上傳發生，再多等一下確認沒有第二次）
+    await expect.poll(viewWrites, { timeout: 15000 }).toBe(1);
     await page.waitForTimeout(2500);
     expect(viewWrites()).toBe(1);
 

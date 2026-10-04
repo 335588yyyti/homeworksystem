@@ -16,24 +16,65 @@ test('兩台裝置同一瞬間點不同座號，兩邊的修改都會保留', as
     // 手機暫時收不到雲端更新：模擬兩台裝置在同一瞬間各點一格
     await phone.evaluate(() => { window.__pauseSnapshots = true; });
     await classroom.click('#btn-slot-0-student-3');
-    await classroom.waitForTimeout(400);
     await phone.click('#btn-slot-0-student-4');
-    await phone.waitForTimeout(400);
+    // 教師登記的紅綠燈等 5 秒沒有新變動才上傳
+    await expect.poll(() => { const st = cloud.board('main').statuses['國習'] || {}; return [st['3'], st['4']]; }, { timeout: 10000 }).toEqual([false, false]);
     await phone.evaluate(() => { window.__pauseSnapshots = false; });
-    await phone.waitForTimeout(600);
 
-    const statuses = cloud.board('main').statuses['國習'];
-    expect(statuses['3']).toBe(false);
-    expect(statuses['4']).toBe(false);
     for (const page of [classroom, phone]) {
         await expect.poll(() => page.evaluate(() => [state.assignmentStatuses['國習'][3], state.assignmentStatuses['國習'][4]])).toEqual([false, false]);
     }
     // 點一格只更新那一格，不是整份重傳
     const before = classroom.writes.length;
     await classroom.click('#btn-slot-0-student-9');
-    await classroom.waitForTimeout(500);
-    const boardWrites = classroom.writes.slice(before).filter((p) => p.includes('checkpoint_boards'));
-    expect(boardWrites).toHaveLength(1);
+    const boardWrites = () => classroom.writes.slice(before).filter((p) => p.includes('checkpoint_boards')).length;
+    await expect.poll(boardWrites, { timeout: 10000 }).toBe(1);
+});
+
+test('教師登記連續點紅燈：最後一次點擊後 5 秒才一次存到雲端，學生消單則馬上存', async ({ browser }) => {
+    const cloud = createCloud();
+    const page = await openDevice(browser, cloud);
+    const phone = await openDevice(browser, cloud);
+    await teacherMode(page);
+    const boardWrites = () => page.writes.filter((p) => p.includes('checkpoint_boards')).length;
+    const start = boardWrites();
+
+    await page.click('#btn-slot-0-student-3');
+    await page.waitForTimeout(3000);
+    await page.click('#btn-slot-0-student-5');
+    await page.click('#btn-slot-1-student-7');
+    await page.waitForTimeout(3500);
+    // 最後一次點擊後還不到 5 秒：還沒上傳，狀態燈顯示同步中
+    expect(boardWrites()).toBe(start);
+    await expect(page.locator('#cloud-sync-status')).toContainText('同步中');
+    // 等待期間，另一台裝置的修改不會被蓋掉
+    await phone.evaluate(() => { setStudentStatus('數課', 12, false); syncStatusChange([['數課', 12, false]]); });
+
+    await expect.poll(boardWrites, { timeout: 4000 }).toBe(start + 1); // 三格一次送出
+    await expect(page.locator('#cloud-sync-status')).toContainText('已連線存檔');
+    const statuses = cloud.board('main').statuses;
+    expect([statuses['國習']['3'], statuses['國習']['5'], statuses['國作']['7'], statuses['數課']['12']]).toEqual([false, false, false, false]);
+    await expect.poll(() => page.evaluate(() => state.assignmentStatuses['數課'][12])).toBe(false);
+
+    // 學生消單：馬上存
+    await page.evaluate(() => applyRoleUI('student'));
+    await page.click('#btn-slot-0-student-3');
+    await expect.poll(() => cloud.board('main').statuses['國習']['3'], { timeout: 1500 }).toBe(true);
+});
+
+test('點完紅燈 5 秒內關掉網頁，下次開啟時會補存到雲端', async ({ browser }) => {
+    const cloud = createCloud();
+    const page = await openDevice(browser, cloud);
+    await teacherMode(page);
+    // 模擬上傳途中電腦當機：寫入永遠送不到雲端
+    await page.evaluate(() => { window.__holdWrites = true; });
+    await page.click('#btn-slot-0-student-6');
+    await page.click('#btn-slot-1-student-8');
+    await page.reload();
+    await expect(page.locator('#cloud-sync-status')).toContainText('已連線存檔', { timeout: 10000 });
+    await expect.poll(() => { const st = cloud.board('main').statuses; return [st['國習']['6'], st['國作']['8']]; }).toEqual([false, false]);
+    await expect(page.locator('#btn-slot-0-student-6')).toHaveClass(/seat-pending/);
+    expect(await page.evaluate(() => localStorage.getItem('checkpoint_queued_status'))).toBeNull();
 });
 
 test('舊格式的看板會自動轉成新格式，紅綠燈不遺失', async ({ browser }) => {
@@ -72,7 +113,7 @@ test('卡片「全部完成」只在教師登記模式出現，按下後只影�
     expect(page.dialogs.at(-1)).toContain('2 位待訂正');
     await expect(page.locator('#slot-badge-0')).toContainText('全員完成');
     await expect(page.locator('#slot-done-0')).toBeHidden();
-    await page.waitForTimeout(500);
+    await expect.poll(() => cloud.board('main').statuses['國作']['7'], { timeout: 10000 }).toBe(false);
     const statuses = cloud.board('main').statuses;
     expect(statuses['國習']['3']).toBe(true);
     expect(statuses['國習']['5']).toBe(true);
@@ -85,8 +126,9 @@ test('有網路時修改會存到雲端，電腦重新開機後資料還在', as
     await teacherMode(classroom);
     for (const seat of [2, 9, 17]) await classroom.click(`#btn-slot-0-student-${seat}`);
     await classroom.click('#btn-slot-1-student-5');
-    // 狀態燈回到「已連線存檔」代表全部都已存進雲端
-    await expect(classroom.locator('#cloud-sync-status')).toContainText('已連線存檔');
+    // 狀態燈回到「已連線存檔」代表全部都已存進雲端（教師登記會等 5 秒沒有新變動才上傳）
+    await expect(classroom.locator('#cloud-sync-status')).toContainText('同步中');
+    await expect(classroom.locator('#cloud-sync-status')).toContainText('已連線存檔', { timeout: 10000 });
     expect(cloud.board('main').statuses['國習']).toMatchObject({ 2: false, 9: false, 17: false });
     expect(cloud.board('main').statuses['國作']['5']).toBe(false);
 

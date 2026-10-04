@@ -37,7 +37,8 @@ test('未訂正名單列出每位同學還沒訂正的作業，並在變動停�
     await phone.click('#btn-slot-1-student-12');
     await page.waitForTimeout(2000);
     await expect(cards).toHaveCount(2); // 還在等 5 秒
-    await expect(cards).toHaveCount(1, { timeout: 6000 });
+    // 手機等 5 秒才上傳，教室電腦收到後再等 5 秒更新名單
+    await expect(cards).toHaveCount(1, { timeout: 15000 });
     await expect(page.locator('#pending-list-count')).toHaveText('1');
 
     // 全部完成時顯示恭喜

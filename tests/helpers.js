@@ -37,6 +37,8 @@ export const updateDoc = async (ref, ...pairs) => {
     }
     await waitOnline();
     maybeFail();
+    // 測試用：window.__holdWrites = true 時寫入永遠送不到雲端（模擬上傳途中關機）
+    if (window.__holdWrites) await new Promise(() => {});
     await call('update', ref.path, fields);
 };
 export const getDoc = async (ref) => { await waitOnline(); return snap(await call('get', ref.path)); };

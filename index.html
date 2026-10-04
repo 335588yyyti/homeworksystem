@@ -88,7 +88,8 @@
             font-weight: 900;
         }
         /* 卡片較窄時（例如 8 框），「全部完成」只顯示 ✓，把空間留給作業名稱 */
-        .card-compact .slot-done-label {
+        .card-compact .slot-done-label,
+        .card-compact .slot-next-long {
             display: none;
         }
         /* 三個字以上的座號（少見）縮小，避免超出按鈕 */
@@ -167,6 +168,7 @@
         let auth = null;
         let currentUser = null;
         let cloudDocRef = null;
+        let missedRemoteUpdate = false; // 等待上傳期間略過了其他裝置的變更
         let unsubscribeSnapshot = null;
 
         // 家長查詢用的「每位學生一份」摘要文件，只記錄已發布的內容，沒變就不重寫
@@ -179,6 +181,11 @@
 
         // 同步狀態：存檔交給 Firebase 依序排隊寫入（離線時先存在這台裝置，恢復連線後自動上傳）
         let syncDebounceTimer = null;
+        // 教師登記的紅綠燈：等 5 秒沒有新變動才上傳（見 syncStatusChange）
+        const STATUS_SAVE_DELAY_MS = 5000;
+        const queuedStatusUpdates = new Map();
+        const sendingStatusUpdates = new Map(); // 已送出、雲端還沒確認收到的
+        let statusFlushTimer = null;
         let pendingWrites = 0;
         // 雲端看板是否已是新格式（statuses 巢狀資料）；舊格式要先整份轉換，才能逐格更新
         let boardHasStatusMap = false;
@@ -484,7 +491,7 @@
             if (!window.isCloudConnected()) return;
             if (!navigator.onLine) {
                 window.updateCloudStatusBadge('offline');
-            } else if (pendingWrites > 0 || syncDebounceTimer !== null) {
+            } else if (pendingWrites > 0 || syncDebounceTimer !== null || statusFlushTimer !== null) {
                 window.updateCloudStatusBadge('syncing');
             } else {
                 window.updateCloudStatusBadge('synced');
@@ -517,6 +524,8 @@
         function performSync() {
             syncDebounceTimer = null;
             if (!window.isCloudConnected()) return;
+            // 整份存檔已包含排隊中的紅綠燈，不用再另外送
+            clearQueuedStatusUpdates();
             // 不等雲端回應：Firebase 會依序排隊寫入，不會遺漏或亂序。
             // 不使用 merge：整份覆蓋，已刪除的作業狀態才會真的從雲端移除
             boardHasStatusMap = true;
@@ -534,10 +543,7 @@
 
         // 只更新變動的那幾格（例如點一個座號），兩台裝置同時操作不同座號時不會互相覆蓋。
         // updates：[[作業名稱, 學生ID, true/false], ...]；學生ID 為 null 時代表整項作業（值為該作業的全部狀態）
-        window.syncStatusChange = function(updates) {
-            if (window.IS_PARENT_MODE) return;
-            window.saveLocalBackup();
-            if (!window.isCloudConnected()) return;
+        function sendStatusUpdates(updates, onSaved = () => {}) {
             // 雲端還是舊格式，或已經有整份存檔在排隊（會包含這次的變更）：改用整份存檔
             if (!boardHasStatusMap || syncDebounceTimer !== null) {
                 window.syncStateToCloud();
@@ -548,16 +554,103 @@
                 args.push(id === null ? new FieldPath('statuses', asgn) : new FieldPath('statuses', asgn, String(id)), value);
             });
             args.push('lastUpdated', Date.now());
-            trackWrite(updateDoc(cloudDocRef, ...args)).catch(err => {
+            trackWrite(updateDoc(cloudDocRef, ...args)).then(onSaved, err => {
                 console.warn("逐格更新失敗，改為整份存檔:", err);
                 window.syncStateToCloud(true);
             });
             scheduleParentPublish();
+        }
+
+        // 教師登記點紅綠燈：先存在這台電腦，最後一次點擊後 5 秒都沒有再點，才一次上傳到雲端
+
+        function clearQueuedStatusUpdates() {
+            clearTimeout(statusFlushTimer);
+            statusFlushTimer = null;
+            queuedStatusUpdates.clear();
+            saveQueuedStatusUpdates();
+        }
+
+        // 等待上傳的紅綠燈也記在這台電腦，萬一 5 秒內關掉網頁或電腦當機，下次開啟時補送
+        const QUEUED_STATUS_KEY = 'checkpoint_queued_status';
+        const QUEUED_STATUS_MAX_AGE_MS = 30 * 60 * 1000;
+
+        function statusKey([asgn, id]) {
+            return JSON.stringify([asgn, String(id)]);
+        }
+
+        function saveQueuedStatusUpdates() {
+            const all = new Map([...sendingStatusUpdates, ...queuedStatusUpdates]);
+            try {
+                if (all.size === 0) localStorage.removeItem(QUEUED_STATUS_KEY);
+                else localStorage.setItem(QUEUED_STATUS_KEY, JSON.stringify({
+                    classCode: window.getClassCode(),
+                    at: Date.now(),
+                    updates: [...all.values()]
+                }));
+            } catch(e) {}
+        }
+
+        // 開啟看板時：補送上次沒送出的紅綠燈（只限同一個班級、30 分鐘內）
+        function resendSavedStatusUpdates() {
+            let saved = null;
+            try { saved = JSON.parse(localStorage.getItem(QUEUED_STATUS_KEY)); } catch(e) {}
+            try { localStorage.removeItem(QUEUED_STATUS_KEY); } catch(e) {}
+            if (!saved || saved.classCode !== window.getClassCode() || !(Date.now() - saved.at < QUEUED_STATUS_MAX_AGE_MS)) return false;
+            const updates = (saved.updates || []).filter(u => Array.isArray(u) && typeof u[0] === 'string' && u[1] !== null && typeof u[2] === 'boolean'
+                && window.state.assignments.includes(u[0]) && window.state.students.some(st => String(st.id) === String(u[1])));
+            if (updates.length === 0) return false;
+            updates.forEach(([asgn, id, value]) => {
+                if (!window.state.assignmentStatuses[asgn]) window.state.assignmentStatuses[asgn] = {};
+                window.state.assignmentStatuses[asgn][id] = value;
+            });
+            window.saveLocalBackup();
+            updates.forEach(u => queuedStatusUpdates.set(statusKey(u), u));
+            flushStatusUpdates();
+            return true;
+        }
+
+        function flushStatusUpdates() {
+            if (statusFlushTimer === null && queuedStatusUpdates.size === 0) return;
+            const updates = [...queuedStatusUpdates.values()];
+            updates.forEach(u => sendingStatusUpdates.set(statusKey(u), u));
+            clearQueuedStatusUpdates();
+            if (updates.length > 0 && window.isCloudConnected()) {
+                sendStatusUpdates(updates, () => {
+                    // 雲端確認收到後，才從這台電腦的補送清單移除
+                    updates.forEach(u => { if (sendingStatusUpdates.get(statusKey(u)) === u) sendingStatusUpdates.delete(statusKey(u)); });
+                    saveQueuedStatusUpdates();
+                });
+            }
+            refreshSyncBadge();
+        }
+
+        // 關閉或切走網頁前，把還在等待的紅綠燈馬上送出
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') flushStatusUpdates();
+        });
+        window.addEventListener('pagehide', flushStatusUpdates);
+
+        // options.delay：true 時等 5 秒沒有新變動再上傳（教師登記用）
+        window.syncStatusChange = function(updates, options = {}) {
+            if (window.IS_PARENT_MODE) return;
+            window.saveLocalBackup();
+            if (!window.isCloudConnected()) return;
+            if (options.delay && updates.every(([, id]) => id !== null)) {
+                updates.forEach(update => queuedStatusUpdates.set(statusKey(update), update));
+                saveQueuedStatusUpdates();
+                clearTimeout(statusFlushTimer);
+                statusFlushTimer = setTimeout(flushStatusUpdates, STATUS_SAVE_DELAY_MS);
+                refreshSyncBadge();
+                return;
+            }
+            // 先送出排隊中的，再送這次的，順序不會亂
+            flushStatusUpdates();
+            sendStatusUpdates(updates);
         };
 
-        // 還有變更在等待送出（存檔前的 0.3 秒緩衝）時，不要用雲端資料覆蓋本機
+        // 還有變更在等待送出（整份存檔前的 0.3 秒緩衝、或紅綠燈的 5 秒等待）時，不要用雲端資料覆蓋本機
         function hasLocalPendingChanges() {
-            return syncDebounceTimer !== null;
+            return syncDebounceTimer !== null || statusFlushTimer !== null;
         }
 
         window.syncStateToCloud = function(immediate = false) {
@@ -670,6 +763,12 @@
         // reuseCleared：老師確認要重新使用一個「已清空」的代碼（例如下一屆的同一班）
         async function connectBoard(startFreshIfMissing = false, reuseCleared = false) {
             if (!db || !currentUser) return;
+            // 切換班級前，把原班級還在等待的紅綠燈送出（補送清單只記目前班級）
+            if (cloudDocRef) {
+                flushStatusUpdates();
+                sendingStatusUpdates.clear();
+                saveQueuedStatusUpdates();
+            }
 
             if (unsubscribeSnapshot) {
                 unsubscribeSnapshot();
@@ -699,8 +798,9 @@
                 const firstSnapshot = isFirstSnapshot;
                 isFirstSnapshot = false;
 
-                // 自己剛寫入的本機回音，略過
-                if (snapshot.metadata.hasPendingWrites) return;
+                // 自己剛寫入的本機回音，略過。
+                // 但如果等待上傳期間有略過其他裝置的變更，這份回音已經包含雙方的修改，要套用
+                if (snapshot.metadata.hasPendingWrites && !(missedRemoteUpdate && !hasLocalPendingChanges())) return;
 
                 const cleared = snapshot.exists() && snapshot.data().retired;
                 if (cleared && !(firstSnapshot && reuseCleared)) {
@@ -710,7 +810,8 @@
 
                 if (snapshot.exists() && !cleared) {
                     // 本機還有未寫上雲端的變更時，不要用雲端舊資料覆蓋
-                    if (hasLocalPendingChanges()) return;
+                    if (hasLocalPendingChanges()) { missedRemoteUpdate = true; return; }
+                    missedRemoteUpdate = false;
                     const data = snapshot.data();
                     window.applyBoardData(data);
                     window.saveLocalBackup();
@@ -719,6 +820,7 @@
                     boardHasStatusMap = !!(data.statuses && typeof data.statuses === 'object');
                     // 舊格式的看板：整份轉存成新格式，之後才能逐格更新
                     if (!boardHasStatusMap) window.syncStateToCloud(true);
+                    if (firstSnapshot && resendSavedStatusUpdates()) rerenderCurrentView();
                     // 開啟看板時同步一次家長查詢資料（沒變的不會重寫）
                     if (firstSnapshot) publishParentViews().catch(err => console.warn("家長查詢資料更新失敗:", err));
                 } else if (firstSnapshot && (startFreshIfMissing || cleared)) {
@@ -755,6 +857,8 @@
             }
             if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
             syncDebounceTimer = null;
+            sendingStatusUpdates.clear();
+            clearQueuedStatusUpdates();
             cloudDocRef = null;
             window.state.boardRetired = true;
             window.updateCloudStatusBadge('retired');
@@ -1772,6 +1876,9 @@
                             <button id="slot-done-${index}" onclick="markSlotAllDone(${index})" class="${isTeacherMode() && pendingCount > 0 ? '' : 'hidden'} text-[13px] xl:text-xs font-black px-2 py-0.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white flex-shrink-0 whitespace-nowrap shadow-sm" title="把這項作業全班設為完成（綠燈）">
                                 ✓<span class="slot-done-label"> 全部完成</span>
                             </button>
+                            <button id="slot-next-${index}" onclick="swapToNextPending(${index})" class="${isTeacherMode() && pendingCount === 0 && nextPendingAssignment() ? '' : 'hidden'} text-[13px] xl:text-xs font-black px-2 py-0.5 rounded-full bg-sky-500 hover:bg-sky-600 text-white flex-shrink-0 whitespace-nowrap shadow-sm" title="換成下一項還有人沒訂正的作業">
+                                換<span class="slot-next-long">下一項</span> ➜
+                            </button>
                         </div>
                     </div>
                 `;
@@ -2015,11 +2122,13 @@
                 }
                 const doneBtn = document.getElementById(`slot-done-${idx}`);
                 if (doneBtn) doneBtn.classList.toggle('hidden', !(isTeacherMode() && pCount > 0));
+                const nextBtn = document.getElementById(`slot-next-${idx}`);
+                if (nextBtn) nextBtn.classList.toggle('hidden', !(isTeacherMode() && pCount === 0 && nextPendingAssignment()));
             });
 
             refreshPendingList();
             // 只上傳這一格，其他裝置同時點別的座號也不會被蓋掉
-            window.syncStatusChange([[assignment, studentId, nextStatus]]);
+            window.syncStatusChange([[assignment, studentId, nextStatus]], { delay: isTeacherMode() });
         }
 
         function isTeacherMode() {
@@ -2041,6 +2150,28 @@
             renderDashboard();
             window.syncStatusChange([[assignment, null, window.state.assignmentStatuses[assignment]]]);
             showToast(`【${assignment}】已全班完成 🎉`);
+        }
+
+        // 下一項還有人沒訂正、而且還沒放上看板的作業（依作業清單順序）；沒有時回傳 null
+        function nextPendingAssignment() {
+            const onBoard = new Set(window.state.slots.map(s => s.assignment));
+            return window.state.assignments.find(a => !onBoard.has(a) && countPending(a) > 0) || null;
+        }
+
+        // 卡片上的「換下一項」：這項作業全班都訂正完了，換成下一項還有人沒訂正的作業
+        function swapToNextPending(slotIndex) {
+            if (!isTeacherMode()) return;
+            const slot = window.state.slots[slotIndex];
+            if (!slot || countPending(slot.assignment) > 0) return;
+            const next = nextPendingAssignment();
+            if (!next) {
+                showToast('其他作業都訂正完成了 🎉');
+                renderDashboard();
+                return;
+            }
+            const finished = slot.assignment;
+            applyAssignmentToSlot(slotIndex, next);
+            showToast(`【${finished}】換成【${next}】（待訂正 ${countPending(next)} 人）`);
         }
 
         let parentWatchUnsub = null;
@@ -2321,15 +2452,32 @@
 
         function deleteAssignment(index) {
             const val = window.state.assignments[index];
-            if (window.state.slots.some(slot => slot.assignment === val)) {
+            const slotIndexes = window.state.slots.map((slot, i) => slot.assignment === val ? i : -1).filter(i => i >= 0);
+            let replacements = [];
+            if (slotIndexes.length > 0) {
+                // 看板上的作業：先找好要換上去的作業（優先換成還有人沒訂正的）
+                const onBoard = new Set(window.state.slots.map(s => s.assignment));
+                const offBoard = window.state.assignments.filter(a => !onBoard.has(a));
+                replacements = [...offBoard.filter(a => countPending(a) > 0), ...offBoard.filter(a => countPending(a) === 0)].slice(0, slotIndexes.length);
+                if (replacements.length < slotIndexes.length) {
+                    window.soundEffect.playAlert();
+                    showToast(`無法刪除！作業項目不能少於看板的 ${window.state.slots.length} 框，請先新增其他作業。`, false);
+                    return;
+                }
+                const pendingSeats = window.state.students.filter(st => !getStudentStatus(val, st.id)).map(st => getPureSeatNumber(st.name));
+                let message = `【${val}】目前正在看板上（第 ${slotIndexes.map(i => i + 1).join('、')} 框），確定要刪除嗎？\n刪除後這一框會換成【${replacements.join('】、【')}】。`;
+                if (pendingSeats.length > 0) {
+                    message += `\n\n⚠️ 注意：還有 ${pendingSeats.length} 位同學沒有訂正完成（座號 ${pendingSeats.join('、')}），刪除後這些紀錄會一起清除，無法復原！`;
+                }
                 window.soundEffect.playAlert();
-                showToast(`無法刪除！【${val}】目前正在看板列管中。`, false);
-                return;
+                if (!confirm(message)) return;
             }
             window.soundEffect.playToggle();
+            slotIndexes.forEach((slotIndex, i) => { window.state.slots[slotIndex].assignment = replacements[i]; });
             window.state.assignments.splice(index, 1);
             delete window.state.assignmentStatuses[val];
             renderSettingsAssignments();
+            if (slotIndexes.length > 0) renderDashboard();
             window.syncStateToCloud();
             showToast(`已刪除作業：【${val}】`);
         }
