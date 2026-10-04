@@ -1,0 +1,16 @@
+{
+  "name": "下課檢查站｜個別查詢",
+  "short_name": "下課檢查站",
+  "description": "查看孩子還有哪些作業需要訂正",
+  "lang": "zh-Hant",
+  "start_url": "./index.html?p",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f1f5f9",
+  "theme_color": "#6366f1",
+  "icons": [
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

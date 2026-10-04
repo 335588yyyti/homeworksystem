@@ -6,6 +6,11 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <link href="assets/tailwind.css" rel="stylesheet">
+    <link rel="apple-touch-icon" href="assets/icon-180.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
+    <meta name="apple-mobile-web-app-title" content="下課檢查站">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <!-- Font Awesome Icons -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <!-- Google Fonts -->
@@ -798,6 +803,7 @@
             if (tab === 'settings') {
                 window.renderCurrentClassCode();
                 window.renderSlotCountButtons();
+                window.renderPinWarning();
                 // 老師正在設定頁打字時，不要把輸入框整個重建掉
                 const active = document.activeElement;
                 const editing = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') &&
@@ -1040,6 +1046,7 @@
             window.renderSlogan();
             window.renderDashboard();
             window.renderSoundToggle();
+            keepScreenOn();
             initCloudFirebase();
         });
     </script>
@@ -1120,6 +1127,10 @@
                     </p>
                 </div>
             </div>
+            <!-- 新作業發下去時：一次完成「新增作業」和「放上看板」 -->
+            <button id="new-on-board-button" onclick="openNewOnBoard()" class="teacher-ui flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white text-rose-600 hover:bg-amber-50 border-2 border-white/80 text-sm sm:text-base font-black whitespace-nowrap shadow-sm transition-colors" title="新增一項作業，並換掉看板上一框全班已完成的作業">
+                <span class="text-lg leading-none">➕</span><span class="hidden sm:inline">新增並放上看板</span><span class="sm:hidden">新作業</span>
+            </button>
             <div id="role-status-indicator" class="teacher-ui hidden sm:flex text-xs font-black px-3 py-1 rounded-xl bg-black/25 text-white/95 border border-white/20 flex-shrink-0 items-center gap-1.5 whitespace-nowrap">
                 <i class="fa-solid fa-shield-halved text-amber-300"></i>
                 <span id="role-status-text">學生自主消單模式</span>
@@ -1192,6 +1203,13 @@
                     </div>
                 </div>
                 <p id="parent-updated-at" class="text-[13px] text-slate-400 text-center"></p>
+                <!-- 家長：加到手機主畫面，之後像 App 一樣點圖示就能查 -->
+                <div id="install-hint" class="hidden text-center">
+                    <button onclick="installParentApp()" class="inline-flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-black px-3 py-1.5 rounded-xl text-sm transition-all">
+                        📲 加到手機主畫面
+                    </button>
+                    <p id="install-steps" class="hidden text-sm font-bold text-slate-600 mt-2 leading-relaxed"></p>
+                </div>
             </div>
         </div>
     </main>
@@ -1266,6 +1284,7 @@
                             修改
                         </button>
                     </div>
+                    <p id="pin-default-warning" class="hidden text-sm font-black text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 mb-2">⚠️ 目前還是預設密碼 8888，學生可能猜得到，建議改成自己的密碼。</p>
                     <p class="text-[13px] text-slate-400">密碼只防止學生誤觸，請勿使用與其他帳號相同的密碼。</p>
                 </div>
 
@@ -1481,6 +1500,38 @@
         </div>
     </div>
 
+    <!-- 新增作業並放上看板 -->
+    <div id="modal-new-on-board" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden" onclick="if (event.target === this) closeNewOnBoard()">
+        <div class="bg-white border-2 border-slate-200 rounded-3xl p-5 w-full max-w-md board-shadow">
+            <div class="text-center mb-4">
+                <div class="text-3xl mb-1">➕</div>
+                <h4 class="text-xl font-black text-slate-800">新增作業並放上看板</h4>
+                <p class="text-sm text-slate-500 mt-0.5">新作業會換掉看板上的一框，被換下的作業紀錄仍會保留</p>
+            </div>
+            <label for="new-on-board-name" class="block text-base font-black text-slate-700 mb-1">作業名稱</label>
+            <input type="text" id="new-on-board-name" maxlength="20" autocomplete="off" onkeydown="if(event.key === 'Enter') confirmNewOnBoard()" placeholder="例如：國卷、數單" class="w-full bg-slate-50 border-2 border-slate-200 rounded-xl px-4 py-2.5 font-black text-slate-800 focus:outline-none focus:border-amber-400 mb-3 text-lg">
+            <label for="new-on-board-slot" class="block text-base font-black text-slate-700 mb-1">放到看板的哪一框</label>
+            <select id="new-on-board-slot" onchange="renderNewOnBoardHint()" class="w-full bg-white border-2 border-slate-200 rounded-xl px-3 py-2.5 text-base font-black text-slate-800 focus:outline-none focus:border-amber-400 cursor-pointer"></select>
+            <p id="new-on-board-hint" class="text-sm font-bold mt-1.5 min-h-[1.25rem]"></p>
+            <div class="grid grid-cols-2 gap-2.5 mt-4">
+                <button onclick="closeNewOnBoard()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-base transition-all">
+                    取消
+                </button>
+                <button onclick="confirmNewOnBoard()" class="bg-amber-400 hover:bg-amber-500 text-slate-900 font-black py-2.5 rounded-xl text-base transition-all">
+                    新增並放上看板
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 點錯可以復原：點座號後顯示 5 秒 -->
+    <div id="undo-bar" class="fixed bottom-5 left-5 z-50 flex items-center gap-3 bg-slate-900 text-white pl-4 pr-2 py-2 rounded-2xl shadow-lg border border-slate-700 transition-all duration-300 translate-y-24 opacity-0 pointer-events-none max-w-[calc(100vw-2.5rem)]">
+        <span id="undo-text" class="text-sm font-bold truncate min-w-0"></span>
+        <button id="undo-button" onclick="undoLastSeat()" class="flex-shrink-0 bg-amber-400 hover:bg-amber-300 text-slate-900 font-black px-3 py-1.5 rounded-xl text-base whitespace-nowrap">
+            ↩ 復原
+        </button>
+    </div>
+
     <!-- Toast 通知浮動提示 -->
     <div id="toast" class="fixed bottom-5 right-5 bg-slate-900 text-white px-4 py-2.5 rounded-xl shadow-lg border border-slate-800 flex items-center gap-2 z-50 transform translate-y-16 opacity-0 transition-all duration-300 pointer-events-none text-xs font-bold">
         <i class="fa-solid fa-circle-check text-emerald-400"></i>
@@ -1678,6 +1729,7 @@
                 onClassCodeInput();
                 renderCurrentClassCode();
                 renderSlotCountButtons();
+                renderPinWarning();
             }
         }
 
@@ -1757,6 +1809,8 @@
                     window.state.pendingTeacherAction = null;
                     action();
                 }
+                // 還是預設密碼：最後再提醒一次（不會被上面的訊息蓋掉）
+                if (input === DEFAULT_TEACHER_PIN) showToast("驗證成功！提醒：教師密碼還是預設 8888，建議到設定後台更改", false);
             } else {
                 window.soundEffect.playAlert();
                 showToast("密碼錯誤，驗證失敗！", false);
@@ -1779,6 +1833,20 @@
             if (window.state.currentTab === 'parent') initParentView();
             showToast(byTimeout ? "閒置超時，已自動鎖定並返回學生消單模式" : "已安全鎖定並退出教師模式");
         }
+
+        // ---- 教室電腦不自動休眠：開著看板時請瀏覽器保持螢幕亮著（不支援的瀏覽器就略過） ----
+        let screenWakeLock = null;
+        async function keepScreenOn() {
+            if (window.IS_PARENT_MODE || !('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+            if (screenWakeLock && !screenWakeLock.released) return;
+            try {
+                screenWakeLock = await navigator.wakeLock.request('screen');
+            } catch (e) {
+                screenWakeLock = null; // 例如省電模式：之後點畫面時再試
+            }
+        }
+        document.addEventListener('visibilitychange', keepScreenOn);
+        document.addEventListener('pointerdown', keepScreenOn);
 
         let toastTimer = null;
         async function syncNow() {
@@ -2175,6 +2243,71 @@
             window.state.targetCustomSlotIndex = null;
         }
 
+        // ---- 新增作業並放上看板 ----
+        function openNewOnBoard() {
+            if (!window.state.isTeacherUnlocked) {
+                openTeacherAuthModal(openNewOnBoard);
+                return;
+            }
+            const select = document.getElementById('new-on-board-slot');
+            const firstDone = window.state.slots.findIndex(s => countPending(s.assignment) === 0);
+            select.innerHTML = window.state.slots.map((slot, i) => {
+                const pending = countPending(slot.assignment);
+                const label = `第 ${i + 1} 框：${slot.assignment}（${pending > 0 ? `還有 ${pending} 人沒訂正` : '全班已完成'}）`;
+                return `<option value="${i}">${escapeHtml(label)}</option>`;
+            }).join('');
+            select.value = String(firstDone >= 0 ? firstDone : 0);
+            document.getElementById('new-on-board-name').value = '';
+            renderNewOnBoardHint();
+            document.getElementById('modal-new-on-board').classList.remove('hidden');
+            setTimeout(() => document.getElementById('new-on-board-name').focus(), 100);
+        }
+
+        function closeNewOnBoard() {
+            document.getElementById('modal-new-on-board').classList.add('hidden');
+        }
+
+        function renderNewOnBoardHint() {
+            const index = parseInt(document.getElementById('new-on-board-slot').value, 10);
+            const slot = window.state.slots[index];
+            const hint = document.getElementById('new-on-board-hint');
+            const pending = slot ? countPending(slot.assignment) : 0;
+            hint.className = `text-sm font-bold mt-1.5 min-h-[1.25rem] ${pending > 0 ? 'text-rose-600' : 'text-emerald-700'}`;
+            hint.textContent = !slot ? '' : pending > 0
+                ? `⚠️ 【${slot.assignment}】還有 ${pending} 人沒訂正，換下後仍可在「未訂正名單」看到`
+                : `【${slot.assignment}】全班已完成，可以放心換掉`;
+        }
+
+        function confirmNewOnBoard() {
+            const name = document.getElementById('new-on-board-name').value.trim();
+            const index = parseInt(document.getElementById('new-on-board-slot').value, 10);
+            if (!name) {
+                window.soundEffect.playAlert();
+                showToast('請輸入作業名稱', false);
+                return;
+            }
+            const onBoardAt = window.state.slots.findIndex(s => s.assignment === name);
+            if (onBoardAt >= 0) {
+                window.soundEffect.playAlert();
+                showToast(`【${name}】已經在看板第 ${onBoardAt + 1} 框`, false);
+                return;
+            }
+            if (!window.state.assignments.includes(name)) {
+                if (window.state.assignments.length >= MAX_ASSIGNMENTS) {
+                    window.soundEffect.playAlert();
+                    showToast(`作業項目最多 ${MAX_ASSIGNMENTS} 項，請先到設定後台刪除用不到的`, false);
+                    return;
+                }
+                window.state.assignments.push(name);
+                // 同名作業若曾被刪除，不沿用舊的紅燈紀錄
+                delete window.state.assignmentStatuses[name];
+            }
+            closeNewOnBoard();
+            const replaced = window.state.slots[index].assignment;
+            applyAssignmentToSlot(index, name);
+            showToast(`第 ${index + 1} 框的【${replaced}】已換成新作業【${name}】`);
+        }
+
         function closeAlertModal() {
             document.getElementById('modal-alert').classList.add('hidden');
         }
@@ -2231,6 +2364,41 @@
             refreshPendingList();
             // 只上傳這一格，其他裝置同時點別的座號也不會被蓋掉
             window.syncStatusChange([[assignment, studentId, nextStatus]], { delay: true });
+            showUndo({ assignment, studentId, previous: currentStatus });
+        }
+
+        // ---- 點錯可以復原：最後一次點座號後 5 秒內可以改回來 ----
+        const UNDO_MS = 5000;
+        let lastSeatChange = null;
+        let undoTimer = null;
+
+        function showUndo(change) {
+            lastSeatChange = change;
+            const seat = getSeatLabel(change.studentId);
+            document.getElementById('undo-text').textContent = `${seat} 號【${change.assignment}】${change.previous ? '改成紅燈' : '已消單'}`;
+            const bar = document.getElementById('undo-bar');
+            bar.classList.remove('translate-y-24', 'opacity-0', 'pointer-events-none');
+            clearTimeout(undoTimer);
+            undoTimer = setTimeout(hideUndo, UNDO_MS);
+        }
+
+        function hideUndo() {
+            clearTimeout(undoTimer);
+            undoTimer = null;
+            lastSeatChange = null;
+            document.getElementById('undo-bar').classList.add('translate-y-24', 'opacity-0', 'pointer-events-none');
+        }
+
+        function undoLastSeat() {
+            const change = lastSeatChange;
+            hideUndo();
+            if (!change || !window.state.assignments.includes(change.assignment)) return;
+            if (!window.state.students.some(st => st.id === change.studentId)) return;
+            setStudentStatus(change.assignment, change.studentId, change.previous);
+            window.soundEffect.playToggle();
+            renderDashboard();
+            window.syncStatusChange([[change.assignment, change.studentId, change.previous]], { delay: true });
+            showToast(`已復原：${getSeatLabel(change.studentId)} 號【${change.assignment}】`);
         }
 
         function isTeacherMode() {
@@ -2486,8 +2654,44 @@
         }
 
         // 家長查詢頁：隱藏看板與教師功能，自動帶入網址或上次的查詢碼
+        // ---- 家長：加到手機主畫面 ----
+        let installPromptEvent = null;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault(); // 由家長頁的按鈕觸發
+            installPromptEvent = e;
+        });
+
+        function isInstalledApp() {
+            return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+        }
+
+        function setupParentInstall() {
+            const link = document.createElement('link');
+            link.rel = 'manifest';
+            link.href = 'manifest.webmanifest';
+            document.head.appendChild(link);
+            document.getElementById('install-hint').classList.toggle('hidden', isInstalledApp());
+        }
+
+        async function installParentApp() {
+            if (installPromptEvent) {
+                installPromptEvent.prompt();
+                const choice = await installPromptEvent.userChoice.catch(() => null);
+                installPromptEvent = null;
+                if (choice && choice.outcome === 'accepted') document.getElementById('install-hint').classList.add('hidden');
+                return;
+            }
+            const ua = navigator.userAgent;
+            const steps = document.getElementById('install-steps');
+            steps.textContent = /iPhone|iPad|iPod|Macintosh/.test(ua) && 'ontouchend' in document
+                ? 'iPhone／iPad：用 Safari 開啟，點下方的「分享」按鈕 ⬆️，再選「加入主畫面」。'
+                : 'Android：點瀏覽器右上角「⋮」選單，再選「加到主畫面」或「安裝應用程式」。';
+            steps.classList.remove('hidden');
+        }
+
         window.enterParentMode = function() {
             document.body.classList.add('parent-mode');
+            setupParentInstall();
             document.title = '家長查詢 - 下課檢查站';
             switchTab('parent', true);
             let code = normalizeParentCode(new URLSearchParams(location.search).get('p'));
@@ -2613,6 +2817,13 @@
             showToast(`已刪除作業：【${val}】`);
         }
 
+        const DEFAULT_TEACHER_PIN = '8888';
+
+        function renderPinWarning() {
+            const el = document.getElementById('pin-default-warning');
+            if (el) el.classList.toggle('hidden', window.state.teacherPin !== DEFAULT_TEACHER_PIN);
+        }
+
         function updateTeacherPin() {
             const input = document.getElementById('settings-teacher-pin').value.trim();
             if (input.length < 4) {
@@ -2622,6 +2833,7 @@
             }
             window.state.teacherPin = input;
             document.getElementById('settings-teacher-pin').value = '';
+            renderPinWarning();
             window.soundEffect.playSuccess();
             window.syncStateToCloud();
             showToast('教師密碼已更新！');
