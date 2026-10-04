@@ -116,8 +116,9 @@
         @media (min-width: 1024px) {
             .settings-grid {
                 grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-                grid-template-areas: "left roster" "middle roster";
+                grid-template-areas: "bar bar" "left roster" "middle roster";
             }
+            .settings-bar { grid-area: bar; }
             .settings-left { grid-area: left; }
             .settings-middle { grid-area: middle; }
             .roster-card { grid-area: roster; }
@@ -132,7 +133,7 @@
             .settings-grid {
                 /* 中間的作業項目較窄，名稱最多 20 字就夠寬 */
                 grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.75fr) minmax(0, 1.1fr);
-                grid-template-areas: "left middle roster";
+                grid-template-areas: "bar bar bar" "left middle roster";
             }
             .assign-list {
                 flex: 1 1 0;
@@ -333,6 +334,10 @@
         };
 
         // 一份全新班級看板的預設內容（新代碼、首次使用時套用）
+        // 閒置自動上鎖可選的時間（分鐘）
+        const LOCK_MINUTE_OPTIONS = [1.5, 3, 5, 10];
+        window.LOCK_MINUTE_OPTIONS = LOCK_MINUTE_OPTIONS;
+
         window.createDefaultBoard = function() {
             return {
                 // 每個新班級的教師密碼一律從 8888 開始，不沿用其他班
@@ -340,6 +345,8 @@
                 // 小幫手模式：預設關閉；helperPin 空白代表免密碼
                 helperEnabled: false,
                 helperPin: '',
+                // 教師／小幫手閒置幾分鐘後自動上鎖
+                lockMinutes: 1.5,
 
                 sloganTitle: '未訂正完成，不能下課！ 🔔',
                 sloganSub: '請自律完成訂正，完成後記得點擊個人座號銷單喔！',
@@ -541,6 +548,7 @@
                 teacherPin: window.state.teacherPin,
                 helperEnabled: !!window.state.helperEnabled,
                 helperPin: window.state.helperPin || '',
+                lockMinutes: window.state.lockMinutes,
                 statuses: copyStatuses(),
                 lastUpdated: Date.now()
             };
@@ -767,6 +775,7 @@
                     teacherPin: window.state.teacherPin,
                     helperEnabled: !!window.state.helperEnabled,
                     helperPin: window.state.helperPin || '',
+                    lockMinutes: window.state.lockMinutes,
                     updatedAt: Date.now()
                 };
                 localStorage.setItem('checkpoint_local_backup_v3', JSON.stringify(data));
@@ -794,6 +803,7 @@
             // 舊資料沒有這兩個欄位：小幫手模式視為關閉
             window.state.helperEnabled = d.helperEnabled === true;
             window.state.helperPin = typeof d.helperPin === 'string' && /^\d{4}$/.test(d.helperPin) ? d.helperPin : '';
+            window.state.lockMinutes = LOCK_MINUTE_OPTIONS.includes(Number(d.lockMinutes)) ? Number(d.lockMinutes) : 1.5;
 
             if (d.statuses && typeof d.statuses === 'object') {
                 const parsed = {};
@@ -843,6 +853,7 @@
                 const active = document.activeElement;
                 const editing = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') &&
                     document.getElementById('view-settings').contains(active);
+                window.renderLockMinuteButtons();
                 if (!editing) {
                     window.renderHelperSettings();
                     window.renderSettingsAssignments();
@@ -1293,6 +1304,13 @@
     <main id="view-settings" class="max-w-[1600px] mx-auto px-4 py-5 w-full flex-1 min-h-0 overflow-y-auto hidden">
         <div class="settings-grid grid grid-cols-1 gap-4 pb-6">
 
+            <!-- 使用說明：隨時可以再看一次導覽 -->
+            <div class="settings-bar flex items-center justify-end">
+                <button id="open-guide" onclick="openGuide()" class="flex items-center gap-1.5 bg-white hover:bg-amber-50 text-slate-800 border-2 border-amber-300 font-black px-4 py-1.5 rounded-xl text-base shadow-sm transition-colors">
+                    📖 使用說明
+                </button>
+            </div>
+
             <!-- 左側設定 -->
             <div class="settings-left flex flex-col gap-4 min-w-0">
                 <!-- 看板標語編輯 -->
@@ -1342,6 +1360,17 @@
                     </div>
                     <p id="pin-default-warning" class="hidden text-sm font-black text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 mb-2">⚠️ 目前還是預設密碼 8888，學生可能猜得到，建議改成自己的密碼。</p>
                     <p class="text-[13px] text-slate-400">密碼只防止學生誤觸，請勿使用與其他帳號相同的密碼。</p>
+
+                    <!-- 閒置自動上鎖時間 -->
+                    <div class="mt-3 flex flex-wrap items-center gap-2">
+                        <span class="text-sm font-black text-slate-800">⏱️ 沒有操作多久後自動上鎖</span>
+                        <div id="lock-minute-buttons" class="flex gap-1.5">
+                            <button data-minutes="1.5" onclick="setLockMinutes(1.5)" class="px-2.5 py-1 rounded-lg border-2 text-xs font-black">1.5 分</button>
+                            <button data-minutes="3" onclick="setLockMinutes(3)" class="px-2.5 py-1 rounded-lg border-2 text-xs font-black">3 分</button>
+                            <button data-minutes="5" onclick="setLockMinutes(5)" class="px-2.5 py-1 rounded-lg border-2 text-xs font-black">5 分</button>
+                            <button data-minutes="10" onclick="setLockMinutes(10)" class="px-2.5 py-1 rounded-lg border-2 text-xs font-black">10 分</button>
+                        </div>
+                    </div>
 
                     <!-- 小幫手模式 -->
                     <div class="mt-4 pt-3 border-t border-slate-100">
@@ -1635,6 +1664,26 @@
         </div>
     </div>
 
+    <!-- 使用說明（新老師導覽）：分頁說明，第一頁在建立新看板時顯示班級代碼 -->
+    <div id="modal-guide" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden" onclick="if (event.target === this) closeGuide()">
+        <div class="bg-white border-2 border-slate-200 rounded-3xl p-5 sm:p-6 w-full max-w-lg board-shadow flex flex-col max-h-full">
+            <div class="flex items-center justify-between mb-3">
+                <span id="guide-step" class="text-sm font-black text-slate-400"></span>
+                <button onclick="closeGuide()" class="text-slate-400 hover:text-slate-700 text-sm font-bold px-2 py-1 rounded-lg">✕ 關閉</button>
+            </div>
+            <div id="guide-body" class="min-h-[260px] overflow-y-auto"></div>
+            <div id="guide-dots" class="flex justify-center gap-2 my-4"></div>
+            <div class="grid grid-cols-2 gap-2.5">
+                <button id="guide-prev" onclick="guidePage(-1)" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-base transition-all disabled:opacity-40">
+                    ← 上一步
+                </button>
+                <button id="guide-next" onclick="guidePage(1)" class="bg-amber-400 hover:bg-amber-500 text-slate-900 font-black py-2.5 rounded-xl text-base transition-all">
+                    下一步 →
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- 新增作業並放上看板 -->
     <div id="modal-new-on-board" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden" onclick="if (event.target === this) closeNewOnBoard()">
         <div class="bg-white border-2 border-slate-200 rounded-3xl p-5 w-full max-w-md board-shadow">
@@ -1674,7 +1723,10 @@
     </div>
 
     <script>
-        const TEACHER_IDLE_MS = 90000;
+        // 閒置自動上鎖：預設 1.5 分鐘，老師可在設定後台改成 3、5、10 分鐘
+        function teacherIdleMs() {
+            return (Number(window.state.lockMinutes) || 1.5) * 60000;
+        }
         const MAX_STUDENTS = 40;
         const MAX_ASSIGNMENTS = 50; // 與 firestore.rules 的上限一致
         const SLOT_NAME_MAX_FONT = 22;
@@ -1822,6 +1874,7 @@
 
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && isPendingListOpen()) closePendingList();
+            if (e.key === 'Escape' && !document.getElementById('modal-guide').classList.contains('hidden')) closeGuide();
         });
 
         function toggleSound() {
@@ -1867,6 +1920,7 @@
                 renderSlotCountButtons();
                 renderPinWarning();
                 renderHelperSettings();
+                renderLockMinuteButtons();
                 // 還是預設密碼 8888：先請老師改成自己的密碼
                 if (window.state.teacherPin === DEFAULT_TEACHER_PIN) openForcePinModal();
             }
@@ -1877,7 +1931,7 @@
             if (window.state.teacherTimer) clearTimeout(window.state.teacherTimer);
             window.state.teacherTimer = null;
             if (canEditBoard()) {
-                window.state.teacherTimer = setTimeout(() => lockTeacherSession(true), TEACHER_IDLE_MS);
+                window.state.teacherTimer = setTimeout(() => lockTeacherSession(true), teacherIdleMs());
             }
         }
 
@@ -2034,7 +2088,7 @@
                 hideParentResult();
             }
             if (window.state.currentTab === 'parent') initParentView();
-            showToast(message || (byTimeout ? "閒置超時，已自動鎖定並返回學生消單模式"
+            showToast(message || (byTimeout ? `${window.state.lockMinutes} 分鐘沒有操作，已自動鎖定並返回學生消單模式`
                 : wasHelper ? "已鎖定並退出小幫手模式" : "已安全鎖定並退出教師模式"));
         }
 
@@ -2925,21 +2979,52 @@
             const list = document.getElementById('settings-assignment-list');
             list.innerHTML = '';
 
+            const last = window.state.assignments.length - 1;
             window.state.assignments.forEach((item, index) => {
                 const itemDiv = document.createElement('div');
-                itemDiv.className = "flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl p-2 pl-3 hover:bg-slate-100 transition-all";
+                itemDiv.className = "assign-row flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl p-2 pl-1.5 hover:bg-slate-100 transition-all";
+                itemDiv.dataset.index = index;
+                // 拖曳排序：按住左邊的 ⠿ 拖到想要的位置（手機可用 ▲▼）
+                itemDiv.addEventListener('dragover', (e) => { e.preventDefault(); itemDiv.classList.add('ring-2', 'ring-teal-400'); });
+                itemDiv.addEventListener('dragleave', () => itemDiv.classList.remove('ring-2', 'ring-teal-400'));
+                itemDiv.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    itemDiv.classList.remove('ring-2', 'ring-teal-400');
+                    const from = parseInt(e.dataTransfer.getData('text/plain'), 10);
+                    if (Number.isInteger(from)) moveAssignment(from, index);
+                });
 
                 itemDiv.innerHTML = `
-                    <div class="flex items-center gap-2 min-w-0 flex-1">
+                    <div class="flex items-center gap-1.5 min-w-0 flex-1">
+                        <span draggable="true" class="drag-handle cursor-grab active:cursor-grabbing text-slate-400 hover:text-teal-600 text-base leading-none px-1 select-none flex-shrink-0" title="按住拖曳調整順序">⠿</span>
                         <span class="text-xs font-bold text-slate-400 flex-shrink-0">#${index + 1}</span>
                         <input type="text" maxlength="20" value="${escapeHtml(item)}" onchange="updateAssignment(${index}, this.value)" class="min-w-0 flex-1 bg-transparent border-b border-transparent focus:border-teal-400 focus:outline-none font-bold text-slate-700 text-xs py-0.5 px-1 truncate">
                     </div>
-                    <button onclick="deleteAssignment(${index})" class="text-rose-500 hover:bg-rose-50 p-1.5 rounded-lg transition-all flex-shrink-0" title="刪除">
-                        <i class="fa-solid fa-trash-can text-xs"></i>
-                    </button>
+                    <div class="flex items-center flex-shrink-0">
+                        <button onclick="moveAssignment(${index}, ${index - 1})" ${index === 0 ? 'disabled' : ''} class="text-slate-500 hover:bg-slate-200 disabled:opacity-25 px-1.5 py-1 rounded-lg text-xs font-black" title="往上移">▲</button>
+                        <button onclick="moveAssignment(${index}, ${index + 1})" ${index === last ? 'disabled' : ''} class="text-slate-500 hover:bg-slate-200 disabled:opacity-25 px-1.5 py-1 rounded-lg text-xs font-black" title="往下移">▼</button>
+                        <button onclick="deleteAssignment(${index})" class="text-rose-500 hover:bg-rose-50 p-1.5 rounded-lg transition-all" title="刪除">
+                            <i class="fa-solid fa-trash-can text-xs"></i>
+                        </button>
+                    </div>
                 `;
+                itemDiv.querySelector('.drag-handle').addEventListener('dragstart', (e) => {
+                    e.dataTransfer.setData('text/plain', String(index));
+                    e.dataTransfer.effectAllowed = 'move';
+                });
                 list.appendChild(itemDiv);
             });
+        }
+
+        // 調整作業順序（看板下拉選單、「換下一項」、加框時都照這個順序）
+        function moveAssignment(from, to) {
+            const list = window.state.assignments;
+            if (from === to || from < 0 || to < 0 || from >= list.length || to >= list.length) return;
+            const [item] = list.splice(from, 1);
+            list.splice(to, 0, item);
+            window.soundEffect.playToggle();
+            renderSettingsAssignments();
+            window.syncStateToCloud();
         }
 
         function addAssignment() {
@@ -3123,6 +3208,23 @@
             showToast(!enabled ? '已關閉小幫手模式' : window.state.helperPin ? `已開啟小幫手模式（密碼 ${window.state.helperPin}）` : '已開啟小幫手模式（免密碼）');
         }
 
+        function renderLockMinuteButtons() {
+            document.querySelectorAll('#lock-minute-buttons button').forEach(btn => {
+                const on = Number(btn.dataset.minutes) === Number(window.state.lockMinutes);
+                btn.className = `px-2.5 py-1 rounded-lg border-2 text-xs font-black transition-colors ${on ? 'bg-rose-500 border-rose-500 text-white' : 'bg-white border-slate-200 text-slate-600 hover:border-rose-300'}`;
+            });
+        }
+
+        function setLockMinutes(minutes) {
+            if (!window.LOCK_MINUTE_OPTIONS.includes(minutes)) return;
+            window.state.lockMinutes = minutes;
+            window.soundEffect.playToggle();
+            renderLockMinuteButtons();
+            resetTeacherTimeout();
+            window.syncStateToCloud();
+            showToast(`沒有操作 ${minutes} 分鐘後會自動上鎖`);
+        }
+
         function updateTeacherPin() {
             const input = document.getElementById('settings-teacher-pin').value.trim();
             if (input.length < 4) {
@@ -3208,10 +3310,103 @@
             copyText(getNewBoardLink(), '已複製「全新看板」連結，可以傳給其他老師', '請複製這個連結傳給其他老師：');
         }
 
+        // 透過分享連結建立新看板後：直接打開使用說明，第一頁顯示班級代碼
         window.showNewBoardWelcome = function() {
-            const code = window.getClassCode();
-            alert(`🎉 已為你建立全新的班級看板！\n\n班級代碼：${code}\n請記下這個代碼：在其他裝置（例如手機）的「設定後台 → 班級共用代碼」輸入它，就能共用同一個看板。\n\n教師密碼預設為 8888，第一次進入設定後台時會請你改成自己的密碼。`);
+            openGuide({ newBoard: true });
         };
+
+        // ---- 使用說明（新老師導覽） ----
+        let guideIndex = 0;
+        let guideNewBoard = false;
+
+        function guidePages() {
+            const code = escapeHtml(window.getClassCode());
+            const first = guideNewBoard ? `
+                <div class="text-center">
+                    <div class="text-5xl mb-2">🎉</div>
+                    <h3 class="text-2xl font-black text-slate-800 mb-2">已為你建立全新的班級看板！</h3>
+                    <p class="text-base text-slate-600 mb-3">這是你的<b>班級代碼</b>，請抄下來保存：</p>
+                    <div class="inline-flex items-center gap-2 bg-indigo-50 border-2 border-indigo-200 rounded-2xl px-4 py-2 mb-3">
+                        <span id="guide-class-code" class="font-mono text-2xl font-black text-indigo-700 tracking-wide">${code}</span>
+                        <button onclick="copyCurrentClassCode()" class="text-sm font-bold text-indigo-700 bg-white border border-indigo-200 px-2 py-1 rounded-lg">複製</button>
+                    </div>
+                    <ul class="text-left text-base text-slate-700 space-y-1.5 list-disc pl-5">
+                        <li>在手機等其他裝置的「設定後台 → 班級共用代碼」輸入它，就能共用同一個看板。</li>
+                        <li>教師密碼預設 <b>8888</b>，第一次進設定後台時會請你改成自己的密碼。</li>
+                    </ul>
+                </div>` : `
+                <div class="text-center">
+                    <div class="text-5xl mb-2">📖</div>
+                    <h3 class="text-2xl font-black text-slate-800 mb-2">下課檢查站 使用說明</h3>
+                    <p class="text-base text-slate-600 leading-relaxed">教室電腦顯示全班的紅綠燈：<br><b class="text-rose-600">紅燈</b>＝還要訂正，<b class="text-emerald-600">綠燈</b>＝完成。<br>接下來用幾頁說明怎麼使用。</p>
+                    <p class="text-sm text-slate-500 mt-3">目前的班級代碼：<span class="font-mono font-black text-slate-700">${code}</span></p>
+                </div>`;
+            const page = (icon, title, items) => `
+                <div>
+                    <div class="text-4xl mb-1">${icon}</div>
+                    <h3 class="text-2xl font-black text-slate-800 mb-3">${title}</h3>
+                    <ul class="text-base text-slate-700 space-y-2 list-disc pl-5 leading-relaxed">${items.map(i => `<li>${i}</li>`).join('')}</ul>
+                </div>`;
+            return [
+                first,
+                page('🔴', '老師登記需要訂正的同學', [
+                    '按右上角「<b>教師登記</b>」，輸入教師密碼。',
+                    '點座號，座號變成<b class="text-rose-600">紅燈</b>＝這位同學要訂正。再點一次改回綠燈。',
+                    '作業框的名稱可以點開換作業；新作業發下去時，按標語列的「<b>➕ 新增並放上看板</b>」。',
+                    '一段時間沒有操作會自動上鎖，回到學生消單模式。'
+                ]),
+                page('🟢', '學生自己消單', [
+                    '學生訂正完，到教室電腦點自己的<b class="text-rose-600">紅燈</b>座號，就會變成<b class="text-emerald-600">綠燈</b>。',
+                    '點錯了可以按左下角的「<b>↩ 復原</b>」。',
+                    '學生模式只能把紅燈改成綠燈，不能亂點紅燈。',
+                    '按「<b>📋 未訂正名單</b>」可以看全班還有誰沒訂正。'
+                ]),
+                page('👪', '家長查詢', [
+                    '「設定後台 → 班級座號名冊」裡，每位學生都有一組<b>家長查詢碼</b>。',
+                    '按「<b>列印家長查詢碼</b>」印出 QR Code 紙條發給家長，或用「複製連結」傳給家長。',
+                    '家長只看得到自己孩子的作業狀況，看不到其他同學。',
+                    '<b class="text-rose-600">班級代碼不要給家長</b>，家長只需要查詢碼。'
+                ]),
+                page('⚙️', '其他小技巧', [
+                    '<b>🙋 小幫手模式</b>：在設定後台開啟，讓小老師幫忙點紅燈、換作業，但不能進設定後台。',
+                    '<b>🔄 立即同步</b>：教室電腦和手機都按一下，就能確認兩邊是同一份進度。',
+                    '<b>🎁 複製分享全新看板</b>：分享給其他老師，他們會有自己的空白看板，看不到你的資料。',
+                    '之後想再看這份說明，到「設定後台」按右上角的「<b>📖 使用說明</b>」。'
+                ])
+            ];
+        }
+
+        function openGuide(options = {}) {
+            guideNewBoard = !!options.newBoard;
+            guideIndex = 0;
+            renderGuide();
+            document.getElementById('modal-guide').classList.remove('hidden');
+        }
+
+        function closeGuide() {
+            document.getElementById('modal-guide').classList.add('hidden');
+        }
+
+        function guidePage(step) {
+            const total = guidePages().length;
+            if (step > 0 && guideIndex === total - 1) {
+                closeGuide();
+                return;
+            }
+            guideIndex = Math.max(0, Math.min(total - 1, guideIndex + step));
+            window.soundEffect.playToggle();
+            renderGuide();
+        }
+
+        function renderGuide() {
+            const pages = guidePages();
+            document.getElementById('guide-body').innerHTML = pages[guideIndex];
+            document.getElementById('guide-step').textContent = `${guideIndex + 1} / ${pages.length}`;
+            document.getElementById('guide-dots').innerHTML = pages.map((_, i) =>
+                `<span class="w-2.5 h-2.5 rounded-full ${i === guideIndex ? 'bg-amber-400' : 'bg-slate-200'}"></span>`).join('');
+            document.getElementById('guide-prev').disabled = guideIndex === 0;
+            document.getElementById('guide-next').textContent = guideIndex === pages.length - 1 ? '開始使用 ✓' : '下一步 →';
+        }
 
         function readClassCodeInput() {
             const code = document.getElementById('settings-class-code').value.trim().toLowerCase();
