@@ -49,8 +49,8 @@ test('重新產生查詢碼後，舊的立即失效', async ({ browser }) => {
     const newCode = await teacher.evaluate(() => state.students.find((s) => s.id === 6).parentCode);
     expect(newCode).toMatch(/^[A-Z0-9]{6}$/);
     // 新的查詢碼先確認沒被別班使用，再上傳
-    await expect.poll(() => cloud.view(newCode)).toBeTruthy();
-    expect(cloud.view(oldCode)).toBeUndefined();
+    // 同一批寫入：新的上傳、舊的刪除
+    await expect.poll(() => [!!cloud.view(newCode), !!cloud.view(oldCode)], { timeout: 20000 }).toEqual([true, false]);
 });
 
 test('列印紙條的 QR Code 內容就是家長連結', async ({ browser }) => {

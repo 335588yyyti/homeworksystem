@@ -513,13 +513,18 @@
 
             // 這台裝置還沒寫過的查詢碼：先確認不是別班的
             const unchecked = Object.keys(views).filter(code => !publishedParentViews.has(code));
-            const taken = [];
-            for (const code of unchecked) {
-                const snap = await getDoc(parentViewRef(code));
-                const owner = snap.exists() ? snap.data().owner : null;
-                if (owner && owner !== boardId) taken.push(code);
-            }
+            // 一次同時查詢，不用一個一個等
+            const owners = await Promise.all(unchecked.map(code => getDoc(parentViewRef(code))
+                .then(snap => (snap.exists() ? snap.data().owner : null))));
+            const taken = unchecked.filter((code, i) => owners[i] && owners[i] !== boardId);
             if (cloudDocRef === null || boardId !== window.state.boardId) return;
+            // 查詢期間名冊可能有變動（例如重新產生查詢碼）：改用最新的資料，還沒確認過的新查詢碼留到下一輪
+            const latest = window.buildParentViews();
+            const fresh = {};
+            Object.entries(latest).forEach(([code, view]) => {
+                if (publishedParentViews.has(code) || unchecked.includes(code)) fresh[code] = view;
+                else publishAgain = true;
+            });
             if (taken.length > 0) {
                 const changed = window.replaceTakenParentCodes(taken);
                 if (changed.length > 0) {
@@ -531,13 +536,13 @@
 
             const batch = writeBatch(db);
             const written = [];
-            Object.entries(views).forEach(([code, view]) => {
+            Object.entries(fresh).forEach(([code, view]) => {
                 const key = hashText(JSON.stringify(view));
                 if (publishedParentViews.get(code) === key) return;
                 batch.set(parentViewRef(code), { ...view, owner: boardId, updatedAt: Date.now() });
                 written.push([code, key]);
             });
-            const deletes = [...pendingParentViewDeletes].filter(code => !views[code]);
+            const deletes = [...pendingParentViewDeletes].filter(code => !latest[code]);
             deletes.forEach(code => batch.delete(parentViewRef(code)));
             if (written.length === 0 && deletes.length === 0) return;
             // 先記下已送出的內容，避免下一次存檔重複寫入；寫入失敗時再清掉，下次重送
@@ -3262,8 +3267,10 @@
             document.getElementById('force-pin-new').value = '';
             document.getElementById('force-pin-confirm').value = '';
             document.getElementById('force-pin-msg').classList.add('hidden');
-            document.getElementById('modal-force-pin').classList.remove('hidden');
-            setTimeout(() => document.getElementById('force-pin-new').focus(), 100);
+            const modal = document.getElementById('modal-force-pin');
+            modal.classList.remove('hidden');
+            // 已經在輸入框裡打字時，不要把游標搶走
+            setTimeout(() => { if (!modal.contains(document.activeElement)) document.getElementById('force-pin-new').focus(); }, 100);
         }
 
         function closeForcePinModal(changed) {
