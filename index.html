@@ -88,7 +88,8 @@
             font-weight: 900;
         }
         /* 卡片較窄時（例如 8 框），「全部完成」只顯示 ✓，把空間留給作業名稱 */
-        .card-compact .slot-done-label {
+        .card-compact .slot-done-label,
+        .card-compact .slot-next-long {
             display: none;
         }
         /* 三個字以上的座號（少見）縮小，避免超出按鈕 */
@@ -1772,6 +1773,9 @@
                             <button id="slot-done-${index}" onclick="markSlotAllDone(${index})" class="${isTeacherMode() && pendingCount > 0 ? '' : 'hidden'} text-[13px] xl:text-xs font-black px-2 py-0.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white flex-shrink-0 whitespace-nowrap shadow-sm" title="把這項作業全班設為完成（綠燈）">
                                 ✓<span class="slot-done-label"> 全部完成</span>
                             </button>
+                            <button id="slot-next-${index}" onclick="swapToNextPending(${index})" class="${isTeacherMode() && pendingCount === 0 && nextPendingAssignment() ? '' : 'hidden'} text-[13px] xl:text-xs font-black px-2 py-0.5 rounded-full bg-sky-500 hover:bg-sky-600 text-white flex-shrink-0 whitespace-nowrap shadow-sm" title="換成下一項還有人沒訂正的作業">
+                                換<span class="slot-next-long">下一項</span> ➜
+                            </button>
                         </div>
                     </div>
                 `;
@@ -2015,6 +2019,8 @@
                 }
                 const doneBtn = document.getElementById(`slot-done-${idx}`);
                 if (doneBtn) doneBtn.classList.toggle('hidden', !(isTeacherMode() && pCount > 0));
+                const nextBtn = document.getElementById(`slot-next-${idx}`);
+                if (nextBtn) nextBtn.classList.toggle('hidden', !(isTeacherMode() && pCount === 0 && nextPendingAssignment()));
             });
 
             refreshPendingList();
@@ -2041,6 +2047,28 @@
             renderDashboard();
             window.syncStatusChange([[assignment, null, window.state.assignmentStatuses[assignment]]]);
             showToast(`【${assignment}】已全班完成 🎉`);
+        }
+
+        // 下一項還有人沒訂正、而且還沒放上看板的作業（依作業清單順序）；沒有時回傳 null
+        function nextPendingAssignment() {
+            const onBoard = new Set(window.state.slots.map(s => s.assignment));
+            return window.state.assignments.find(a => !onBoard.has(a) && countPending(a) > 0) || null;
+        }
+
+        // 卡片上的「換下一項」：這項作業全班都訂正完了，換成下一項還有人沒訂正的作業
+        function swapToNextPending(slotIndex) {
+            if (!isTeacherMode()) return;
+            const slot = window.state.slots[slotIndex];
+            if (!slot || countPending(slot.assignment) > 0) return;
+            const next = nextPendingAssignment();
+            if (!next) {
+                showToast('其他作業都訂正完成了 🎉');
+                renderDashboard();
+                return;
+            }
+            const finished = slot.assignment;
+            applyAssignmentToSlot(slotIndex, next);
+            showToast(`【${finished}】換成【${next}】（待訂正 ${countPending(next)} 人）`);
         }
 
         let parentWatchUnsub = null;
