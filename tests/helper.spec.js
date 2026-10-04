@@ -110,6 +110,9 @@ test('分享全新看板：對方打開連結會建立自己的空白班級，�
     const link = await teacher.evaluate(() => navigator.clipboard.readText());
     expect(link).toMatch(/\/index\.html\?new$/);
 
+    // 分享者自己的班級有人還沒訂正
+    await teacher.evaluate(() => { setStudentStatus(state.slots[0].assignment, 3, false); syncStateToCloud(true); });
+
     const other = await openDevice(browser, cloud, { query: '?new' });
     await expect.poll(() => other.dialogs.length).toBe(1);
     expect(other.dialogs[0]).toContain('已為你建立全新的班級看板');
@@ -120,6 +123,18 @@ test('分享全新看板：對方打開連結會建立自己的空白班級，�
     expect(cloud.board(code).sloganTitle).not.toBe('我的班級');
     expect(cloud.board('main').sloganTitle).toBe('我的班級');
     expect(await other.evaluate(() => location.search)).toBe(''); // 重新整理不會再建立
+    // 新看板全部是綠燈，不會帶到分享者的訂正狀況
+    expect(await other.locator('.seat-pending').count()).toBe(0);
+    expect(Object.values(cloud.board(code).statuses || {}).every((m) => Object.values(m).every(Boolean))).toBe(true);
+
+    // 同一台裝置（原本有自己班級的紅燈）打開連結：一開始就顯示全新的空白看板
+    const same = await openDevice(browser, cloud);
+    await same.evaluate(() => { localStorage.setItem('checkpoint_class_code', 'mine123'); setStudentStatus(state.slots[0].assignment, 4, false); saveLocalBackup(); });
+    await same.goto(same.url().split('?')[0] + '?new');
+    expect(await same.locator('.seat-pending').count()).toBe(0);
+    await expect.poll(() => same.evaluate(() => getClassCode())).not.toBe('mine123');
+    await same.waitForTimeout(500);
+    expect(await same.locator('.seat-pending').count()).toBe(0);
 
     // 已經在用其他班級的裝置：先確認，取消就不建立
     const existing = await openDevice(browser, cloud);
@@ -130,4 +145,5 @@ test('分享全新看板：對方打開連結會建立自己的空白班級，�
     expect(existing.dialogs[0]).toContain('abc123x');
     await existing.waitForTimeout(800);
     expect(await existing.evaluate(() => getClassCode())).toBe('abc123x');
+    expect(await existing.evaluate(() => location.search)).toBe('');
 });
