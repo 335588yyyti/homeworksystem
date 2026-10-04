@@ -4,6 +4,8 @@ const { defineConfig } = require('@playwright/test');
 module.exports = defineConfig({
     testDir: './tests',
     timeout: 60000,
+    // GitHub 的測試電腦較慢、又同時跑很多項：等待畫面或雲端資料的上限放寬到 10 秒
+    expect: { timeout: 10000 },
     fullyParallel: true,
     retries: 0,
     reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',

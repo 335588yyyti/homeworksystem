@@ -17,7 +17,8 @@ test('斷線時顯示離線中，恢復連線後自動上傳修改', async ({ br
     await expect(page.locator('#cloud-sync-status')).toContainText('離線中');
 
     await page.context().setOffline(false);
-    await expect(page.locator('#cloud-sync-status')).toContainText('已連線存檔');
+    // 點座號會等最後一次點擊後 5 秒才上傳，再加上恢復連線的時間
+    await expect(page.locator('#cloud-sync-status')).toContainText('已連線存檔', { timeout: 15000 });
     const statuses = cloud.board('main').statuses['國習'];
     expect(statuses['7']).toBe(false);
     expect(statuses['8']).toBe(false);
