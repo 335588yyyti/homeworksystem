@@ -2452,15 +2452,32 @@
 
         function deleteAssignment(index) {
             const val = window.state.assignments[index];
-            if (window.state.slots.some(slot => slot.assignment === val)) {
+            const slotIndexes = window.state.slots.map((slot, i) => slot.assignment === val ? i : -1).filter(i => i >= 0);
+            let replacements = [];
+            if (slotIndexes.length > 0) {
+                // 看板上的作業：先找好要換上去的作業（優先換成還有人沒訂正的）
+                const onBoard = new Set(window.state.slots.map(s => s.assignment));
+                const offBoard = window.state.assignments.filter(a => !onBoard.has(a));
+                replacements = [...offBoard.filter(a => countPending(a) > 0), ...offBoard.filter(a => countPending(a) === 0)].slice(0, slotIndexes.length);
+                if (replacements.length < slotIndexes.length) {
+                    window.soundEffect.playAlert();
+                    showToast(`無法刪除！作業項目不能少於看板的 ${window.state.slots.length} 框，請先新增其他作業。`, false);
+                    return;
+                }
+                const pendingSeats = window.state.students.filter(st => !getStudentStatus(val, st.id)).map(st => getPureSeatNumber(st.name));
+                let message = `【${val}】目前正在看板上（第 ${slotIndexes.map(i => i + 1).join('、')} 框），確定要刪除嗎？\n刪除後這一框會換成【${replacements.join('】、【')}】。`;
+                if (pendingSeats.length > 0) {
+                    message += `\n\n⚠️ 注意：還有 ${pendingSeats.length} 位同學沒有訂正完成（座號 ${pendingSeats.join('、')}），刪除後這些紀錄會一起清除，無法復原！`;
+                }
                 window.soundEffect.playAlert();
-                showToast(`無法刪除！【${val}】目前正在看板列管中。`, false);
-                return;
+                if (!confirm(message)) return;
             }
             window.soundEffect.playToggle();
+            slotIndexes.forEach((slotIndex, i) => { window.state.slots[slotIndex].assignment = replacements[i]; });
             window.state.assignments.splice(index, 1);
             delete window.state.assignmentStatuses[val];
             renderSettingsAssignments();
+            if (slotIndexes.length > 0) renderDashboard();
             window.syncStateToCloud();
             showToast(`已刪除作業：【${val}】`);
         }
