@@ -56,6 +56,9 @@ test('作業項目可以拖曳或用 ▲▼ 調整順序，看板選單照新順
     await page.click('#settings-assignment-list > div:nth-child(1) button[title="往下移"]');
     expect(await page.evaluate(() => state.assignments.slice(0, 2))).toEqual([before[1], before[0]]);
     await expect(page.locator('#settings-assignment-list > div:nth-child(1) button[title="往上移"]')).toBeDisabled();
+    // 等雲端存好，避免拖曳途中收到雲端更新重畫清單
+    await expect.poll(() => cloud.board('main').assignments[0]).toBe(before[1]);
+    await page.waitForTimeout(300);
 
     // 拖曳：第 4 項拖到第 1 項的位置
     await page.dragAndDrop('#settings-assignment-list > div:nth-child(4) .drag-handle', '#settings-assignment-list > div:nth-child(1)');

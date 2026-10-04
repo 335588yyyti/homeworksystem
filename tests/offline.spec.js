@@ -39,7 +39,10 @@ test('離線開啟網頁、本機沒有快取時，不會把本機資料當成�
     await expect.poll(() => page.evaluate(() => state.students.length)).toBe(3);
     await page.waitForTimeout(500);
     expect(cloud.board('main').students).toHaveLength(3);
-    expect(page.writes.filter((p) => p.includes('checkpoint_boards'))).toEqual([]);
+    // 舊班級只補上「班級編號」這一欄，其他資料沒有被本機資料蓋掉
+    const board = cloud.board('main');
+    expect(Object.keys(board).sort()).toEqual(['assignments', 'boardId', 'lastUpdated', 'slots', 'statuses', 'students', 'teacherPin']);
+    expect(board.lastUpdated).toBe(1);
 });
 
 test('雲端額度用完時，狀態燈清楚提示', async ({ browser }) => {

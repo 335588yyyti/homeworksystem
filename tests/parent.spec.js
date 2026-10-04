@@ -46,11 +46,11 @@ test('重新產生查詢碼後，舊的立即失效', async ({ browser }) => {
     const teacher = await openDevice(browser, cloud);
     const oldCode = await teacher.evaluate(() => state.students.find((s) => s.id === 6).parentCode);
     await teacher.evaluate(() => { startTeacherSession(); switchTab('settings', true); regenerateParentCode(6); });
-    await teacher.waitForTimeout(600);
     const newCode = await teacher.evaluate(() => state.students.find((s) => s.id === 6).parentCode);
     expect(newCode).toMatch(/^[A-Z0-9]{6}$/);
+    // 新的查詢碼先確認沒被別班使用，再上傳
+    await expect.poll(() => cloud.view(newCode)).toBeTruthy();
     expect(cloud.view(oldCode)).toBeUndefined();
-    expect(cloud.view(newCode)).toBeTruthy();
 });
 
 test('列印紙條的 QR Code 內容就是家長連結', async ({ browser }) => {
@@ -91,9 +91,9 @@ test('重新開網頁時不重寫全班的家長查詢資料，只上傳有變�
     // 超過 7 天：整份重新上傳一次，以防雲端資料被手動刪除或不一致
     page.writes.length = 0;
     await page.evaluate(() => {
-        const cache = JSON.parse(localStorage.getItem('checkpoint_published_views'));
+        const cache = JSON.parse(localStorage.getItem('checkpoint_published_views_v2'));
         cache.bornAt = Date.now() - 8 * 24 * 60 * 60 * 1000;
-        localStorage.setItem('checkpoint_published_views', JSON.stringify(cache));
+        localStorage.setItem('checkpoint_published_views_v2', JSON.stringify(cache));
     });
     await page.reload();
     await expect.poll(viewWrites).toBe(28);
@@ -110,4 +110,30 @@ test('輸入框的範例查詢碼不可能是真的查詢碼', async ({ browser 
     const codes = await parent.evaluate(() => Array.from({ length: 2000 }, () => generateParentCode()));
     expect(codes).not.toContain(example);
     expect(codes.every((c) => [...c].every((ch) => alphabet.includes(ch)))).toBe(true);
+});
+
+test('查詢碼和其他班級重複時自動換新，不會覆蓋或查到別班的學生', async ({ browser }) => {
+    const cloud = createCloud();
+    // 別班已經在用 TAKEN2 這組查詢碼
+    cloud.store['artifacts/classroom-checkpoint-app/public/data/parent_views/TAKEN2'] = { seat: '9', items: [{ name: '別班作業', finished: false, onBoard: true }], owner: 'otherclass123', updatedAt: 1 };
+    cloud.setBoard('main', {
+        students: [{ id: 1, name: '1', parentCode: 'TAKEN2' }, { id: 2, name: '2', parentCode: 'MINE22' }],
+        assignments: ['國習'], slots: [{ id: 1, assignment: '國習' }], statuses: {}, teacherPin: '1357', lastUpdated: 1
+    });
+    const page = await openDevice(browser, cloud);
+    // 1 號換成新的查詢碼並存回雲端；別班的資料沒有被動到
+    await expect.poll(() => cloud.board('main').students[0].parentCode).not.toBe('TAKEN2');
+    const newCode = cloud.board('main').students[0].parentCode;
+    expect(newCode).toMatch(/^[A-Z0-9]{6}$/);
+    expect(cloud.view('TAKEN2').owner).toBe('otherclass123');
+    expect(cloud.view('TAKEN2').seat).toBe('9');
+    await expect(page.locator('#toast-msg')).toContainText('和其他班級重複');
+
+    // 自己班的查詢資料都標上本班編號
+    const boardId = cloud.board('main').boardId;
+    expect(boardId).toMatch(/^[a-z0-9]{12}$/);
+    await expect.poll(() => cloud.view(newCode)?.owner).toBe(boardId);
+    expect(cloud.view('MINE22').owner).toBe(boardId);
+    // 班級編號不是班級代碼，家長看不到班級代碼
+    expect(JSON.stringify(cloud.view('MINE22'))).not.toContain('main');
 });
