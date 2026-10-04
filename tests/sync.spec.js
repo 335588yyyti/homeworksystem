@@ -1,7 +1,6 @@
-// 同步：兩台裝置同時點不同座號不會互相覆蓋、舊格式自動轉換、卡片「全部完成」、備份與匯出
-const fs = require('fs');
+// 同步：兩台裝置同時點不同座號不會互相覆蓋、舊格式自動轉換、卡片「全部完成」、重新開機後資料還在
 const { test, expect } = require('@playwright/test');
-const { createCloud, openDevice, unlockTeacher } = require('./helpers');
+const { createCloud, openDevice } = require('./helpers');
 
 async function teacherMode(page) {
     await page.evaluate(() => { startTeacherSession(); applyRoleUI('teacher'); });
@@ -80,52 +79,21 @@ test('卡片「全部完成」只在教師登記模式出現，按下後只影�
     expect(statuses['國作']['7']).toBe(false); // 其他作業不受影響
 });
 
-test('下載備份檔、從備份檔還原', async ({ browser }) => {
+test('有網路時修改會存到雲端，電腦重新開機後資料還在', async ({ browser }) => {
     const cloud = createCloud();
-    const page = await openDevice(browser, cloud);
-    await teacherMode(page);
-    await page.click('#btn-slot-0-student-6');
-    await unlockTeacher(page, 'settings');
+    const classroom = await openDevice(browser, cloud);
+    await teacherMode(classroom);
+    for (const seat of [2, 9, 17]) await classroom.click(`#btn-slot-0-student-${seat}`);
+    await classroom.click('#btn-slot-1-student-5');
+    // 狀態燈回到「已連線存檔」代表全部都已存進雲端
+    await expect(classroom.locator('#cloud-sync-status')).toContainText('已連線存檔');
+    expect(cloud.board('main').statuses['國習']).toMatchObject({ 2: false, 9: false, 17: false });
+    expect(cloud.board('main').statuses['國作']['5']).toBe(false);
 
-    const [download] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("下載備份檔")')]);
-    expect(download.suggestedFilename()).toMatch(/^homework-backup-main-\d{8}-\d{4}\.json$/);
-    const backupPath = await download.path();
-    const backup = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
-    expect(backup.board.students).toHaveLength(28);
-    expect(backup.board.statuses['國習']['6']).toBe(false);
-
-    // 誤按全班訂正歸零
-    await page.evaluate(() => resetAllStudentsToGreen());
-    await page.waitForTimeout(500);
-    expect(cloud.board('main').statuses['國習']['6']).toBe(true);
-
-    // 用備份檔還原
-    await page.setInputFiles('#backup-file-input', backupPath);
-    await expect(page.locator('#toast-msg')).toContainText('已從備份檔還原');
-    await page.waitForTimeout(500);
-    expect(cloud.board('main').statuses['國習']['6']).toBe(false);
-    expect(page.dialogs.at(-1)).toContain('28 位學生');
-
-    // 不是備份檔時會被拒絕
-    await page.setInputFiles('#backup-file-input', { name: 'x.json', mimeType: 'application/json', buffer: Buffer.from('{"hello":1}') });
-    await expect(page.locator('#toast-msg')).toContainText('不是下課檢查站的備份檔');
-});
-
-test('匯出 Excel：每位學生一列、每項作業一欄', async ({ browser }) => {
-    const page = await openDevice(browser, createCloud());
-    await teacherMode(page);
-    await page.click('#btn-slot-0-student-5');
-    await unlockTeacher(page, 'settings');
-    const [download] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("匯出 Excel")')]);
-    expect(download.suggestedFilename()).toMatch(/^homework-main-\d{8}-\d{4}\.csv$/);
-    const text = fs.readFileSync(await download.path(), 'utf8');
-    expect(text.charCodeAt(0)).toBe(0xFEFF);
-    const lines = text.slice(1).split('\r\n');
-    expect(lines[0].startsWith('座號,國習,國作')).toBe(true);
-    expect(lines[0].endsWith(',待訂正數')).toBe(true);
-    expect(lines).toHaveLength(29);
-    const seat5 = lines[5].split(',');
-    expect(seat5[0]).toBe('5');
-    expect(seat5[1]).toBe('待訂正');
-    expect(seat5.at(-1)).toBe('1');
+    // 模擬電腦重新開機：關掉整個瀏覽器，再用全新的瀏覽器開啟
+    await classroom.context().close();
+    const restarted = await openDevice(browser, cloud);
+    for (const seat of [2, 9, 17]) await expect(restarted.locator(`#btn-slot-0-student-${seat}`)).toHaveClass(/seat-pending/);
+    await expect(restarted.locator('#btn-slot-1-student-5')).toHaveClass(/seat-pending/);
+    await expect(restarted.locator('#slot-badge-0')).toContainText('待訂正 3 人');
 });

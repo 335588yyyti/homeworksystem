@@ -474,7 +474,6 @@
                 lastUpdated: Date.now()
             };
         }
-        window.buildBoardPayload = buildPayload;
 
         function refreshSyncBadge() {
             if (!window.isCloudConnected()) return;
@@ -1159,32 +1158,6 @@
                     </div>
                 </div>
 
-                <!-- 備份與匯出 -->
-                <div class="settings-large bg-white border-2 border-slate-200 rounded-2xl p-4 board-shadow">
-                    <div class="flex items-center gap-2 mb-3">
-                        <div class="bg-emerald-50 text-emerald-600 p-1.5 rounded-lg border border-emerald-100">
-                            <i class="fa-solid fa-box-archive text-sm"></i>
-                        </div>
-                        <h3 class="text-sm font-black text-slate-800">6. 備份與匯出</h3>
-                    </div>
-                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
-                        <button onclick="exportBackup()" class="bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-3 py-2 rounded-xl text-xs transition-all">
-                            <i class="fa-solid fa-download"></i> 下載備份檔
-                        </button>
-                        <button onclick="document.getElementById('backup-file-input').click()" class="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 font-bold px-3 py-2 rounded-xl text-xs transition-all">
-                            <i class="fa-solid fa-upload"></i> 從備份檔還原
-                        </button>
-                        <button onclick="exportCsv()" class="bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-300 font-bold px-3 py-2 rounded-xl text-xs transition-all">
-                            <i class="fa-solid fa-file-excel"></i> 匯出 Excel
-                        </button>
-                    </div>
-                    <input type="file" id="backup-file-input" accept=".json,application/json" class="hidden" onchange="importBackup(this.files[0]); this.value = '';">
-                    <ul class="text-xs text-slate-600 leading-relaxed list-disc pl-5 space-y-1">
-                        <li><b>下載備份檔</b>：存下整個班級（名冊、作業、紅綠燈、標語、查詢碼）。建議每週或學期末下載一次。</li>
-                        <li><b>從備份檔還原</b>：用備份檔取代目前的班級資料，例如誤按「全班訂正歸零」時。</li>
-                        <li><b>匯出 Excel</b>：每位學生一列、每項作業一欄，可用 Excel 開啟、列印或留存紀錄。</li>
-                    </ul>
-                </div>
             </div>
 
             <!-- 右側學生座號管理 -->
@@ -2531,90 +2504,6 @@
                 <div class="grid">${rows}</div>
                 </body></html>`);
             win.document.close();
-        }
-
-        function downloadFile(filename, content, type) {
-            const blob = new Blob([content], { type });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            setTimeout(() => URL.revokeObjectURL(url), 1000);
-        }
-
-        function fileDateStamp() {
-            const d = new Date();
-            const pad = n => String(n).padStart(2, '0');
-            return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
-        }
-
-        // 下載整個班級的備份檔（JSON）
-        function exportBackup() {
-            ensureParentCodes();
-            const backup = {
-                app: 'homeworksystem',
-                version: 1,
-                classCode: window.getClassCode(),
-                exportedAt: new Date().toISOString(),
-                board: window.buildBoardPayload()
-            };
-            // 檔名用英文：部分瀏覽器遇到中文檔名會改成沒有副檔名的「download」
-            downloadFile(`homework-backup-${window.getClassCode()}-${fileDateStamp()}.json`, JSON.stringify(backup, null, 2), 'application/json');
-            showToast('已下載備份檔');
-        }
-
-        // 用備份檔取代目前的班級資料
-        async function importBackup(file) {
-            if (!file) return;
-            let backup;
-            try {
-                backup = JSON.parse(await file.text());
-            } catch (e) {
-                window.soundEffect.playAlert();
-                showToast('無法讀取這個檔案，請確認是下課檢查站的備份檔', false);
-                return;
-            }
-            const board = backup && backup.app === 'homeworksystem' ? backup.board : null;
-            if (!board || !Array.isArray(board.students) || !Array.isArray(board.assignments) || !Array.isArray(board.slots)) {
-                window.soundEffect.playAlert();
-                showToast('這不是下課檢查站的備份檔', false);
-                return;
-            }
-            const when = backup.exportedAt ? new Date(backup.exportedAt).toLocaleString('zh-TW') : '不明';
-            if (!confirm(`要用這個備份檔取代目前的班級資料嗎？\n\n・備份時間：${when}\n・${board.students.length} 位學生、${board.assignments.length} 項作業\n\n目前看板上的資料會被覆蓋（教師密碼也會換成備份檔裡的）。`)) return;
-            window.state.assignmentStatuses = {};
-            window.applyBoardData(board);
-            ensureParentCodes();
-            window.soundEffect.playSuccess();
-            renderSlogan();
-            renderSettingsAssignments();
-            renderSettingsStudents();
-            renderSlotCountButtons();
-            window.syncStateToCloud(true);
-            showToast('已從備份檔還原');
-        }
-
-        function csvCell(value) {
-            const text = String(value ?? '');
-            return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-        }
-
-        // 匯出 Excel 可開啟的 CSV：每位學生一列、每項作業一欄
-        function exportCsv() {
-            const assignments = window.state.assignments;
-            const header = ['座號', ...assignments, '待訂正數'];
-            const rows = window.state.students.map(st => {
-                const cells = assignments.map(a => getStudentStatus(a, st.id) ? '完成' : '待訂正');
-                const pending = cells.filter(c => c === '待訂正').length;
-                return [getPureSeatNumber(st.name), ...cells, pending];
-            });
-            const csv = [header, ...rows].map(row => row.map(csvCell).join(',')).join('\r\n');
-            // 加上 BOM，Excel 才會用正確的中文編碼開啟
-            downloadFile(`homework-${window.getClassCode()}-${fileDateStamp()}.csv`, '\uFEFF' + csv, 'text/csv;charset=utf-8');
-            showToast('已匯出 Excel 檔');
         }
 
         function getNextStudentId() {
