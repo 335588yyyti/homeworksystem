@@ -338,6 +338,13 @@
         const LOCK_MINUTE_OPTIONS = [1.5, 3, 5, 10];
         window.LOCK_MINUTE_OPTIONS = LOCK_MINUTE_OPTIONS;
 
+        // 隨機的班級編號（不是班級代碼，無法從它推回班級代碼）
+        window.makeBoardId = function() {
+            const bytes = new Uint8Array(12);
+            crypto.getRandomValues(bytes);
+            return Array.from(bytes, b => 'abcdefghijklmnopqrstuvwxyz0123456789'[b % 36]).join('');
+        };
+
         window.createDefaultBoard = function() {
             return {
                 // 每個新班級的教師密碼一律從 8888 開始，不沿用其他班
@@ -347,6 +354,8 @@
                 helperPin: '',
                 // 教師／小幫手閒置幾分鐘後自動上鎖
                 lockMinutes: 1.5,
+                // 這個班級的隨機編號：寫在每份家長查詢資料裡，用來分辨查詢碼屬於哪一班
+                boardId: window.makeBoardId(),
 
                 sloganTitle: '未訂正完成，不能下課！ 🔔',
                 sloganSub: '請自律完成訂正，完成後記得點擊個人座號銷單喔！',
@@ -448,7 +457,8 @@
 
         // 記住這台裝置已經上傳過的家長查詢資料（存在瀏覽器裡），重新開網頁時只上傳有變動的，
         // 不必每次都重寫全班，節省 Firebase 每日寫入額度。每 7 天整份重新上傳一次，以防萬一。
-        const PUBLISHED_CACHE_KEY = 'checkpoint_published_views';
+        // v2：加入「查詢碼屬於哪一班」的檢查後，每台裝置第一次會重新確認並上傳一次
+        const PUBLISHED_CACHE_KEY = 'checkpoint_published_views_v2';
         const PUBLISHED_CACHE_DAYS = 7;
         let publishedCacheBornAt = Date.now();
 
@@ -480,19 +490,59 @@
             } catch(e) {}
         }
 
-        // 把每位學生的摘要寫到 parent_views/{查詢碼}；家長只讀得到自己孩子的那一份
+        // 把每位學生的摘要寫到 parent_views/{查詢碼}；家長只讀得到自己孩子的那一份。
+        // 查詢碼是所有班級共用的，第一次寫入某個查詢碼前會先確認它沒有被別班使用（owner 是別班的班級編號），
+        // 萬一重複就幫這位學生換一組新的，絕不覆蓋別班的資料。
+        let publishing = null;
+        let publishAgain = false;
+
         async function publishParentViews() {
-            if (!db || !currentUser || !cloudDocRef || window.IS_PARENT_MODE) return;
+            if (publishing) { publishAgain = true; return publishing; }
+            publishing = publishParentViewsOnce().finally(() => { publishing = null; });
+            await publishing;
+            if (publishAgain) {
+                publishAgain = false;
+                await publishParentViews();
+            }
+        }
+
+        async function publishParentViewsOnce() {
+            if (!db || !currentUser || !cloudDocRef || window.IS_PARENT_MODE || !window.state.boardId) return;
+            const boardId = window.state.boardId;
             const views = window.buildParentViews();
+
+            // 這台裝置還沒寫過的查詢碼：先確認不是別班的
+            const unchecked = Object.keys(views).filter(code => !publishedParentViews.has(code));
+            // 一次同時查詢，不用一個一個等
+            const owners = await Promise.all(unchecked.map(code => getDoc(parentViewRef(code))
+                .then(snap => (snap.exists() ? snap.data().owner : null))));
+            const taken = unchecked.filter((code, i) => owners[i] && owners[i] !== boardId);
+            if (cloudDocRef === null || boardId !== window.state.boardId) return;
+            // 查詢期間名冊可能有變動（例如重新產生查詢碼）：改用最新的資料，還沒確認過的新查詢碼留到下一輪
+            const latest = window.buildParentViews();
+            const fresh = {};
+            Object.entries(latest).forEach(([code, view]) => {
+                if (publishedParentViews.has(code) || unchecked.includes(code)) fresh[code] = view;
+                else publishAgain = true;
+            });
+            if (taken.length > 0) {
+                const changed = window.replaceTakenParentCodes(taken);
+                if (changed.length > 0) {
+                    window.syncStateToCloud(true); // 存檔後會再呼叫一次上傳
+                    window.notifyParentCodesChanged(changed);
+                    return;
+                }
+            }
+
             const batch = writeBatch(db);
             const written = [];
-            Object.entries(views).forEach(([code, view]) => {
+            Object.entries(fresh).forEach(([code, view]) => {
                 const key = hashText(JSON.stringify(view));
                 if (publishedParentViews.get(code) === key) return;
-                batch.set(parentViewRef(code), { ...view, updatedAt: Date.now() });
+                batch.set(parentViewRef(code), { ...view, owner: boardId, updatedAt: Date.now() });
                 written.push([code, key]);
             });
-            const deletes = [...pendingParentViewDeletes].filter(code => !views[code]);
+            const deletes = [...pendingParentViewDeletes].filter(code => !latest[code]);
             deletes.forEach(code => batch.delete(parentViewRef(code)));
             if (written.length === 0 && deletes.length === 0) return;
             // 先記下已送出的內容，避免下一次存檔重複寫入；寫入失敗時再清掉，下次重送
@@ -549,6 +599,7 @@
                 helperEnabled: !!window.state.helperEnabled,
                 helperPin: window.state.helperPin || '',
                 lockMinutes: window.state.lockMinutes,
+                boardId: window.state.boardId,
                 statuses: copyStatuses(),
                 lastUpdated: Date.now()
             };
@@ -776,6 +827,7 @@
                     helperEnabled: !!window.state.helperEnabled,
                     helperPin: window.state.helperPin || '',
                     lockMinutes: window.state.lockMinutes,
+                    boardId: window.state.boardId,
                     updatedAt: Date.now()
                 };
                 localStorage.setItem('checkpoint_local_backup_v3', JSON.stringify(data));
@@ -804,6 +856,8 @@
             window.state.helperEnabled = d.helperEnabled === true;
             window.state.helperPin = typeof d.helperPin === 'string' && /^\d{4}$/.test(d.helperPin) ? d.helperPin : '';
             window.state.lockMinutes = LOCK_MINUTE_OPTIONS.includes(Number(d.lockMinutes)) ? Number(d.lockMinutes) : 1.5;
+            // 舊資料沒有班級編號：留空，連上雲端後補上
+            window.state.boardId = typeof d.boardId === 'string' && /^[a-z0-9]{8,32}$/.test(d.boardId) ? d.boardId : '';
 
             if (d.statuses && typeof d.statuses === 'object') {
                 const parsed = {};
@@ -924,6 +978,15 @@
                     boardHasStatusMap = !!(data.statuses && typeof data.statuses === 'object');
                     // 舊格式的看板：整份轉存成新格式，之後才能逐格更新
                     if (!boardHasStatusMap) window.syncStateToCloud(true);
+                    // 舊看板還沒有班級編號：補上一組
+                    if (!window.state.boardId) {
+                        window.state.boardId = window.makeBoardId();
+                        window.saveLocalBackup();
+                        // 只補這一個欄位，不動其他資料
+                        trackWrite(updateDoc(cloudDocRef, 'boardId', window.state.boardId))
+                            .then(() => publishParentViews())
+                            .catch(err => console.warn("補上班級編號失敗:", err));
+                    }
                     if (firstSnapshot && resendSavedStatusUpdates()) rerenderCurrentView();
                     // 開啟看板時同步一次家長查詢資料（沒變的不會重寫）
                     if (firstSnapshot) publishParentViews().catch(err => console.warn("家長查詢資料更新失敗:", err));
@@ -968,6 +1031,44 @@
             window.updateCloudStatusBadge('retired');
             rerenderCurrentView();
         }
+
+        // 刪除目前的班級：刪掉這班所有家長查詢資料，看板只留下「已清空」標記
+        // （其他還開著這個班級的裝置看到標記就停止同步，不會把資料傳回來；之後仍可用同一個代碼建立新班級）
+        window.deleteCurrentClass = async function() {
+            if (!window.isCloudConnected() || window.state.boardRetired) return 'unavailable';
+            const boardRef = cloudDocRef;
+            const codes = new Set([...publishedParentViews.keys(), ...pendingParentViewDeletes]);
+            window.state.students.forEach(st => { if (st.parentCode) codes.add(st.parentCode); });
+            // 先停止這台裝置的同步，避免刪除途中又把資料存回去
+            if (unsubscribeSnapshot) {
+                unsubscribeSnapshot();
+                unsubscribeSnapshot = null;
+            }
+            clearTimeout(syncDebounceTimer);
+            syncDebounceTimer = null;
+            clearTimeout(parentPublishTimer);
+            sendingStatusUpdates.clear();
+            clearQueuedStatusUpdates();
+            cloudDocRef = null;
+
+            const batch = writeBatch(db);
+            codes.forEach(code => { if (/^[A-Z0-9]{6,8}$/.test(code)) batch.delete(parentViewRef(code)); });
+            batch.set(boardRef, { retired: true, retiredAt: Date.now() });
+            await trackWrite(batch.commit());
+
+            publishedParentViews.clear();
+            pendingParentViewDeletes.clear();
+            try {
+                localStorage.removeItem(PUBLISHED_CACHE_KEY);
+                localStorage.removeItem('checkpoint_local_backup_v3');
+            } catch(e) {}
+            // 這台裝置的畫面換成空白看板（保留目前的教師身分，方便輸入新的班級代碼）
+            const pin = window.state.teacherPin;
+            Object.assign(window.state, window.createDefaultBoard(), { teacherPin: pin, boardRetired: true });
+            window.updateCloudStatusBadge('retired');
+            rerenderCurrentView();
+            return 'deleted';
+        };
 
         window.changeClassCode = async function(code, reuseCleared = false) {
             // 切換前先把尚未送出的變更存回原本的班級，避免寫到新班級去
@@ -1443,6 +1544,16 @@
                         <div>例如 <span class="font-mono font-bold">lin601cs</span>、<span class="font-mono font-bold">hs602wang</span></div>
                         <div>設定好後，請抄在記事本保存。</div>
                     </div>
+                    <!-- 刪除這個班級（需要再輸入一次班級代碼確認） -->
+                    <div class="bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 mb-2">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <div class="text-sm font-black text-rose-700">🗑️ 刪除這個班級</div>
+                            <button id="delete-class-button" onclick="deleteThisClass()" class="bg-white hover:bg-rose-100 text-rose-600 border-2 border-rose-300 font-black px-3 py-1.5 rounded-xl text-xs whitespace-nowrap transition-all">
+                                刪除這個班級
+                            </button>
+                        </div>
+                        <div class="text-[13px] text-slate-600 mt-1 leading-relaxed">學生、作業、紅綠燈紀錄和家長查詢資料會<b class="text-rose-600">全部刪除，無法復原</b>。其他還開著這個班級的裝置會停止同步。之後仍可用同一個代碼建立新班級。</div>
+                    </div>
                     <!-- 分享全新看板給其他老師 -->
                     <div class="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 mb-2">
                         <div class="flex flex-wrap items-center justify-between gap-2">
@@ -1530,12 +1641,17 @@
                     </div>
 
                     <div class="grid grid-cols-12 gap-2 mb-3">
-                        <div class="col-span-9">
-                            <input type="text" id="new-student-name" maxlength="10" placeholder="輸入純座號 (如: 29，每班最多 40 人)" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-sky-400">
+                        <div class="col-span-6">
+                            <input type="text" id="new-student-name" maxlength="10" inputmode="numeric" onkeydown="if(event.key === 'Enter') addStudent()" placeholder="輸入座號 (如: 15)" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-sky-400">
                         </div>
                         <div class="col-span-3">
-                            <button onclick="addStudent()" class="w-full h-full bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl text-xs whitespace-nowrap transition-all flex items-center justify-center gap-1">
+                            <button onclick="addStudent()" class="w-full h-full bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl text-xs whitespace-nowrap transition-all flex items-center justify-center gap-1" title="新增輸入的座號，會依號碼順序插入">
                                 <i class="fa-solid fa-plus"></i> 新增
+                            </button>
+                        </div>
+                        <div class="col-span-3">
+                            <button id="append-student-button" onclick="appendNextStudent()" class="w-full h-full bg-sky-50 hover:bg-sky-100 text-sky-700 border-2 border-sky-300 font-black rounded-xl text-xs whitespace-nowrap transition-all flex items-center justify-center gap-1" title="接在目前最後一號後面，直接新增下一號">
+                                ➕ 接續新增
                             </button>
                         </div>
                     </div>
@@ -1820,6 +1936,25 @@
         function normalizeParentCode(value) {
             return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
         }
+
+        // 查詢碼已被別班使用：幫這些學生換新的（不刪除別班的資料）。回傳 [{seat, code}]
+        window.replaceTakenParentCodes = function(takenCodes) {
+            const changed = [];
+            window.state.students.forEach(st => {
+                if (!takenCodes.includes(st.parentCode)) return;
+                let code;
+                do { code = generateParentCode(); } while (takenCodes.includes(code));
+                st.parentCode = code;
+                changed.push({ seat: getPureSeatNumber(st.name), code });
+            });
+            return changed;
+        };
+
+        window.notifyParentCodesChanged = function(changed) {
+            const list = changed.map(c => `${c.seat} 號 → ${c.code}`).join('、');
+            showToast(`家長查詢碼和其他班級重複，已自動換新：${list}。如果已經發給家長，請重新發放`, false);
+            if (window.state.currentTab === 'settings') renderSettingsStudents();
+        };
 
         // 幫還沒有查詢碼的學生補上一組；有變動時回傳 true
         function ensureParentCodes() {
@@ -2266,7 +2401,7 @@
                         <div class="bg-white border-2 border-rose-200 rounded-3xl p-6 max-w-md text-center board-shadow">
                             <div class="text-4xl mb-2">🔒</div>
                             <h3 class="text-lg font-black text-slate-800 mb-1">這個班級代碼的資料已經清空</h3>
-                            <p class="text-sm text-slate-600 mb-1">班級資料已經搬到新的代碼，這台裝置的資料不會再同步。</p>
+                            <p class="text-sm text-slate-600 mb-1">班級已經刪除，或資料已經搬到新的代碼，這台裝置不會再同步。</p>
                             <p class="text-sm text-slate-600 mb-4">請老師到「設定後台」的「班級共用代碼」輸入新的代碼，按「切換到此代碼」。</p>
                             <button onclick="switchTab('settings')" class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold px-4 py-2 rounded-xl text-sm transition-all">
                                 前往設定後台
@@ -3132,8 +3267,10 @@
             document.getElementById('force-pin-new').value = '';
             document.getElementById('force-pin-confirm').value = '';
             document.getElementById('force-pin-msg').classList.add('hidden');
-            document.getElementById('modal-force-pin').classList.remove('hidden');
-            setTimeout(() => document.getElementById('force-pin-new').focus(), 100);
+            const modal = document.getElementById('modal-force-pin');
+            modal.classList.remove('hidden');
+            // 已經在輸入框裡打字時，不要把游標搶走
+            setTimeout(() => { if (!modal.contains(document.activeElement)) document.getElementById('force-pin-new').focus(); }, 100);
         }
 
         function closeForcePinModal(changed) {
@@ -3304,6 +3441,36 @@
         // ---- 分享全新看板：給其他老師的連結，對方打開會自動建立自己的空白班級 ----
         function getNewBoardLink() {
             return `${location.origin}${location.pathname}?new`;
+        }
+
+        async function deleteThisClass() {
+            if (!window.state.isTeacherUnlocked) return;
+            const code = window.getClassCode();
+            if (!window.isCloudConnected() || window.state.boardRetired) {
+                window.soundEffect.playAlert();
+                showToast('目前沒有連上雲端，無法刪除班級', false);
+                return;
+            }
+            window.soundEffect.playAlert();
+            if (!confirm(`確定要刪除班級【${code}】嗎？\n\n・${window.state.students.length} 位學生、${window.state.assignments.length} 項作業和所有紅綠燈紀錄\n・全班的家長查詢資料（家長的查詢碼會失效）\n\n都會永久刪除，無法復原！`)) return;
+            const typed = prompt(`最後確認：請輸入班級代碼「${code}」，按「確定」就會刪除。`);
+            if (typed === null) return;
+            if (typed.trim().toLowerCase() !== code) {
+                showToast('班級代碼輸入不正確，已取消刪除', false);
+                return;
+            }
+            try {
+                await window.deleteCurrentClass();
+                window.soundEffect.playSuccess();
+                renderCurrentClassCode();
+                renderSettingsAssignments();
+                renderSettingsStudents();
+                showToast(`已刪除班級【${code}】。請輸入新的班級代碼，按「切換到此代碼」`);
+            } catch (err) {
+                console.error('刪除班級失敗:', err);
+                window.soundEffect.playAlert();
+                showToast('刪除失敗，請稍後再試', false);
+            }
         }
 
         function copyNewBoardLink() {
@@ -3689,36 +3856,62 @@
             showToast('全班狀態已重設為「綠燈 (完成)」！');
         }
 
+        // 座號排序用：純數字依大小，其他依文字
+        function compareSeat(a, b) {
+            const x = getPureSeatNumber(a), y = getPureSeatNumber(b);
+            const nx = /^\d+$/.test(x), ny = /^\d+$/.test(y);
+            if (nx && ny) return Number(x) - Number(y);
+            if (nx !== ny) return nx ? -1 : 1;
+            return x.localeCompare(y, 'zh-Hant');
+        }
+
+        // 新增一位學生，依座號順序插入（例如轉學生遞補中間空缺的座號）
+        function insertStudent(name) {
+            if (window.state.students.some(s => getPureSeatNumber(s.name) === getPureSeatNumber(name))) {
+                window.soundEffect.playAlert();
+                showToast(`座號【${name}】已存在！`, false);
+                return false;
+            }
+            if (window.state.students.length >= MAX_STUDENTS) {
+                window.soundEffect.playAlert();
+                showToast(`每班最多 ${MAX_STUDENTS} 位學生`, false);
+                return false;
+            }
+            const nextId = getNextStudentId();
+            window.state.nextStudentId = nextId + 1;
+            const student = { id: nextId, name: name, parentCode: generateParentCode() };
+            const list = window.state.students;
+            const at = list.findIndex(s => compareSeat(s.name, name) > 0);
+            if (at === -1) list.push(student);
+            else list.splice(at, 0, student);
+            window.soundEffect.playSuccess();
+            renderSettingsStudents();
+            window.syncStateToCloud();
+            return true;
+        }
+
         function addStudent() {
             const nameInput = document.getElementById('new-student-name');
-            const name = nameInput.value.trim();
+            // 全形數字也可以
+            const name = nameInput.value.trim().replace(/[０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
             if (!name) {
                 window.soundEffect.playAlert();
                 showToast('請輸入座號！', false);
                 return;
             }
-            if (window.state.students.some(s => getPureSeatNumber(s.name) === getPureSeatNumber(name))) {
-                window.soundEffect.playAlert();
-                showToast(`座號【${name}】已存在！`, false);
-                return;
-            }
-            if (window.state.students.length >= MAX_STUDENTS) {
-                window.soundEffect.playAlert();
-                showToast(`每班最多 ${MAX_STUDENTS} 位學生`, false);
-                return;
-            }
-            const nextId = getNextStudentId();
-            window.state.nextStudentId = nextId + 1;
-            window.soundEffect.playSuccess();
-            window.state.students.push({
-                id: nextId,
-                name: name,
-                parentCode: generateParentCode()
-            });
+            if (!insertStudent(name)) return;
             nameInput.value = '';
-            renderSettingsStudents();
-            window.syncStateToCloud();
             showToast(`已新增座號：【${name}】`);
+        }
+
+        // 接續新增：照目前最大的號碼加 1（例如最後一號 28，按一下就新增 29）
+        function appendNextStudent() {
+            const numbers = window.state.students.map(s => getPureSeatNumber(s.name)).filter(n => /^\d+$/.test(n)).map(Number);
+            const next = String((numbers.length ? Math.max(...numbers) : 0) + 1);
+            if (!insertStudent(next)) return;
+            showToast(`已接續新增座號：【${next}】`);
+            const table = document.querySelector('.roster-table');
+            if (table) table.scrollTop = table.scrollHeight;
         }
 
         function updateStudentName(id, val) {
