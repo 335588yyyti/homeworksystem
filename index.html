@@ -1845,15 +1845,29 @@
         function openPendingList() {
             window.soundEffect.playToggle();
             document.getElementById('modal-pending-list').classList.remove('hidden');
-            renderPendingList();
+            updatePendingListNow(); // 打開時立刻顯示最新名單
         }
 
         function closePendingList() {
             document.getElementById('modal-pending-list').classList.add('hidden');
         }
 
-        // 標題列按鈕上的人數，以及（開著時）名單內容
+        // 標題列按鈕上的人數，以及（開著時）名單內容。
+        // 有變動時先等 5 秒，期間又有變動就重新等，連續消單結束後才一次更新，畫面不會一直跳動
+        const PENDING_REFRESH_MS = 5000;
+        let pendingListShown = false;
+        let pendingRefreshTimer = null;
+
         function refreshPendingList() {
+            if (!pendingListShown) { updatePendingListNow(); return; } // 剛開網頁：馬上顯示
+            clearTimeout(pendingRefreshTimer);
+            pendingRefreshTimer = setTimeout(updatePendingListNow, PENDING_REFRESH_MS);
+        }
+
+        function updatePendingListNow() {
+            clearTimeout(pendingRefreshTimer);
+            pendingRefreshTimer = null;
+            pendingListShown = true;
             const rows = getPendingByStudent();
             const badge = document.getElementById('pending-list-count');
             if (badge) {
@@ -1876,7 +1890,7 @@
                     </div>`;
                 return;
             }
-            summary.textContent = `共 ${rows.length} 位同學、${totalItems} 項作業還沒訂正（依座號排列，畫面會自動更新）`;
+            summary.textContent = `共 ${rows.length} 位同學、${totalItems} 項作業還沒訂正（依座號排列，變動停止 5 秒後自動更新）`;
             body.innerHTML = `<div class="grid gap-3" style="grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));">${
                 rows.map(({ student, pending }) => `
                     <div class="border-2 border-rose-200 bg-rose-50 rounded-2xl p-3 flex gap-3 items-start">

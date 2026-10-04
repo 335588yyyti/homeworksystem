@@ -1,8 +1,8 @@
-// 未訂正名單：列出還有作業要訂正的同學、即時更新、全部完成時顯示恭喜
+// 未訂正名單：列出還有作業要訂正的同學、變動停止 5 秒後自動更新、全部完成時顯示恭喜
 const { test, expect } = require('@playwright/test');
 const { createCloud, openDevice } = require('./helpers');
 
-test('未訂正名單列出每位同學還沒訂正的作業，並即時更新', async ({ browser }) => {
+test('未訂正名單列出每位同學還沒訂正的作業，並在變動停止後自動更新', async ({ browser }) => {
     const cloud = createCloud();
     const page = await openDevice(browser, cloud);
     await page.evaluate(() => { startTeacherSession(); applyRoleUI('teacher'); });
@@ -11,11 +11,17 @@ test('未訂正名單列出每位同學還沒訂正的作業，並即時更新',
     await page.click('#btn-slot-0-student-3');   // 3 號 國習
     await page.click('#btn-slot-2-student-3');   // 3 號 數課
     await page.click('#btn-slot-1-student-12');  // 12 號 國作
-    await expect(page.locator('#pending-list-count')).toHaveText('2');
-
+    // 連續消單時先不更新，最後一次變動後等 5 秒才一次更新
+    await page.waitForTimeout(3000);
+    await expect(page.locator('#pending-list-count')).toBeHidden();
+    await page.click('#btn-slot-3-student-20');  // 20 號 數習（又有變動，重新等 5 秒）
+    await page.waitForTimeout(3500);
+    await expect(page.locator('#pending-list-count')).toBeHidden();
+    await expect(page.locator('#pending-list-count')).toHaveText('3', { timeout: 3000 });
+    await page.click('#btn-slot-3-student-20');  // 20 號改回來
     await page.click('#pending-list-button');
     await expect(page.locator('#modal-pending-list')).toBeVisible();
-    await expect(page.locator('#pending-list-summary')).toContainText('共 2 位同學、3 項作業');
+    await expect(page.locator('#pending-list-summary')).toContainText('共 2 位同學、3 項作業', { timeout: 1000 });
     const cards = page.locator('#pending-list-body > div > div');
     await expect(cards).toHaveCount(2);
     await expect(cards.nth(0)).toContainText('3');
@@ -25,11 +31,13 @@ test('未訂正名單列出每位同學還沒訂正的作業，並即時更新',
     await expect(cards.nth(1)).toContainText('12');
     await expect(cards.nth(1)).toContainText('國作');
 
-    // 另一台裝置（老師手機）消掉 12 號，名單即時更新
+    // 另一台裝置（老師手機）消掉 12 號，名單等 5 秒後更新
     const phone = await openDevice(browser, cloud);
     await phone.evaluate(() => { startTeacherSession(); applyRoleUI('teacher'); });
     await phone.click('#btn-slot-1-student-12');
-    await expect(cards).toHaveCount(1);
+    await page.waitForTimeout(2000);
+    await expect(cards).toHaveCount(2); // 還在等 5 秒
+    await expect(cards).toHaveCount(1, { timeout: 6000 });
     await expect(page.locator('#pending-list-count')).toHaveText('1');
 
     // 全部完成時顯示恭喜
@@ -37,8 +45,8 @@ test('未訂正名單列出每位同學還沒訂正的作業，並即時更新',
     await expect(page.locator('#modal-pending-list')).toBeHidden();
     await page.click('#btn-slot-0-student-3');
     await page.click('#btn-slot-2-student-3');
-    await page.click('#pending-list-button');
-    await expect(page.locator('#pending-list-body')).toContainText('全班都訂正完成了');
+    await page.click('#pending-list-button'); // 打開時立刻顯示最新名單，不用等
+    await expect(page.locator('#pending-list-body')).toContainText('全班都訂正完成了', { timeout: 1000 });
     await expect(page.locator('#pending-list-count')).toBeHidden();
 });
 
