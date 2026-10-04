@@ -31,7 +31,7 @@ test('兩台裝置同一瞬間點不同座號，兩邊的修改都會保留', as
     await expect.poll(boardWrites, { timeout: 10000 }).toBe(1);
 });
 
-test('教師登記連續點紅燈：最後一次點擊後 5 秒才一次存到雲端，學生消單則馬上存', async ({ browser }) => {
+test('連續點座號：最後一次點擊後 5 秒才一次存到雲端（教師登記、學生消單都一樣）', async ({ browser }) => {
     const cloud = createCloud();
     const page = await openDevice(browser, cloud);
     const phone = await openDevice(browser, cloud);
@@ -56,11 +56,51 @@ test('教師登記連續點紅燈：最後一次點擊後 5 秒才一次存到�
     expect([statuses['國習']['3'], statuses['國習']['5'], statuses['國作']['7'], statuses['數課']['12']]).toEqual([false, false, false, false]);
     await expect.poll(() => page.evaluate(() => state.assignmentStatuses['數課'][12])).toBe(false);
 
-    // 學生消單：馬上存
+    // 學生消單：也是等最後一次點擊後 5 秒才存
     await page.evaluate(() => applyRoleUI('student'));
+    const beforeStudent = boardWrites();
     await page.click('#btn-slot-0-student-3');
-    await expect.poll(() => cloud.board('main').statuses['國習']['3'], { timeout: 1500 }).toBe(true);
+    await page.waitForTimeout(2000);
+    await page.click('#btn-slot-0-student-5');
+    await page.waitForTimeout(3500);
+    expect(cloud.board('main').statuses['國習']['3']).toBe(false);
+    await expect.poll(boardWrites, { timeout: 4000 }).toBe(beforeStudent + 1);
+    expect([cloud.board('main').statuses['國習']['3'], cloud.board('main').statuses['國習']['5']]).toEqual([true, true]);
 });
+
+test('按「立即同步」：馬上存出這台的修改，並載入另一台裝置的最新進度', async ({ browser }) => {
+    const cloud = createCloud();
+    const classroom = await openDevice(browser, cloud);
+    const phone = await openDevice(browser, cloud, { viewport: { width: 390, height: 844 } });
+    await teacherMode(phone);
+    await expect(classroom.locator('#sync-now-button')).toBeVisible();
+    await expect(phone.locator('#sync-now-button')).toBeVisible();
+
+    // 教室電腦暫時收不到自動更新，模擬兩台進度不一樣
+    await classroom.evaluate(() => { window.__pauseSnapshots = true; });
+    await phone.click('#btn-slot-0-student-11');
+    await phone.click('#sync-now-button');
+    await expect(phone.locator('#toast-msg')).toContainText('已同步');
+    expect(cloud.board('main').statuses['國習']['11']).toBe(false); // 不用等 5 秒
+
+    await expect(classroom.locator('#btn-slot-0-student-11')).not.toHaveClass(/seat-pending/);
+    await classroom.click('#sync-now-button');
+    await expect(classroom.locator('#toast-msg')).toContainText('這台裝置現在是最新進度');
+    await expect(classroom.locator('#btn-slot-0-student-11')).toHaveClass(/seat-pending/);
+    await expect(classroom.locator('#pending-list-count')).toHaveText('1');
+
+    // 家長頁沒有這個按鈕
+    const parent = await openDevice(browser, cloud, { query: '?p' });
+    await expect(parent.locator('#sync-now-button')).toBeHidden();
+});
+
+test('沒有網路時按「立即同步」會說明修改已存在這台裝置', async ({ browser }) => {
+    const page = await openDevice(browser, createCloud());
+    await page.context().setOffline(true);
+    await page.click('#sync-now-button');
+    await expect(page.locator('#toast-msg')).toContainText('目前沒有網路');
+});
+
 
 test('點完紅燈 5 秒內關掉網頁，下次開啟時會補存到雲端', async ({ browser }) => {
     const cloud = createCloud();
