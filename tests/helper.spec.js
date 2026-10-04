@@ -114,11 +114,13 @@ test('分享全新看板：對方打開連結會建立自己的空白班級，�
     await teacher.evaluate(() => { setStudentStatus(state.slots[0].assignment, 3, false); syncStateToCloud(true); });
 
     const other = await openDevice(browser, cloud, { query: '?new' });
-    await expect.poll(() => other.dialogs.length).toBe(1);
-    expect(other.dialogs[0]).toContain('已為你建立全新的班級看板');
+    // 建立後直接打開使用說明，第一頁顯示班級代碼
+    await expect(other.locator('#modal-guide')).toBeVisible();
+    await expect(other.locator('#guide-body')).toContainText('已為你建立全新的班級看板');
     const code = await other.evaluate(() => getClassCode());
     expect(code).toMatch(/^class[2-9]{2}[a-z0-9]{6}$/);
-    expect(other.dialogs[0]).toContain(code);
+    await expect(other.locator('#guide-class-code')).toHaveText(code);
+    expect(other.dialogs).toEqual([]);
     await expect.poll(() => cloud.board(code)?.teacherPin).toBe('8888');
     expect(cloud.board(code).sloganTitle).not.toBe('我的班級');
     expect(cloud.board('main').sloganTitle).toBe('我的班級');
