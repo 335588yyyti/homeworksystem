@@ -3194,8 +3194,8 @@
                 itemDiv.innerHTML = `
                     <div class="flex items-center gap-1.5 min-w-0 flex-1">
                         <span draggable="true" class="drag-handle cursor-grab active:cursor-grabbing text-slate-400 hover:text-teal-600 text-base leading-none px-1 select-none flex-shrink-0" title="按住拖曳調整順序">⠿</span>
-                        <span class="text-sm font-bold text-slate-400 flex-shrink-0">#${index + 1}</span>
-                        <input type="text" maxlength="20" value="${escapeHtml(item)}" onchange="updateAssignment(${index}, this.value)" class="min-w-0 flex-1 bg-transparent border-b border-transparent focus:border-teal-400 focus:outline-none font-black text-slate-800 text-lg py-0.5 px-1 truncate">
+                        <span class="text-base font-bold text-slate-400 flex-shrink-0">#${index + 1}</span>
+                        <input type="text" maxlength="20" value="${escapeHtml(item)}" onchange="updateAssignment(${index}, this.value)" class="min-w-0 flex-1 bg-transparent border-b border-transparent focus:border-teal-400 focus:outline-none font-black text-slate-800 text-xl sm:text-2xl py-0.5 px-1 truncate">
                     </div>
                     <div class="flex items-center flex-shrink-0">
                         <button onclick="moveAssignment(${index}, ${index - 1})" ${index === 0 ? 'disabled' : ''} class="text-slate-500 hover:bg-slate-200 disabled:opacity-25 px-1.5 py-1 rounded-lg text-xs font-black" title="往上移">▲</button>
