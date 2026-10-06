@@ -35,6 +35,12 @@ test('名冊按鈕使用清楚的名稱', async ({ browser }) => {
     for (const label of ['全部連結重新產生', '複製查詢連結', '列印家長查詢碼', '全班訂正歸零', '全班人數重設為28人']) {
         await expect(page.locator('.roster-card button', { hasText: label })).toBeVisible();
     }
+    // 電腦版五個按鈕排成兩行，字不會被截掉
+    const r = await page.evaluate(() => {
+        const bs = [...document.querySelector('.roster-card .grid').querySelectorAll('button')];
+        return { rows: new Set(bs.map((b) => Math.round(b.getBoundingClientRect().top))).size, clipped: bs.filter((b) => b.scrollWidth > b.clientWidth + 1).length };
+    });
+    expect(r).toEqual({ rows: 2, clipped: 0 });
 });
 
 test('複製碼只複製查詢碼，複製連結複製完整網址', async ({ browser }) => {
