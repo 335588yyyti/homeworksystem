@@ -60,6 +60,13 @@ test('列印紙條的 QR Code 內容就是家長連結', async ({ browser }) => 
     await popup.waitForSelector('.slip');
     const slips = await popup.evaluate(() => [...document.querySelectorAll('.slip')].map((s) => ({ src: s.querySelector('img.qr')?.src || '', link: s.querySelector('img.qr')?.dataset.link })));
     expect(slips).toHaveLength(2);
+    // 紙條文字
+    const text = await popup.locator('.slip').first().innerText();
+    expect(text).toContain('1號 家長您好：');
+    expect(text).toContain('手機掃描左側 QR Code，即可查詢孩子的作業訂正狀態；也可自行輸入網址：');
+    expect(text).toMatch(/專屬查詢碼：\s*[A-Z0-9]{6}/);
+    expect(text).toContain('養成良好的學習習慣');
+    expect(text).toContain('讓我們一起陪伴孩子把學習做得更完整！🌷');
     // 用網頁內的 BarcodeDetector 不一定支援，改為確認圖片存在且連結格式正確
     for (const slip of slips) {
         expect(slip.src.startsWith('data:image/png')).toBe(true);

@@ -22,13 +22,30 @@
             -webkit-text-size-adjust: 100%;
             text-size-adjust: 100%;
         }
+        /* 電腦內建的標楷體字形本身偏小、筆畫細，同樣字級看起來比較小，這裡只把楷體中文放大一些（數字英文不受影響） */
+        @font-face {
+            font-family: 'ClassKai';
+            src: local('DFKai-SB'), local('DFKaiShu-SB-Estd-BF'), local('標楷體'), local('BiauKai'),
+                 local('Kaiti TC Regular'), local('STKaitiTC-Regular'), local('STKaiti'), local('KaiTi');
+            size-adjust: 112%;
+        }
         body {
             /* 數字和英文用圓潤清楚的 Nunito；中文用標楷體（電腦內建的優先，手機沒有標楷體時改用免費的「霞鶩文楷」） */
-            font-family: 'Nunito', 'DFKai-SB', '標楷體', 'BiauKai', 'Kaiti TC', 'STKaiti', 'KaiTi', 'LXGW WenKai TC', serif;
+            font-family: 'Nunito', 'ClassKai', 'DFKai-SB', '標楷體', 'BiauKai', 'Kaiti TC', 'STKaiti', 'KaiTi', 'LXGW WenKai TC', serif;
             background-color: #f1f5f9;
             background-image: radial-gradient(#cbd5e1 1.2px, transparent 1.2px);
             background-size: 24px 24px;
             touch-action: manipulation;
+        }
+        /* 下拉選單展開後的選項：字大一點、加粗，楷體才清楚（電腦版瀏覽器適用；手機會用系統內建的選單） */
+        select option {
+            font-size: 1.125rem;
+            font-weight: 700;
+            color: #1e293b;
+        }
+        .slot-select option {
+            font-size: 1.375rem;
+            font-weight: 900;
         }
         /* body 設了 select-none，iOS Safari 會因此無法在輸入框打字，這裡把輸入元件還原 */
         input, textarea, select {
@@ -430,26 +447,28 @@
             if (!badge) return;
             badge.title = '';
             if (status === 'synced') {
-                badge.className = "flex-shrink-0 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[13px] font-bold whitespace-nowrap bg-emerald-50 text-emerald-700 border border-emerald-200";
-                badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span><span class="hidden sm:inline">已連線存檔</span>`;
+                badge.className = "flex-shrink-0 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[14px] font-bold whitespace-nowrap bg-emerald-50 text-emerald-700 border border-emerald-200";
+                // 一切正常時，較窄的電腦螢幕只顯示綠點（滑過去看文字），讓頁首維持一行；異常時一定顯示文字
+                badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500"></span><span class="hidden 2xl:inline">已連線存檔</span>`;
+                badge.title = '已連線存檔';
             } else if (status === 'syncing') {
-                badge.className = "flex-shrink-0 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[13px] font-bold whitespace-nowrap bg-amber-50 text-amber-700 border border-amber-200 animate-pulse";
-                badge.innerHTML = `<i class="fa-solid fa-arrows-rotate fa-spin text-amber-500 text-[12px]"></i><span class="hidden sm:inline">同步中</span>`;
+                badge.className = "flex-shrink-0 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[14px] font-bold whitespace-nowrap bg-amber-50 text-amber-700 border border-amber-200 animate-pulse";
+                badge.innerHTML = `<i class="fa-solid fa-arrows-rotate fa-spin text-amber-500 text-[13px]"></i><span class="hidden 2xl:inline">同步中</span>`;
             } else if (status === 'quota') {
-                badge.className = "flex-shrink-0 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[13px] font-bold whitespace-nowrap bg-rose-50 text-rose-700 border border-rose-200";
+                badge.className = "flex-shrink-0 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[14px] font-bold whitespace-nowrap bg-rose-50 text-rose-700 border border-rose-200";
                 badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span><span class="hidden sm:inline">今日雲端額度已用完（修改先存在這台電腦）</span>`;
                 badge.title = 'Firebase 免費額度每天台灣時間下午 3～4 點重置，重置後會自動上傳';
             } else if (status === 'offline') {
-                badge.className = "flex-shrink-0 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[13px] font-bold whitespace-nowrap bg-amber-50 text-amber-800 border border-amber-300";
+                badge.className = "flex-shrink-0 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[14px] font-bold whitespace-nowrap bg-amber-50 text-amber-800 border border-amber-300";
                 badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span><span class="hidden sm:inline">離線中（修改已暫存）</span>`;
             } else if (status === 'retired') {
-                badge.className = "flex-shrink-0 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[13px] font-bold whitespace-nowrap bg-rose-50 text-rose-700 border border-rose-200";
+                badge.className = "flex-shrink-0 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[14px] font-bold whitespace-nowrap bg-rose-50 text-rose-700 border border-rose-200";
                 badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span><span class="hidden sm:inline">班級代碼已清空</span>`;
             } else if (status === 'error') {
-                badge.className = "flex-shrink-0 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[13px] font-bold whitespace-nowrap bg-rose-50 text-rose-700 border border-rose-200";
+                badge.className = "flex-shrink-0 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[14px] font-bold whitespace-nowrap bg-rose-50 text-rose-700 border border-rose-200";
                 badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span><span class="hidden sm:inline">同步失敗 (已存本機)</span>`;
             } else {
-                badge.className = "flex-shrink-0 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[13px] font-bold whitespace-nowrap bg-slate-100 text-slate-500 border border-slate-200";
+                badge.className = "flex-shrink-0 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[14px] font-bold whitespace-nowrap bg-slate-100 text-slate-500 border border-slate-200";
                 badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span><span class="hidden sm:inline">本機備份</span>`;
             }
         };
@@ -1252,7 +1271,7 @@
     </script>
 
     <header class="bg-white border-b-2 border-slate-200 z-30 shadow-sm flex-shrink-0">
-        <div class="max-w-[1920px] mx-auto px-4 py-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <div class="max-w-[1920px] mx-auto px-3 2xl:px-4 py-2 flex flex-wrap items-center justify-between gap-x-2 2xl:gap-x-3 gap-y-2">
 
             <!-- 品牌與雲端連線狀態（手機較窄時按鈕自動換到下一行） -->
             <div class="flex flex-wrap items-center gap-x-2 gap-y-2 min-w-0">
@@ -1260,22 +1279,22 @@
                     <i class="fa-solid fa-graduation-cap text-base"></i>
                 </div>
                 <div class="flex items-center gap-2 min-w-0">
-                    <h1 class="text-base sm:text-lg font-black text-slate-800 tracking-wide whitespace-nowrap">下課檢查站！</h1>
-                    <span id="cloud-sync-status" class="flex-shrink-0 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[13px] font-bold whitespace-nowrap bg-slate-100 text-slate-500 border border-slate-200">
+                    <h1 class="text-base sm:text-lg font-black text-slate-800 2xl:tracking-wide whitespace-nowrap">下課檢查站！</h1>
+                    <span id="cloud-sync-status" class="flex-shrink-0 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[14px] font-bold whitespace-nowrap bg-slate-100 text-slate-500 border border-slate-200">
                         <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> 連線中
                     </span>
                 </div>
                 <!-- 立即同步：確認這台裝置和其他裝置（老師手機、教室電腦）是同一份進度 -->
-                <button id="sync-now-button" onclick="syncNow()" class="teacher-ui ml-1 flex items-center gap-1.5 px-2.5 2xl:px-4 py-1.5 rounded-xl border-2 border-sky-400 bg-sky-50 hover:bg-sky-100 text-sky-700 text-sm sm:text-base font-black whitespace-nowrap shadow-sm transition-colors disabled:opacity-60" title="馬上把這台裝置的修改存到雲端，並載入其他裝置的最新進度">
-                    <span class="text-lg leading-none">🔄</span><span id="sync-now-label">立即同步</span>
+                <button id="sync-now-button" onclick="syncNow()" class="teacher-ui ml-1 flex items-center gap-1 2xl:gap-1.5 px-2 2xl:px-4 py-1.5 rounded-xl border-2 border-sky-400 bg-sky-50 hover:bg-sky-100 text-sky-700 text-sm sm:text-base font-black whitespace-nowrap shadow-sm transition-colors disabled:opacity-60" title="馬上把這台裝置的修改存到雲端，並載入其他裝置的最新進度">
+                    <span class="text-lg leading-none">🔄</span><span id="sync-now-label"><span class="hidden 2xl:inline">立即</span>同步</span>
                 </button>
                 <!-- 音效開關：放在標題旁的空白處，上課時可一鍵靜音 -->
-                <button id="sound-toggle" onclick="toggleSound()" class="teacher-ui flex items-center gap-1.5 px-2.5 2xl:px-4 py-1.5 rounded-xl border-2 text-sm sm:text-base font-black whitespace-nowrap shadow-sm transition-all bg-emerald-50 text-emerald-700 border-emerald-400 hover:bg-emerald-100" title="開啟／關閉點擊音效">
+                <button id="sound-toggle" onclick="toggleSound()" class="teacher-ui flex items-center gap-1 2xl:gap-1.5 px-2 2xl:px-4 py-1.5 rounded-xl border-2 text-sm sm:text-base font-black whitespace-nowrap shadow-sm transition-all bg-emerald-50 text-emerald-700 border-emerald-400 hover:bg-emerald-100" title="開啟／關閉點擊音效">
                     <span id="sound-toggle-icon" class="text-lg leading-none">🔊</span>
-                    <span id="sound-toggle-text">音效：開</span>
+                    <span><span class="hidden 2xl:inline">音效：</span><span id="sound-toggle-text">開</span></span>
                 </button>
                 <!-- 未訂正名單：一眼看出每位同學還有幾項要訂正 -->
-                <button id="pending-list-button" onclick="openPendingList()" class="teacher-ui flex items-center gap-1.5 px-2.5 2xl:px-4 py-1.5 rounded-xl border-2 text-sm sm:text-base font-black whitespace-nowrap shadow-sm transition-all bg-indigo-50 text-indigo-700 border-indigo-400 hover:bg-indigo-100" title="查看所有還有作業要訂正的同學">
+                <button id="pending-list-button" onclick="openPendingList()" class="teacher-ui flex items-center gap-1 2xl:gap-1.5 px-2 2xl:px-4 py-1.5 rounded-xl border-2 text-sm sm:text-base font-black whitespace-nowrap shadow-sm transition-all bg-indigo-50 text-indigo-700 border-indigo-400 hover:bg-indigo-100" title="查看所有還有作業要訂正的同學">
                     <span class="text-lg leading-none">📋</span>
                     <span>未訂正名單</span>
                     <span id="pending-list-count" class="hidden min-w-[1.5rem] px-1.5 rounded-full bg-rose-500 text-white text-sm leading-6 text-center"></span>
@@ -1284,13 +1303,13 @@
 
             <!-- 頁籤切換鈕 -->
             <nav class="teacher-ui flex bg-slate-100 p-1 rounded-xl border border-slate-200 flex-shrink-0">
-                <button onclick="switchTab('dashboard')" id="tab-dashboard" class="px-2.5 2xl:px-3 py-1 rounded-lg text-xs sm:text-sm font-black flex items-center gap-1.5 whitespace-nowrap transition-all bg-white text-slate-900 shadow-sm">
+                <button onclick="switchTab('dashboard')" id="tab-dashboard" class="px-2.5 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-black flex items-center gap-1.5 whitespace-nowrap transition-all bg-white text-slate-900 shadow-sm">
                     <i class="fa-solid fa-chalkboard-user text-amber-500"></i> 班級看板
                 </button>
-                <button onclick="switchTab('parent')" id="tab-parent" class="px-2.5 2xl:px-3 py-1 rounded-lg text-xs sm:text-sm font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900">
+                <button onclick="switchTab('parent')" id="tab-parent" class="px-2.5 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900">
                     <i class="fa-solid fa-id-card text-indigo-500"></i> 個別查詢
                 </button>
-                <button onclick="switchTab('settings')" id="tab-settings" class="px-2.5 2xl:px-3 py-1 rounded-lg text-xs sm:text-sm font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900">
+                <button onclick="switchTab('settings')" id="tab-settings" class="px-2.5 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900">
                     <i class="fa-solid fa-gears text-slate-500"></i> 設定後台
                 </button>
             </nav>
@@ -1298,18 +1317,18 @@
             <!-- 學生消單 / 教師模式按鈕組 -->
             <div class="teacher-ui flex items-center gap-2 flex-shrink-0">
                 <div class="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
-                    <button onclick="setRole('student')" id="role-student" class="px-3 py-1 rounded-lg text-xs font-black whitespace-nowrap transition-all flex items-center gap-1 bg-white text-emerald-600 shadow-sm">
-                        <i class="fa-solid fa-child text-xs"></i> 學生消單
+                    <button onclick="setRole('student')" id="role-student" class="px-2.5 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-black whitespace-nowrap transition-all flex items-center gap-1 bg-white text-emerald-600 shadow-sm">
+                        <i class="fa-solid fa-child text-sm"></i> 學生消單
                     </button>
-                    <button onclick="setRole('teacher')" id="role-teacher" class="px-3 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1 text-slate-600 hover:text-slate-900">
-                        <i class="fa-solid fa-user-tie text-xs"></i> 教師登記
+                    <button onclick="setRole('teacher')" id="role-teacher" class="px-2.5 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold whitespace-nowrap transition-all flex items-center gap-1 text-slate-600 hover:text-slate-900">
+                        <i class="fa-solid fa-user-tie text-sm"></i> 教師登記
                     </button>
-                    <button onclick="setRole('helper')" id="role-helper" class="hidden px-3 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1 text-slate-600 hover:text-slate-900" title="小幫手：只能在看板登記紅燈、更換作業">
-                        <i class="fa-solid fa-hands-helping text-xs"></i> 小幫手
+                    <button onclick="setRole('helper')" id="role-helper" class="hidden px-2.5 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold whitespace-nowrap transition-all flex items-center gap-1 text-slate-600 hover:text-slate-900" title="小幫手：只能在看板登記紅燈、更換作業">
+                        <i class="fa-solid fa-hands-helping text-sm"></i> 小幫手
                     </button>
                 </div>
-                <button onclick="lockTeacherSession()" id="role-lock" class="px-2.5 py-1 rounded-xl text-xs font-black whitespace-nowrap bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 transition-all flex items-center gap-1 hidden" title="鎖定教師身分">
-                    <i class="fa-solid fa-lock text-xs"></i> 鎖定
+                <button onclick="lockTeacherSession()" id="role-lock" class="px-3 py-1.5 rounded-xl text-sm sm:text-base font-black whitespace-nowrap bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 transition-all flex items-center gap-1 hidden" title="鎖定教師身分">
+                    <i class="fa-solid fa-lock text-sm"></i> 鎖定
                 </button>
             </div>
 
@@ -1317,15 +1336,15 @@
     </header>
 
     <!-- 醒目主題標語橫幅 -->
-    <section class="teacher-ui max-w-[1920px] mx-auto px-3.5 pt-2 pb-1.5 w-full flex-shrink-0">
-        <div class="bg-gradient-to-r from-rose-500 via-rose-600 to-amber-500 rounded-2xl px-4 py-2 text-white shadow-sm flex items-center justify-between gap-3">
+    <section class="teacher-ui max-w-[1920px] mx-auto px-3.5 pt-1.5 pb-1 w-full flex-shrink-0">
+        <div class="bg-gradient-to-r from-rose-500 via-rose-600 to-amber-500 rounded-2xl px-3 py-1 text-white shadow-sm flex items-center justify-between gap-3">
             <div class="flex items-center gap-2.5 min-w-0 flex-1">
                 <span class="text-xl sm:text-2xl flex-shrink-0 animate-bounce">⚠️</span>
                 <div class="flex flex-col lg:flex-row lg:items-baseline gap-0.5 lg:gap-3 min-w-0 flex-1">
-                    <h2 id="slogan-title-display" class="text-base sm:text-lg md:text-xl font-black tracking-wide text-amber-200 truncate min-w-0 flex-shrink-0 max-w-full">
+                    <h2 id="slogan-title-display" class="text-lg sm:text-xl md:text-2xl font-black tracking-wide text-amber-200 truncate min-w-0 flex-shrink-0 max-w-full">
                         未訂正完成，不能下課！ 🔔
                     </h2>
-                    <p id="slogan-sub-display" class="text-xs sm:text-sm text-rose-100 font-bold truncate min-w-0">
+                    <p id="slogan-sub-display" class="text-sm sm:text-base md:text-lg text-rose-100 font-bold truncate min-w-0">
                         請自律完成訂正，完成後記得點擊個人座號銷單喔！
                     </p>
                 </div>
@@ -1387,11 +1406,11 @@
                 <div id="parent-summary" class="rounded-2xl p-4 text-white">
                     <div class="flex justify-between items-center gap-3">
                         <div class="min-w-0">
-                            <span class="text-[13px] font-bold opacity-80 block">當前學生</span>
+                            <span class="text-[14px] font-bold opacity-80 block">當前學生</span>
                             <h4 id="parent-child-name" class="text-2xl font-black">1 號 同學</h4>
                         </div>
                         <div class="text-right flex-shrink-0">
-                            <span class="text-[13px] font-bold opacity-80 block">總完成度</span>
+                            <span class="text-[14px] font-bold opacity-80 block">總完成度</span>
                             <span id="parent-progress-percent" class="text-3xl font-black">100%</span>
                         </div>
                     </div>
@@ -1405,7 +1424,7 @@
                         <!-- 動態細目 -->
                     </div>
                 </div>
-                <p id="parent-updated-at" class="text-[13px] text-slate-400 text-center"></p>
+                <p id="parent-updated-at" class="text-[14px] text-slate-400 text-center"></p>
                 <!-- 家長：加到手機主畫面，之後像 App 一樣點圖示就能查 -->
                 <div id="install-hint" class="hidden text-center">
                     <button onclick="installParentApp()" class="inline-flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-black px-3 py-1.5 rounded-xl text-sm transition-all">
@@ -1440,7 +1459,7 @@
                     </div>
                     <div class="space-y-2.5">
                         <div>
-                            <label class="block text-[13px] font-bold text-slate-500 mb-1">看板作業框數量（作業少時選 4 框，座號會更大）</label>
+                            <label class="block text-[14px] font-bold text-slate-500 mb-1">看板作業框數量（作業少時選 4 框，座號會更大）</label>
                             <div id="slot-count-buttons" class="grid grid-cols-3 gap-2">
                                 <button onclick="setSlotCount(4)" data-count="4" class="py-2 rounded-xl text-sm font-black border-2 transition-all">4 框</button>
                                 <button onclick="setSlotCount(6)" data-count="6" class="py-2 rounded-xl text-sm font-black border-2 transition-all">6 框</button>
@@ -1448,11 +1467,11 @@
                             </div>
                         </div>
                         <div>
-                            <label class="block text-[13px] font-bold text-slate-500 mb-1">主標語</label>
+                            <label class="block text-[14px] font-bold text-slate-500 mb-1">主標語</label>
                             <input type="text" id="settings-slogan-title" maxlength="40" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-amber-400">
                         </div>
                         <div>
-                            <label class="block text-[13px] font-bold text-slate-500 mb-1">副標語</label>
+                            <label class="block text-[14px] font-bold text-slate-500 mb-1">副標語</label>
                             <textarea id="settings-slogan-sub" rows="2" maxlength="80" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-medium focus:outline-none focus:border-amber-400 resize-none"></textarea>
                         </div>
                         <button onclick="updateSlogans()" class="w-full bg-amber-400 hover:bg-amber-500 text-slate-900 font-black text-xs py-2 rounded-xl transition-all">
@@ -1476,7 +1495,7 @@
                         </button>
                     </div>
                     <p id="pin-default-warning" class="hidden text-sm font-black text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 mb-2">⚠️ 目前還是預設密碼 8888，學生可能猜得到，建議改成自己的密碼。</p>
-                    <p class="text-[13px] text-slate-400">密碼只防止學生誤觸，請勿使用與其他帳號相同的密碼。</p>
+                    <p class="text-[14px] text-slate-400">密碼只防止學生誤觸，請勿使用與其他帳號相同的密碼。</p>
 
                     <!-- 閒置自動上鎖時間 -->
                     <div class="mt-3 flex flex-wrap items-center gap-2">
@@ -1495,7 +1514,7 @@
                             <input type="checkbox" id="helper-enabled" onchange="renderHelperSettings(true)" class="w-5 h-5 accent-sky-500">
                             <span class="text-sm font-black text-slate-800">🙋 開啟小幫手模式</span>
                         </label>
-                        <p class="text-[13px] text-slate-500 mt-1">小幫手可以在班級看板登記紅燈、更換作業，<b>不能</b>進入設定後台，也看不到家長查詢碼。</p>
+                        <p class="text-[14px] text-slate-500 mt-1">小幫手可以在班級看板登記紅燈、更換作業，<b>不能</b>進入設定後台，也看不到家長查詢碼。</p>
                         <div id="helper-options" class="mt-2 space-y-2">
                             <label class="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
                                 <input type="radio" name="helper-pin-mode" id="helper-pin-required" value="pin" onchange="renderHelperSettings(true)" class="accent-sky-500"> 需要小幫手密碼（4 位數字，和教師密碼分開）
@@ -1509,7 +1528,7 @@
                             <button onclick="saveHelperSettings()" class="bg-sky-500 hover:bg-sky-600 text-white font-bold px-3 py-2 rounded-xl text-xs whitespace-nowrap transition-all">
                                 儲存小幫手設定
                             </button>
-                            <span id="helper-status" class="text-[13px] font-bold text-slate-500"></span>
+                            <span id="helper-status" class="text-[14px] font-bold text-slate-500"></span>
                         </div>
                     </div>
                 </div>
@@ -1526,7 +1545,7 @@
                         <div class="text-sm font-bold text-slate-500">目前使用中的班級代碼</div>
                         <div class="flex items-center gap-2">
                             <span id="current-class-code" class="font-mono font-black text-base text-slate-800 tracking-wide break-all"></span>
-                            <button onclick="copyCurrentClassCode()" class="text-[13px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-1.5 py-0.5 rounded-md whitespace-nowrap transition-all flex-shrink-0">
+                            <button onclick="copyCurrentClassCode()" class="text-[14px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-1.5 py-0.5 rounded-md whitespace-nowrap transition-all flex-shrink-0">
                                 <i class="fa-regular fa-copy"></i> 複製
                             </button>
                         </div>
@@ -1568,7 +1587,7 @@
                                 刪除這個班級
                             </button>
                         </div>
-                        <div class="text-[13px] text-slate-600 mt-1 leading-relaxed">學生、作業、紅綠燈紀錄和家長查詢資料會<b class="text-rose-600">全部刪除，無法復原</b>。其他還開著這個班級的裝置會停止同步。之後仍可用同一個代碼建立新班級。</div>
+                        <div class="text-[14px] text-slate-600 mt-1 leading-relaxed">學生、作業、紅綠燈紀錄和家長查詢資料會<b class="text-rose-600">全部刪除，無法復原</b>。其他還開著這個班級的裝置會停止同步。之後仍可用同一個代碼建立新班級。</div>
                     </div>
                     <!-- 分享全新看板給其他老師 -->
                     <div class="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 mb-2">
@@ -1578,7 +1597,7 @@
                                 🎁 複製分享全新看板
                             </button>
                         </div>
-                        <div class="text-[13px] text-slate-600 mt-1 leading-relaxed">對方打開連結後，會自動建立一個<b>全新的空白班級</b>（自己的班級代碼、預設密碼 8888），<b>看不到你的班級資料</b>。</div>
+                        <div class="text-[14px] text-slate-600 mt-1 leading-relaxed">對方打開連結後，會自動建立一個<b>全新的空白班級</b>（自己的班級代碼、預設密碼 8888），<b>看不到你的班級資料</b>。</div>
                     </div>
                     <div class="text-sm text-slate-600 leading-relaxed space-y-3 mt-3">
                         <div>
@@ -1660,7 +1679,7 @@
                     </div>
 
                     <div class="grid grid-cols-12 gap-2 mb-3">
-                        <div class="col-span-6">
+                        <div class="col-span-5">
                             <input type="text" id="new-student-name" maxlength="10" inputmode="numeric" onkeydown="if(event.key === 'Enter') addStudent()" placeholder="輸入座號 (如: 15)" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-sky-400">
                         </div>
                         <div class="col-span-3">
@@ -1668,7 +1687,7 @@
                                 <i class="fa-solid fa-plus"></i> 新增
                             </button>
                         </div>
-                        <div class="col-span-3">
+                        <div class="col-span-4">
                             <button id="append-student-button" onclick="appendNextStudent()" class="w-full h-full bg-sky-50 hover:bg-sky-100 text-sky-700 border-2 border-sky-300 font-black rounded-xl text-xs whitespace-nowrap transition-all flex items-center justify-center gap-1" title="接在目前最後一號後面，直接新增下一號">
                                 ➕ 接續新增
                             </button>
@@ -2043,7 +2062,7 @@
             if (!btn) return;
             const on = window.soundEffect.enabled;
             document.getElementById('sound-toggle-icon').textContent = on ? '🔊' : '🔇';
-            document.getElementById('sound-toggle-text').textContent = on ? '音效：開' : '音效：關';
+            document.getElementById('sound-toggle-text').textContent = on ? '開' : '關';
             btn.className = 'teacher-ui ml-1 sm:ml-3 flex items-center gap-1.5 px-2.5 2xl:px-4 py-1.5 rounded-xl border-2 text-sm sm:text-base font-black whitespace-nowrap shadow-sm transition-all ' +
                 (on ? 'bg-emerald-50 text-emerald-700 border-emerald-400 hover:bg-emerald-100'
                     : 'bg-rose-50 text-rose-700 border-rose-400 hover:bg-rose-100');
@@ -2077,10 +2096,10 @@
                 const btn = document.getElementById(`tab-${t}`);
                 const view = document.getElementById(`view-${t}`);
                 if (t === tab) {
-                    btn.className = "px-2.5 2xl:px-3 py-1 rounded-lg text-xs sm:text-sm font-black flex items-center gap-1.5 whitespace-nowrap transition-all bg-white text-slate-900 shadow-sm";
+                    btn.className = "px-2.5 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-black flex items-center gap-1.5 whitespace-nowrap transition-all bg-white text-slate-900 shadow-sm";
                     view.classList.remove('hidden');
                 } else {
-                    btn.className = "px-2.5 2xl:px-3 py-1 rounded-lg text-xs sm:text-sm font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900";
+                    btn.className = "px-2.5 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900";
                     view.classList.add('hidden');
                 }
             });
@@ -2140,8 +2159,8 @@
             resetTeacherTimeout();
         }
 
-        const ROLE_ON = "px-2.5 2xl:px-3 py-1 rounded-lg text-xs font-black whitespace-nowrap transition-all flex items-center gap-1 shadow-sm";
-        const ROLE_OFF = "px-2.5 2xl:px-3 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1 text-slate-600 hover:text-slate-900";
+        const ROLE_ON = "px-2.5 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-black whitespace-nowrap transition-all flex items-center gap-1 shadow-sm";
+        const ROLE_OFF = "px-2.5 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold whitespace-nowrap transition-all flex items-center gap-1 text-slate-600 hover:text-slate-900";
 
         function applyRoleUI(role) {
             window.state.userRole = role;
@@ -2313,7 +2332,7 @@
                 result = 'failed';
             }
             button.disabled = false;
-            label.textContent = '立即同步';
+            label.innerHTML = '<span class="hidden 2xl:inline">立即</span>同步';
             if (result === 'ok') {
                 updatePendingListNow();
                 const time = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
@@ -2480,17 +2499,17 @@
                                 <select onchange="onSlotAssignmentChange(${index}, this.value)" class="slot-select w-full appearance-none bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg pl-2.5 pr-7 py-0.5 font-black text-amber-950 text-xl focus:outline-none focus:border-amber-500 cursor-pointer truncate transition-colors" title="${canEditBoard() ? '' : '更換作業需教師或小幫手密碼'}">
                                     ${optionsHtml}
                                 </select>
-                                <i class="fa-solid fa-chevron-down text-[12px] text-amber-700 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+                                <i class="fa-solid fa-chevron-down text-[13px] text-amber-700 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none"></i>
                             </div>
                         </div>
                         <div class="flex items-center gap-1 flex-shrink-0">
-                            <span id="slot-badge-${index}" class="text-[13px] xl:text-xs font-black px-2 xl:px-2.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap ${pendingCount > 0 ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}">
+                            <span id="slot-badge-${index}" class="text-base font-black px-2.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap ${pendingCount > 0 ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}">
                                 ${pendingCount > 0 ? `待訂正 ${pendingCount} 人` : '全員完成 🎉'}
                             </span>
-                            <button id="slot-done-${index}" onclick="markSlotAllDone(${index})" class="${isTeacherMode() && pendingCount > 0 ? '' : 'hidden'} text-[13px] xl:text-xs font-black px-2 py-0.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white flex-shrink-0 whitespace-nowrap shadow-sm" title="把這項作業全班設為完成（綠燈）">
+                            <button id="slot-done-${index}" onclick="markSlotAllDone(${index})" class="${isTeacherMode() && pendingCount > 0 ? '' : 'hidden'} text-sm xl:text-base font-black px-2.5 py-0.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white flex-shrink-0 whitespace-nowrap shadow-sm" title="把這項作業全班設為完成（綠燈）">
                                 ✓<span class="slot-done-label"> 全部完成</span>
                             </button>
-                            <button id="slot-next-${index}" onclick="swapToNextPending(${index})" class="${isTeacherMode() && pendingCount === 0 && nextPendingAssignment() ? '' : 'hidden'} text-[13px] xl:text-xs font-black px-2 py-0.5 rounded-full bg-sky-500 hover:bg-sky-600 text-white flex-shrink-0 whitespace-nowrap shadow-sm" title="換成下一項還有人沒訂正的作業">
+                            <button id="slot-next-${index}" onclick="swapToNextPending(${index})" class="${isTeacherMode() && pendingCount === 0 && nextPendingAssignment() ? '' : 'hidden'} text-sm xl:text-base font-black px-2.5 py-0.5 rounded-full bg-sky-500 hover:bg-sky-600 text-white flex-shrink-0 whitespace-nowrap shadow-sm" title="換成下一項還有人沒訂正的作業">
                                 換<span class="slot-next-long">下一項</span> ➜
                             </button>
                         </div>
@@ -2802,7 +2821,7 @@
 
                 const badge = document.getElementById(`slot-badge-${idx}`);
                 if (badge) {
-                    badge.className = `text-[13px] xl:text-xs font-black px-2 xl:px-2.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap ${pCount > 0 ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`;
+                    badge.className = `text-base font-black px-2.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap ${pCount > 0 ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`;
                     badge.innerText = pCount > 0 ? `待訂正 ${pCount} 人` : '全員完成 🎉';
                 }
                 const doneBtn = document.getElementById(`slot-done-${idx}`);
@@ -3093,7 +3112,7 @@
                     itemDiv.innerHTML = `
                         <span class="text-base flex-shrink-0">🚨</span>
                         <span class="text-base font-black text-slate-800 truncate">${escapeHtml(item.name ?? '')}</span>
-                        ${item.onBoard ? `<span class="ml-auto text-[12px] font-bold px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 whitespace-nowrap flex-shrink-0">看板中</span>` : ''}
+                        ${item.onBoard ? `<span class="ml-auto text-[13px] font-bold px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 whitespace-nowrap flex-shrink-0">看板中</span>` : ''}
                     `;
                     list.appendChild(itemDiv);
                 });
@@ -3175,8 +3194,8 @@
                 itemDiv.innerHTML = `
                     <div class="flex items-center gap-1.5 min-w-0 flex-1">
                         <span draggable="true" class="drag-handle cursor-grab active:cursor-grabbing text-slate-400 hover:text-teal-600 text-base leading-none px-1 select-none flex-shrink-0" title="按住拖曳調整順序">⠿</span>
-                        <span class="text-xs font-bold text-slate-400 flex-shrink-0">#${index + 1}</span>
-                        <input type="text" maxlength="20" value="${escapeHtml(item)}" onchange="updateAssignment(${index}, this.value)" class="min-w-0 flex-1 bg-transparent border-b border-transparent focus:border-teal-400 focus:outline-none font-bold text-slate-700 text-xs py-0.5 px-1 truncate">
+                        <span class="text-sm font-bold text-slate-400 flex-shrink-0">#${index + 1}</span>
+                        <input type="text" maxlength="20" value="${escapeHtml(item)}" onchange="updateAssignment(${index}, this.value)" class="min-w-0 flex-1 bg-transparent border-b border-transparent focus:border-teal-400 focus:outline-none font-black text-slate-800 text-lg py-0.5 px-1 truncate">
                     </div>
                     <div class="flex items-center flex-shrink-0">
                         <button onclick="moveAssignment(${index}, ${index - 1})" ${index === 0 ? 'disabled' : ''} class="text-slate-500 hover:bg-slate-200 disabled:opacity-25 px-1.5 py-1 rounded-lg text-xs font-black" title="往上移">▲</button>
@@ -3768,10 +3787,10 @@
                         <div class="flex flex-wrap sm:flex-nowrap items-center gap-1">
                             <button onclick="copyParentCode(${st.id})" class="font-mono font-black tracking-wider text-slate-700 hover:bg-slate-100 rounded-md px-1 mr-1 transition-all" title="點一下複製查詢碼">${escapeHtml(st.parentCode || '')}</button>
                             <span class="inline-flex items-center gap-1 whitespace-nowrap">
-                            <button onclick="copyParentCode(${st.id})" class="text-[13px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-1.5 py-0.5 rounded-md whitespace-nowrap transition-all" title="只複製查詢碼">
+                            <button onclick="copyParentCode(${st.id})" class="text-[14px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-1.5 py-0.5 rounded-md whitespace-nowrap transition-all" title="只複製查詢碼">
                                 <i class="fa-regular fa-copy"></i> 複製碼
                             </button>
-                            <button onclick="copyParentLink(${st.id})" class="text-[13px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-1.5 py-0.5 rounded-md whitespace-nowrap transition-all" title="複製家長查詢連結">
+                            <button onclick="copyParentLink(${st.id})" class="text-[14px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-1.5 py-0.5 rounded-md whitespace-nowrap transition-all" title="複製家長查詢連結">
                                 <i class="fa-solid fa-link"></i> 複製連結
                             </button>
                             <button onclick="regenerateParentCode(${st.id})" class="text-slate-400 hover:bg-slate-100 p-1 rounded-lg transition-all" title="重新產生查詢碼（舊的會失效）">
@@ -3889,11 +3908,12 @@
                 return `<div class="slip">
                     ${qr ? `<img class="qr" src="${qr}" alt="QR Code" data-link="${link}">` : ''}
                     <div class="info">
-                        <div class="seat">${seat} 號 家長您好</div>
-                        ${qr ? '<div>手機掃描左邊 QR Code 即可查詢</div>' : ''}
-                        <div>或到 <span class="mono">${link.split('?')[0]}</span></div>
-                        <div>輸入查詢碼：<span class="code">${code}</span></div>
-                        <div class="note">請妥善保管，查詢碼只能看到您孩子的訂正狀態。</div>
+                        <div class="seat">${seat}號 家長您好：</div>
+                        <div>${qr ? '手機掃描左側 QR Code，即可查詢孩子的作業訂正狀態；也可自行輸入網址：' : '請輸入以下網址，即可查詢孩子的作業訂正狀態：'}</div>
+                        <div class="mono">${link.split('?')[0]}</div>
+                        <div class="code-line">專屬查詢碼：<span class="code">${code}</span></div>
+                        <div class="note">請妥善保管查詢碼，此碼僅能查看您孩子的訂正狀態。也請協助提醒孩子，完成作業後別忘了確實訂正，養成良好的學習習慣。</div>
+                        <div class="note">感謝您的配合與協助，讓我們一起陪伴孩子把學習做得更完整！🌷</div>
                     </div>
                 </div>`;
             }).join('');
@@ -3908,8 +3928,9 @@
                     .info { min-width: 0; }
                     .seat { font-weight: 900; font-size: 15px; }
                     .mono { font-family: monospace; word-break: break-all; }
+                    .code-line { margin: 2px 0; }
                     .code { font-family: monospace; font-weight: 900; font-size: 20px; letter-spacing: 4px; }
-                    .note { color: #64748b; font-size: 11px; }
+                    .note { color: #475569; font-size: 11.5px; }
                     @media print { .noprint { display: none; } }
                 </style></head><body>
                 <h1>下課檢查站｜家長查詢碼 <button class="noprint" onclick="print()">列印</button></h1>
