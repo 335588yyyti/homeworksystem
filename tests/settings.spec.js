@@ -32,7 +32,7 @@ test('電腦版設定頁分三欄（設定｜作業項目｜名冊），三欄�
 test('名冊按鈕使用清楚的名稱', async ({ browser }) => {
     const page = await openDevice(browser, createCloud());
     await unlockTeacher(page, 'settings');
-    for (const label of ['全部連結重新產生', '列印家長查詢碼', '全班訂正歸零', '全班人數重設為28人']) {
+    for (const label of ['全部連結重新產生', '複製查詢連結', '列印家長查詢碼', '全班訂正歸零', '全班人數重設為28人']) {
         await expect(page.locator('.roster-card button', { hasText: label })).toBeVisible();
     }
 });
@@ -46,6 +46,21 @@ test('複製碼只複製查詢碼，複製連結複製完整網址', async ({ br
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(code);
     await row.getByText('複製連結').click();
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toMatch(new RegExp(`\\?p=${code}$`));
+});
+
+test('複製查詢連結是全班共用、不含查詢碼的連結，家長打開後可輸入查詢碼', async ({ browser }) => {
+    const cloud = createCloud();
+    const page = await openDevice(browser, cloud, { clipboard: true });
+    await unlockTeacher(page, 'settings');
+    const code = await page.evaluate(() => state.students.find((s) => s.id === 5).parentCode);
+    await page.locator('.roster-card button', { hasText: '複製查詢連結' }).click();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toMatch(/\/[^?]*\?p$/);
+    await expect.poll(() => cloud.view(code), { timeout: 20000 }).toBeTruthy();
+
+    const parent = await openDevice(browser, cloud, { query: '?p' });
+    await parent.fill('#parent-code-input', code);
+    await parent.press('#parent-code-input', 'Enter');
+    await expect(parent.locator('#parent-child-name')).toContainText('5 號');
 });
 
 test('切換班級時新班級的教師密碼為 8888，原班級不受影響', async ({ browser }) => {
