@@ -14,7 +14,7 @@
     <!-- Font Awesome Icons -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Balsamiq+Sans:wght@700&family=Noto+Sans+TC:wght@500;700;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&family=LXGW+WenKai+TC:wght@400;700&display=swap" rel="stylesheet">
     <style>
         /* 手機字體調大時，也不要讓整頁變寬、需要左右滑動；並避免手機橫放時自動放大字 */
         html {
@@ -23,7 +23,8 @@
             text-size-adjust: 100%;
         }
         body {
-            font-family: 'Noto Sans TC', 'Balsamiq Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            /* 數字和英文用圓潤清楚的 Nunito；中文用標楷體（電腦內建的優先，手機沒有標楷體時改用免費的「霞鶩文楷」） */
+            font-family: 'Nunito', 'DFKai-SB', '標楷體', 'BiauKai', 'Kaiti TC', 'STKaiti', 'KaiTi', 'LXGW WenKai TC', serif;
             background-color: #f1f5f9;
             background-image: radial-gradient(#cbd5e1 1.2px, transparent 1.2px);
             background-size: 24px 24px;
@@ -3499,11 +3500,11 @@
             const code = escapeHtml(window.getClassCode());
             const first = guideNewBoard ? `
                 <div class="text-center">
-                    <div class="text-5xl mb-2">🎉</div>
-                    <h3 class="text-2xl font-black text-slate-800 mb-2">已為你建立全新的班級看板！</h3>
+                    <div class="text-4xl mb-1">🎉</div>
+                    <h3 class="text-lg sm:text-xl font-black text-slate-800 mb-2">已為你建立全新的班級看板！</h3>
                     <p class="text-base text-slate-600 mb-3">這是你的<b>班級代碼</b>，請抄下來保存：</p>
                     <div class="inline-flex flex-wrap items-center justify-center gap-2 max-w-full bg-indigo-50 border-2 border-indigo-200 rounded-2xl px-3 py-2 mb-3">
-                        <span id="guide-class-code" class="font-mono text-lg sm:text-2xl font-black text-indigo-700 tracking-wide break-all min-w-0">${code}</span>
+                        <span id="guide-class-code" class="font-mono text-base sm:text-xl font-black text-indigo-700 whitespace-nowrap">${code}</span>
                         <button onclick="copyCurrentClassCode()" class="text-sm font-bold text-indigo-700 bg-white border border-indigo-200 px-2 py-1 rounded-lg whitespace-nowrap">複製</button>
                     </div>
                     <ul class="text-left text-base text-slate-700 space-y-1.5 list-disc pl-5">
@@ -3814,7 +3815,7 @@
             win.document.open();
             win.document.write(`<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><title>家長查詢碼</title>
                 <style>
-                    body { font-family: 'Noto Sans TC', sans-serif; margin: 16px; color: #1e293b; }
+                    body { font-family: "Nunito", "DFKai-SB", "標楷體", "BiauKai", "Kaiti TC", "STKaiti", "KaiTi", "LXGW WenKai TC", serif; margin: 16px; color: #1e293b; }
                     h1 { font-size: 18px; margin: 0 0 12px; }
                     .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
                     .slip { display: flex; gap: 12px; align-items: center; border: 1.5px dashed #94a3b8; border-radius: 10px; padding: 10px 12px; font-size: 12px; line-height: 1.6; break-inside: avoid; }
