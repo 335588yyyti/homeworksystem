@@ -16,6 +16,12 @@
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Balsamiq+Sans:wght@700&family=Noto+Sans+TC:wght@500;700;900&display=swap" rel="stylesheet">
     <style>
+        /* 手機字體調大時，也不要讓整頁變寬、需要左右滑動；並避免手機橫放時自動放大字 */
+        html {
+            overflow-x: clip;
+            -webkit-text-size-adjust: 100%;
+            text-size-adjust: 100%;
+        }
         body {
             font-family: 'Noto Sans TC', 'Balsamiq Sans', -apple-system, BlinkMacSystemFont, sans-serif;
             background-color: #f1f5f9;
@@ -3496,9 +3502,9 @@
                     <div class="text-5xl mb-2">🎉</div>
                     <h3 class="text-2xl font-black text-slate-800 mb-2">已為你建立全新的班級看板！</h3>
                     <p class="text-base text-slate-600 mb-3">這是你的<b>班級代碼</b>，請抄下來保存：</p>
-                    <div class="inline-flex items-center gap-2 bg-indigo-50 border-2 border-indigo-200 rounded-2xl px-4 py-2 mb-3">
-                        <span id="guide-class-code" class="font-mono text-2xl font-black text-indigo-700 tracking-wide">${code}</span>
-                        <button onclick="copyCurrentClassCode()" class="text-sm font-bold text-indigo-700 bg-white border border-indigo-200 px-2 py-1 rounded-lg">複製</button>
+                    <div class="inline-flex flex-wrap items-center justify-center gap-2 max-w-full bg-indigo-50 border-2 border-indigo-200 rounded-2xl px-3 py-2 mb-3">
+                        <span id="guide-class-code" class="font-mono text-lg sm:text-2xl font-black text-indigo-700 tracking-wide break-all min-w-0">${code}</span>
+                        <button onclick="copyCurrentClassCode()" class="text-sm font-bold text-indigo-700 bg-white border border-indigo-200 px-2 py-1 rounded-lg whitespace-nowrap">複製</button>
                     </div>
                     <ul class="text-left text-base text-slate-700 space-y-1.5 list-disc pl-5">
                         <li>在手機等其他裝置的「設定後台 → 班級共用代碼」輸入它，就能共用同一個看板。</li>
