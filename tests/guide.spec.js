@@ -70,3 +70,24 @@ test('作業項目可以拖曳或用 ▲▼ 調整順序，看板選單照新順
     const options = await page.evaluate(() => [...document.querySelector('.slot-select').options].map((o) => o.value));
     expect(options[0]).toBe(before[3]);
 });
+
+test('小手機或字體放大時，新班級說明的班級代碼維持一行、不會超出畫面', async ({ browser }) => {
+    for (const scale of [1, 1.3]) {
+        const page = await openDevice(browser, createCloud(), { query: '?new', viewport: { width: 320, height: 700 } });
+        await expect(page.locator('#guide-class-code')).toBeVisible();
+        const r = await page.evaluate((f) => {
+            // 模擬手機「字型大小」調大：每個元素的字都放大
+            const els = [...document.querySelectorAll('body, body *')];
+            const sizes = els.map((e) => parseFloat(getComputedStyle(e).fontSize));
+            els.forEach((e, i) => e.style.setProperty('font-size', `${sizes[i] * f}px`, 'important'));
+            const W = document.documentElement.clientWidth;
+            const code = document.getElementById('guide-class-code');
+            const box = code.parentElement.getBoundingClientRect();
+            const oneLine = code.getBoundingClientRect().height < parseFloat(getComputedStyle(code).fontSize) * 2;
+            const body = document.getElementById('guide-body');
+            return { oneLine, inside: box.left >= 0 && box.right <= W, bodyScroll: body.scrollWidth > body.clientWidth + 1, pageScroll: document.documentElement.scrollWidth > W };
+        }, scale);
+        expect(r, `字體 ×${scale}`).toEqual({ oneLine: true, inside: true, bodyScroll: false, pageScroll: false });
+        await page.context().close();
+    }
+});
