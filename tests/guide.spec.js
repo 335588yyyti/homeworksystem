@@ -12,6 +12,11 @@ test('設定後台的「使用說明」可以一頁一頁看完', async ({ brows
     const titles = [];
     for (let i = 0; i < 5; i++) {
         titles.push(await page.locator('#guide-body h3').innerText());
+        if (i === 4) {
+            // 最後一頁提醒：全新看板連結自己不要點，以及怎麼切回原本的班級
+            await expect(page.locator('#guide-body')).toContainText('自己不要點這個連結');
+            await expect(page.locator('#guide-body')).toContainText('輸入原本的代碼就能切回');
+        }
         await page.click('#guide-next');
     }
     expect(titles[1]).toContain('老師登記');
