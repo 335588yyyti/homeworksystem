@@ -134,7 +134,9 @@ async function openDevice(browser, cloud, opts = {}) {
     if (opts.offline) await context.setOffline(true);
     await page.goto(INDEX_URL + (opts.query || ''));
     const ready = opts.offline ? '離線' : '已連線';
-    await page.waitForFunction((text) => document.getElementById('cloud-sync-status')?.textContent.includes(text) || window.IS_PARENT_MODE, ready);
+    // 打開「分享全新看板」連結時，會先停在「已經有班級嗎？」的選擇視窗
+    await page.waitForFunction((text) => document.getElementById('cloud-sync-status')?.textContent.includes(text) || window.IS_PARENT_MODE
+        || !document.getElementById('modal-new-board-choice')?.classList.contains('hidden'), ready);
     await page.waitForTimeout(300);
     return page;
 }

@@ -1136,16 +1136,24 @@
         // 其他老師打開「分享全新看板」的連結（網址帶 ?new）：自動建立一個全新的空白班級
         const NEW_BOARD_REQUESTED = !window.IS_PARENT_MODE && new URLSearchParams(location.search).has('new');
         let newBoardCreated = false;
+        let joinedBoardCode = '';
 
         async function createFreshBoardFromLink() {
             // 網址拿掉 ?new，重新整理時不會再建立一次
             try { history.replaceState(null, '', location.pathname); } catch(e) {}
             let existing = null;
             try { existing = localStorage.getItem(CLASS_CODE_KEY); } catch(e) {}
-            if (existing && !confirm(`這個連結會幫你建立一個全新的空白班級看板。\n\n這台裝置目前使用班級代碼【${existing}】，建立後會切換到新的班級（原班級的資料仍保留在雲端，之後在設定後台輸入原代碼就能切回）。\n\n要建立全新的班級看板嗎？`)) {
+            // 先問：已經有班級（例如換了新電腦）就輸入代碼接回，沒有才建立全新班級
+            const choice = await window.askNewBoardChoice(existing);
+            if (choice.type === 'keep') {
                 // 不建立：回到這台裝置原本的班級
                 window.loadLocalBackup();
                 rerenderCurrentView();
+                return;
+            }
+            if (choice.type === 'join') {
+                try { localStorage.setItem(CLASS_CODE_KEY, choice.code); } catch(e) {}
+                joinedBoardCode = choice.code;
                 return;
             }
             let code = '';
@@ -1219,6 +1227,7 @@
                 if (NEW_BOARD_REQUESTED) await createFreshBoardFromLink();
                 await connectBoard(NEW_BOARD_REQUESTED);
                 if (window.consumeNewBoardNotice()) setTimeout(() => window.showNewBoardWelcome(), 300);
+                else if (joinedBoardCode) showToast(`已接回班級【${joinedBoardCode}】`);
             } catch (err) {
                 console.warn("降級本機快取:", err);
                 window.updateCloudStatusBadge('error');
@@ -1787,6 +1796,30 @@
                     更改並進入後台
                 </button>
             </div>
+        </div>
+    </div>
+
+    <!-- 打開「分享全新看板」連結時先問：已經有班級就輸入代碼接回，沒有才建立全新班級 -->
+    <div id="modal-new-board-choice" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white border-2 border-slate-200 rounded-3xl p-5 sm:p-6 w-full max-w-md board-shadow max-h-full overflow-y-auto">
+            <div class="text-center mb-4">
+                <div class="text-3xl mb-1">👋</div>
+                <h4 class="text-lg sm:text-xl font-black text-slate-800">歡迎使用下課檢查站</h4>
+                <p class="text-sm text-slate-500 mt-0.5">你已經有自己的班級了嗎？</p>
+            </div>
+            <label for="new-board-join-code" class="block text-base font-black text-slate-700 mb-1">已經有班級：輸入班級代碼接回</label>
+            <div class="flex gap-2">
+                <input type="text" id="new-board-join-code" maxlength="30" autocomplete="off" autocapitalize="none" spellcheck="false" onkeydown="if(event.key === 'Enter') joinBoardFromNewLink()" placeholder="例如：lin601cs" class="flex-1 min-w-0 bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2 font-mono font-black text-slate-800 focus:outline-none focus:border-indigo-400 text-base">
+                <button id="new-board-join" onclick="joinBoardFromNewLink()" class="bg-indigo-500 hover:bg-indigo-600 text-white font-black px-4 rounded-xl text-base whitespace-nowrap transition-all disabled:opacity-50">接回</button>
+            </div>
+            <p id="new-board-join-msg" class="text-sm font-bold text-rose-600 min-h-[1.25rem] mt-1"></p>
+            <button id="new-board-keep" onclick="finishNewBoardChoice({ type: 'keep' })" class="hidden w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-sm transition-all mt-1">
+                ↩ 回到這台裝置原本的班級【<span id="new-board-keep-code" class="font-mono"></span>】
+            </button>
+            <div class="flex items-center gap-3 my-4 text-sm font-bold text-slate-400"><div class="flex-1 border-t border-slate-200"></div>或<div class="flex-1 border-t border-slate-200"></div></div>
+            <button id="new-board-create" onclick="finishNewBoardChoice({ type: 'new' })" class="w-full bg-amber-400 hover:bg-amber-500 text-slate-900 font-black py-3 rounded-xl text-base transition-all">
+                🎉 我還沒有班級，建立全新班級
+            </button>
         </div>
     </div>
 
@@ -3484,10 +3517,61 @@
         }
 
         function copyNewBoardLink() {
-            copyText(getNewBoardLink(), '已複製「全新看板」連結，請傳給其他老師（自己點開會換到新的空白班級）', '請複製這個連結傳給其他老師：');
+            copyText(getNewBoardLink(), '已複製「全新看板」連結，可以傳給其他老師', '請複製這個連結傳給其他老師：');
         }
 
         // 透過分享連結建立新看板後：直接打開使用說明，第一頁顯示班級代碼
+        // 打開「分享全新看板」連結時的選擇視窗，回傳 { type: 'new' | 'join' | 'keep', code }
+        let newBoardChoiceResolve = null;
+        window.askNewBoardChoice = function(existing) {
+            return new Promise((resolve) => {
+                newBoardChoiceResolve = resolve;
+                document.getElementById('new-board-keep').classList.toggle('hidden', !existing);
+                document.getElementById('new-board-keep-code').textContent = existing || '';
+                document.getElementById('new-board-join-msg').textContent = '';
+                document.getElementById('modal-new-board-choice').classList.remove('hidden');
+            });
+        };
+
+        function finishNewBoardChoice(choice) {
+            document.getElementById('modal-new-board-choice').classList.add('hidden');
+            const resolve = newBoardChoiceResolve;
+            newBoardChoiceResolve = null;
+            if (resolve) resolve(choice);
+        }
+
+        async function joinBoardFromNewLink() {
+            const input = document.getElementById('new-board-join-code');
+            const msg = document.getElementById('new-board-join-msg');
+            const button = document.getElementById('new-board-join');
+            const code = input.value.trim().toLowerCase();
+            if (!isStrongClassCode(code)) {
+                msg.textContent = '班級代碼是 6～30 個字元，同時包含英文字母和數字';
+                return;
+            }
+            button.disabled = true;
+            msg.textContent = '';
+            let info = null;
+            try {
+                info = await window.peekClassCode(code);
+            } catch (err) {
+                console.warn("查詢班級代碼失敗:", err);
+                msg.textContent = '無法確認班級代碼，請檢查網路後再試一次';
+                button.disabled = false;
+                return;
+            }
+            button.disabled = false;
+            if (info && info.cleared) {
+                msg.textContent = '這個班級代碼的資料已經清空了，請確認代碼，或建立全新班級';
+                return;
+            }
+            if (info && !info.exists) {
+                msg.textContent = '找不到這個班級代碼，請再確認一次';
+                return;
+            }
+            finishNewBoardChoice({ type: 'join', code });
+        }
+
         window.showNewBoardWelcome = function() {
             openGuide({ newBoard: true });
         };
@@ -3548,8 +3632,8 @@
                 page('⚙️', '其他小技巧', [
                     '<b>🙋 小幫手模式</b>：在設定後台開啟，讓小老師幫忙點紅燈、換作業，但不能進設定後台。',
                     '<b>🔄 立即同步</b>：教室電腦和手機都按一下，就能確認兩邊是同一份進度。',
-                    '<b>🎁 複製分享全新看板</b>：分享給其他老師，每打開一次就產生一個新的空白班級，看不到你的資料，也不會連到別人的班級。',
-                    '<b class="text-rose-600">自己不要點這個連結</b>：會把你這台裝置換到新的空白班級（跳出確認時按「取消」就不會換）。不小心換了也別擔心，原本的資料還在，到「設定後台 → 班級共用代碼」輸入原本的代碼就能切回。',
+                    '<b>🎁 複製分享全新看板</b>：分享給其他老師。打開時會先問：<b>已經有班級</b>就輸入班級代碼接回（例如換了新電腦）；<b>還沒有班級</b>才會建立新的空白班級，看不到你的資料，也不會連到別人的班級。',
+                    '不小心建立了新班級也別擔心，原本的資料還在，到「設定後台 → 班級共用代碼」輸入原本的代碼就能切回。',
                     '之後想再看這份說明，到「設定後台」按右上角的「<b>📖 使用說明</b>」。'
                 ])
             ];

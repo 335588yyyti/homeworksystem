@@ -114,6 +114,10 @@ test('分享全新看板：對方打開連結會建立自己的空白班級，�
     await teacher.evaluate(() => { setStudentStatus(state.slots[0].assignment, 3, false); syncStateToCloud(true); });
 
     const other = await openDevice(browser, cloud, { query: '?new' });
+    // 先問是否已有班級，選「建立全新班級」
+    await expect(other.locator('#modal-new-board-choice')).toBeVisible();
+    await expect(other.locator('#new-board-keep')).toBeHidden();
+    await other.click('#new-board-create');
     // 建立後直接打開使用說明，第一頁顯示班級代碼
     await expect(other.locator('#modal-guide')).toBeVisible();
     await expect(other.locator('#guide-body')).toContainText('已為你建立全新的班級看板');
@@ -134,18 +138,53 @@ test('分享全新看板：對方打開連結會建立自己的空白班級，�
     await same.evaluate(() => { localStorage.setItem('checkpoint_class_code', 'mine123'); setStudentStatus(state.slots[0].assignment, 4, false); saveLocalBackup(); });
     await same.goto(same.url().split('?')[0] + '?new');
     expect(await same.locator('.seat-pending').count()).toBe(0);
+    await same.click('#new-board-create');
     await expect.poll(() => same.evaluate(() => getClassCode())).not.toBe('mine123');
     await same.waitForTimeout(500);
     expect(await same.locator('.seat-pending').count()).toBe(0);
 
-    // 已經在用其他班級的裝置：先確認，取消就不建立
+    // 已經在用其他班級的裝置：可以選擇回到原本的班級，不建立
     const existing = await openDevice(browser, cloud);
-    existing.answerDialogs = false;
     await existing.evaluate(() => { localStorage.setItem('checkpoint_class_code', 'abc123x'); });
     await existing.goto(existing.url().split('?')[0] + '?new');
-    await expect.poll(() => existing.dialogs.length).toBeGreaterThan(0);
-    expect(existing.dialogs[0]).toContain('abc123x');
+    await expect(existing.locator('#new-board-keep')).toContainText('abc123x');
+    await existing.click('#new-board-keep');
     await existing.waitForTimeout(800);
     expect(await existing.evaluate(() => getClassCode())).toBe('abc123x');
     expect(await existing.evaluate(() => location.search)).toBe('');
+});
+
+test('打開全新看板連結時，已經有班級的老師可以輸入班級代碼接回，不會建立新班級', async ({ browser }) => {
+    const cloud = createCloud();
+    const teacher = await openDevice(browser, cloud);
+    await teacher.evaluate(() => changeClassCode('lin601cs'));
+    await expect(teacher.locator('#cloud-sync-status')).toContainText('已連線');
+    await expect.poll(() => cloud.board('lin601cs')?.boardId).toBeTruthy();
+    await teacher.evaluate(() => { state.sloganTitle = '林老師的班'; syncStateToCloud(true); });
+    await expect.poll(() => cloud.board('lin601cs')?.sloganTitle).toBe('林老師的班');
+    await teacher.waitForTimeout(500);
+    expect(cloud.board('lin601cs').sloganTitle).toBe('林老師的班');
+
+    const fresh = await openDevice(browser, cloud, { query: '?new' });
+    await expect(fresh.locator('#modal-new-board-choice')).toBeVisible();
+    // 代碼格式不對、或找不到班級：留在視窗裡提示
+    await fresh.fill('#new-board-join-code', 'abc');
+    await fresh.click('#new-board-join');
+    await expect(fresh.locator('#new-board-join-msg')).toContainText('6～30');
+    await fresh.fill('#new-board-join-code', 'zzz999x');
+    await fresh.press('#new-board-join-code', 'Enter');
+    await expect(fresh.locator('#new-board-join-msg')).toContainText('找不到');
+    await expect(fresh.locator('#modal-new-board-choice')).toBeVisible();
+
+    // 正確代碼（大小寫都可以）：接回原本的班級
+    await fresh.fill('#new-board-join-code', ' LIN601CS ');
+    await fresh.click('#new-board-join');
+    await expect(fresh.locator('#modal-new-board-choice')).toBeHidden();
+    await expect.poll(() => fresh.evaluate(() => getClassCode())).toBe('lin601cs');
+    await expect(fresh.locator('#slogan-title-display')).toContainText('林老師的班');
+    await expect(fresh.locator('#toast-msg')).toContainText('已接回班級');
+    await expect(fresh.locator('#modal-guide')).toBeHidden();
+    expect(await fresh.evaluate(() => location.search)).toBe('');
+    // 沒有另外建立新班級
+    expect(Object.keys(cloud.store).filter((k) => /checkpoint_boards\/class/.test(k))).toEqual([]);
 });
