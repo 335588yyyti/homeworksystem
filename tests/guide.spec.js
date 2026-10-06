@@ -12,6 +12,11 @@ test('設定後台的「使用說明」可以一頁一頁看完', async ({ brows
     const titles = [];
     for (let i = 0; i < 5; i++) {
         titles.push(await page.locator('#guide-body h3').innerText());
+        if (i === 4) {
+            // 最後一頁提醒：全新看板連結已經有班級可以接回，以及怎麼切回原本的班級
+            await expect(page.locator('#guide-body')).toContainText('輸入班級代碼接回');
+            await expect(page.locator('#guide-body')).toContainText('輸入原本的代碼就能切回');
+        }
         await page.click('#guide-next');
     }
     expect(titles[1]).toContain('老師登記');
@@ -74,6 +79,7 @@ test('作業項目可以拖曳或用 ▲▼ 調整順序，看板選單照新順
 test('小手機或字體放大時，新班級說明的班級代碼維持一行、不會超出畫面', async ({ browser }) => {
     for (const scale of [1, 1.3]) {
         const page = await openDevice(browser, createCloud(), { query: '?new', viewport: { width: 320, height: 700 } });
+        await page.click('#new-board-create');
         await expect(page.locator('#guide-class-code')).toBeVisible();
         const r = await page.evaluate((f) => {
             // 模擬手機「字型大小」調大：每個元素的字都放大
