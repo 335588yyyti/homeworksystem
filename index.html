@@ -1628,6 +1628,9 @@
                             <button onclick="regenerateAllParentCodes()" class="bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200 text-xs font-bold px-2.5 py-1.5 rounded-xl whitespace-nowrap transition-all" title="全班重新產生查詢碼，舊的全部失效">
                                 <i class="fa-solid fa-rotate"></i> 全部連結重新產生
                             </button>
+                            <button onclick="copySharedParentLink()" class="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 text-xs font-bold px-2.5 py-1.5 rounded-xl whitespace-nowrap transition-all" title="全班共用一個連結，家長打開後輸入自己孩子的查詢碼">
+                                <i class="fa-solid fa-link"></i> 複製查詢連結
+                            </button>
                             <button onclick="printParentCodes()" class="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 text-xs font-bold px-2.5 py-1.5 rounded-xl whitespace-nowrap transition-all">
                                 <i class="fa-solid fa-print"></i> 列印家長查詢碼
                             </button>
@@ -3530,7 +3533,8 @@
                 ]),
                 page('👪', '家長查詢', [
                     '「設定後台 → 班級座號名冊」裡，每位學生都有一組<b>家長查詢碼</b>。',
-                    '按「<b>列印家長查詢碼</b>」印出 QR Code 紙條發給家長，或用「複製連結」傳給家長。',
+                    '按「<b>複製查詢連結</b>」可以把同一個連結公布給全班家長，家長打開後輸入自己孩子的查詢碼就好。',
+                    '也可以按「<b>列印家長查詢碼</b>」印出 QR Code 紙條，或用每位學生旁的「複製連結」個別傳。',
                     '家長只看得到自己孩子的作業狀況，看不到其他同學。',
                     '<b class="text-rose-600">班級代碼不要給家長</b>，家長只需要查詢碼。'
                 ]),
@@ -3714,6 +3718,11 @@
             const st = window.state.students.find(s => s.id === id);
             if (!st || !st.parentCode) return;
             copyText(getParentLink(st.parentCode), `已複製 ${getPureSeatNumber(st.name)} 號的家長查詢連結`, '請複製這個連結：');
+        }
+
+        // 全班共用的查詢連結：不含查詢碼，家長打開後輸入自己孩子的碼（之後這支手機會記住）
+        function copySharedParentLink() {
+            copyText(`${location.origin}${location.pathname}?p`, '已複製全班共用的查詢連結，家長打開後輸入孩子的查詢碼即可', '請複製這個連結：');
         }
 
         function regenerateParentCode(id) {
