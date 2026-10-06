@@ -127,3 +127,13 @@ test('作業項目最多 50 項（與雲端安全規則一致）', async ({ brow
     expect(await page.evaluate(() => state.assignments.length)).toBe(50);
     await expect(page.locator('#toast-msg')).toContainText('最多 50 項');
 });
+
+test('筆電 1366 寬：教師登記（含小幫手按鈕）時頁首維持一行，不佔用看板高度', async ({ browser }) => {
+    const page = await openDevice(browser, createCloud(), { viewport: { width: 1366, height: 768 } });
+    await page.evaluate(() => { startTeacherSession(); state.helperEnabled = true; applyRoleUI('teacher'); setStudentStatus(state.slots[0].assignment, 3, false); });
+    await page.evaluate(() => updatePendingListNow());
+    await expect(page.locator('#pending-list-count')).toBeVisible();
+    const tops = await page.evaluate(() => [...document.querySelector('header > div').children].map((c) => Math.round(c.getBoundingClientRect().top)));
+    expect(Math.max(...tops) - Math.min(...tops)).toBeLessThan(10);
+    await expect(page.locator('#sound-toggle')).toContainText('開');
+});

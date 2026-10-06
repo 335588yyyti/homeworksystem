@@ -448,10 +448,12 @@
             badge.title = '';
             if (status === 'synced') {
                 badge.className = "flex-shrink-0 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[14px] font-bold whitespace-nowrap bg-emerald-50 text-emerald-700 border border-emerald-200";
-                badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span><span class="hidden sm:inline">已連線存檔</span>`;
+                // 一切正常時，較窄的電腦螢幕只顯示綠點（滑過去看文字），讓頁首維持一行；異常時一定顯示文字
+                badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500"></span><span class="hidden 2xl:inline">已連線存檔</span>`;
+                badge.title = '已連線存檔';
             } else if (status === 'syncing') {
                 badge.className = "flex-shrink-0 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[14px] font-bold whitespace-nowrap bg-amber-50 text-amber-700 border border-amber-200 animate-pulse";
-                badge.innerHTML = `<i class="fa-solid fa-arrows-rotate fa-spin text-amber-500 text-[13px]"></i><span class="hidden sm:inline">同步中</span>`;
+                badge.innerHTML = `<i class="fa-solid fa-arrows-rotate fa-spin text-amber-500 text-[13px]"></i><span class="hidden 2xl:inline">同步中</span>`;
             } else if (status === 'quota') {
                 badge.className = "flex-shrink-0 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[14px] font-bold whitespace-nowrap bg-rose-50 text-rose-700 border border-rose-200";
                 badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span><span class="hidden sm:inline">今日雲端額度已用完（修改先存在這台電腦）</span>`;
@@ -1269,7 +1271,7 @@
     </script>
 
     <header class="bg-white border-b-2 border-slate-200 z-30 shadow-sm flex-shrink-0">
-        <div class="max-w-[1920px] mx-auto px-4 py-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <div class="max-w-[1920px] mx-auto px-3 2xl:px-4 py-2 flex flex-wrap items-center justify-between gap-x-2 2xl:gap-x-3 gap-y-2">
 
             <!-- 品牌與雲端連線狀態（手機較窄時按鈕自動換到下一行） -->
             <div class="flex flex-wrap items-center gap-x-2 gap-y-2 min-w-0">
@@ -1277,22 +1279,22 @@
                     <i class="fa-solid fa-graduation-cap text-base"></i>
                 </div>
                 <div class="flex items-center gap-2 min-w-0">
-                    <h1 class="text-base sm:text-lg font-black text-slate-800 tracking-wide whitespace-nowrap">下課檢查站！</h1>
+                    <h1 class="text-base sm:text-lg font-black text-slate-800 2xl:tracking-wide whitespace-nowrap">下課檢查站！</h1>
                     <span id="cloud-sync-status" class="flex-shrink-0 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[14px] font-bold whitespace-nowrap bg-slate-100 text-slate-500 border border-slate-200">
                         <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> 連線中
                     </span>
                 </div>
                 <!-- 立即同步：確認這台裝置和其他裝置（老師手機、教室電腦）是同一份進度 -->
-                <button id="sync-now-button" onclick="syncNow()" class="teacher-ui ml-1 flex items-center gap-1.5 px-2.5 2xl:px-4 py-1.5 rounded-xl border-2 border-sky-400 bg-sky-50 hover:bg-sky-100 text-sky-700 text-sm sm:text-base font-black whitespace-nowrap shadow-sm transition-colors disabled:opacity-60" title="馬上把這台裝置的修改存到雲端，並載入其他裝置的最新進度">
-                    <span class="text-lg leading-none">🔄</span><span id="sync-now-label">立即同步</span>
+                <button id="sync-now-button" onclick="syncNow()" class="teacher-ui ml-1 flex items-center gap-1 2xl:gap-1.5 px-2 2xl:px-4 py-1.5 rounded-xl border-2 border-sky-400 bg-sky-50 hover:bg-sky-100 text-sky-700 text-sm sm:text-base font-black whitespace-nowrap shadow-sm transition-colors disabled:opacity-60" title="馬上把這台裝置的修改存到雲端，並載入其他裝置的最新進度">
+                    <span class="text-lg leading-none">🔄</span><span id="sync-now-label"><span class="hidden 2xl:inline">立即</span>同步</span>
                 </button>
                 <!-- 音效開關：放在標題旁的空白處，上課時可一鍵靜音 -->
-                <button id="sound-toggle" onclick="toggleSound()" class="teacher-ui flex items-center gap-1.5 px-2.5 2xl:px-4 py-1.5 rounded-xl border-2 text-sm sm:text-base font-black whitespace-nowrap shadow-sm transition-all bg-emerald-50 text-emerald-700 border-emerald-400 hover:bg-emerald-100" title="開啟／關閉點擊音效">
+                <button id="sound-toggle" onclick="toggleSound()" class="teacher-ui flex items-center gap-1 2xl:gap-1.5 px-2 2xl:px-4 py-1.5 rounded-xl border-2 text-sm sm:text-base font-black whitespace-nowrap shadow-sm transition-all bg-emerald-50 text-emerald-700 border-emerald-400 hover:bg-emerald-100" title="開啟／關閉點擊音效">
                     <span id="sound-toggle-icon" class="text-lg leading-none">🔊</span>
-                    <span id="sound-toggle-text">音效：開</span>
+                    <span><span class="hidden 2xl:inline">音效：</span><span id="sound-toggle-text">開</span></span>
                 </button>
                 <!-- 未訂正名單：一眼看出每位同學還有幾項要訂正 -->
-                <button id="pending-list-button" onclick="openPendingList()" class="teacher-ui flex items-center gap-1.5 px-2.5 2xl:px-4 py-1.5 rounded-xl border-2 text-sm sm:text-base font-black whitespace-nowrap shadow-sm transition-all bg-indigo-50 text-indigo-700 border-indigo-400 hover:bg-indigo-100" title="查看所有還有作業要訂正的同學">
+                <button id="pending-list-button" onclick="openPendingList()" class="teacher-ui flex items-center gap-1 2xl:gap-1.5 px-2 2xl:px-4 py-1.5 rounded-xl border-2 text-sm sm:text-base font-black whitespace-nowrap shadow-sm transition-all bg-indigo-50 text-indigo-700 border-indigo-400 hover:bg-indigo-100" title="查看所有還有作業要訂正的同學">
                     <span class="text-lg leading-none">📋</span>
                     <span>未訂正名單</span>
                     <span id="pending-list-count" class="hidden min-w-[1.5rem] px-1.5 rounded-full bg-rose-500 text-white text-sm leading-6 text-center"></span>
@@ -1301,13 +1303,13 @@
 
             <!-- 頁籤切換鈕 -->
             <nav class="teacher-ui flex bg-slate-100 p-1 rounded-xl border border-slate-200 flex-shrink-0">
-                <button onclick="switchTab('dashboard')" id="tab-dashboard" class="px-3 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-black flex items-center gap-1.5 whitespace-nowrap transition-all bg-white text-slate-900 shadow-sm">
+                <button onclick="switchTab('dashboard')" id="tab-dashboard" class="px-2.5 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-black flex items-center gap-1.5 whitespace-nowrap transition-all bg-white text-slate-900 shadow-sm">
                     <i class="fa-solid fa-chalkboard-user text-amber-500"></i> 班級看板
                 </button>
-                <button onclick="switchTab('parent')" id="tab-parent" class="px-3 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900">
+                <button onclick="switchTab('parent')" id="tab-parent" class="px-2.5 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900">
                     <i class="fa-solid fa-id-card text-indigo-500"></i> 個別查詢
                 </button>
-                <button onclick="switchTab('settings')" id="tab-settings" class="px-3 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900">
+                <button onclick="switchTab('settings')" id="tab-settings" class="px-2.5 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900">
                     <i class="fa-solid fa-gears text-slate-500"></i> 設定後台
                 </button>
             </nav>
@@ -1315,13 +1317,13 @@
             <!-- 學生消單 / 教師模式按鈕組 -->
             <div class="teacher-ui flex items-center gap-2 flex-shrink-0">
                 <div class="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
-                    <button onclick="setRole('student')" id="role-student" class="px-3 py-1.5 rounded-lg text-sm sm:text-base font-black whitespace-nowrap transition-all flex items-center gap-1 bg-white text-emerald-600 shadow-sm">
+                    <button onclick="setRole('student')" id="role-student" class="px-2.5 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-black whitespace-nowrap transition-all flex items-center gap-1 bg-white text-emerald-600 shadow-sm">
                         <i class="fa-solid fa-child text-sm"></i> 學生消單
                     </button>
-                    <button onclick="setRole('teacher')" id="role-teacher" class="px-3 py-1.5 rounded-lg text-sm sm:text-base font-bold whitespace-nowrap transition-all flex items-center gap-1 text-slate-600 hover:text-slate-900">
+                    <button onclick="setRole('teacher')" id="role-teacher" class="px-2.5 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold whitespace-nowrap transition-all flex items-center gap-1 text-slate-600 hover:text-slate-900">
                         <i class="fa-solid fa-user-tie text-sm"></i> 教師登記
                     </button>
-                    <button onclick="setRole('helper')" id="role-helper" class="hidden px-3 py-1.5 rounded-lg text-sm sm:text-base font-bold whitespace-nowrap transition-all flex items-center gap-1 text-slate-600 hover:text-slate-900" title="小幫手：只能在看板登記紅燈、更換作業">
+                    <button onclick="setRole('helper')" id="role-helper" class="hidden px-2.5 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold whitespace-nowrap transition-all flex items-center gap-1 text-slate-600 hover:text-slate-900" title="小幫手：只能在看板登記紅燈、更換作業">
                         <i class="fa-solid fa-hands-helping text-sm"></i> 小幫手
                     </button>
                 </div>
@@ -2060,7 +2062,7 @@
             if (!btn) return;
             const on = window.soundEffect.enabled;
             document.getElementById('sound-toggle-icon').textContent = on ? '🔊' : '🔇';
-            document.getElementById('sound-toggle-text').textContent = on ? '音效：開' : '音效：關';
+            document.getElementById('sound-toggle-text').textContent = on ? '開' : '關';
             btn.className = 'teacher-ui ml-1 sm:ml-3 flex items-center gap-1.5 px-2.5 2xl:px-4 py-1.5 rounded-xl border-2 text-sm sm:text-base font-black whitespace-nowrap shadow-sm transition-all ' +
                 (on ? 'bg-emerald-50 text-emerald-700 border-emerald-400 hover:bg-emerald-100'
                     : 'bg-rose-50 text-rose-700 border-rose-400 hover:bg-rose-100');
@@ -2094,10 +2096,10 @@
                 const btn = document.getElementById(`tab-${t}`);
                 const view = document.getElementById(`view-${t}`);
                 if (t === tab) {
-                    btn.className = "px-3 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-black flex items-center gap-1.5 whitespace-nowrap transition-all bg-white text-slate-900 shadow-sm";
+                    btn.className = "px-2.5 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-black flex items-center gap-1.5 whitespace-nowrap transition-all bg-white text-slate-900 shadow-sm";
                     view.classList.remove('hidden');
                 } else {
-                    btn.className = "px-3 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900";
+                    btn.className = "px-2.5 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900";
                     view.classList.add('hidden');
                 }
             });
@@ -2157,8 +2159,8 @@
             resetTeacherTimeout();
         }
 
-        const ROLE_ON = "px-3 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-black whitespace-nowrap transition-all flex items-center gap-1 shadow-sm";
-        const ROLE_OFF = "px-3 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold whitespace-nowrap transition-all flex items-center gap-1 text-slate-600 hover:text-slate-900";
+        const ROLE_ON = "px-2.5 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-black whitespace-nowrap transition-all flex items-center gap-1 shadow-sm";
+        const ROLE_OFF = "px-2.5 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold whitespace-nowrap transition-all flex items-center gap-1 text-slate-600 hover:text-slate-900";
 
         function applyRoleUI(role) {
             window.state.userRole = role;
@@ -2330,7 +2332,7 @@
                 result = 'failed';
             }
             button.disabled = false;
-            label.textContent = '立即同步';
+            label.innerHTML = '<span class="hidden 2xl:inline">立即</span>同步';
             if (result === 'ok') {
                 updatePendingListNow();
                 const time = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
