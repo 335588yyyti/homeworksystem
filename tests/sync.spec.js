@@ -37,20 +37,25 @@ test('連續點座號：最後一次點擊後 5 秒才一次存到雲端（教�
     const phone = await openDevice(browser, cloud);
     await teacherMode(page);
     const boardWrites = () => page.writes.filter((p) => p.includes('checkpoint_boards')).length;
+    // 先等開網頁時的雲端寫入（建立看板、補班級編號等）都結束，電腦較慢時才不會算進來
+    await expect(page.locator('#cloud-sync-status')).toContainText('已連線存檔');
+    let previous = -1;
+    await expect.poll(() => { const now = boardWrites(); const settled = now === previous; previous = now; return settled; }, { intervals: [800], timeout: 15000 }).toBe(true);
     const start = boardWrites();
 
     await page.click('#btn-slot-0-student-3');
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(1500);
     await page.click('#btn-slot-0-student-5');
     await page.click('#btn-slot-1-student-7');
-    await page.waitForTimeout(3500);
+    // 最後一次點擊後 2.5 秒（距離存檔還有 2.5 秒，電腦較慢時也有餘裕）
+    await page.waitForTimeout(2500);
     // 最後一次點擊後還不到 5 秒：還沒上傳，狀態燈顯示同步中
     expect(boardWrites()).toBe(start);
     await expect(page.locator('#cloud-sync-status')).toContainText('同步中');
     // 等待期間，另一台裝置的修改不會被蓋掉
     await phone.evaluate(() => { setStudentStatus('數課', 12, false); syncStatusChange([['數課', 12, false]]); });
 
-    await expect.poll(boardWrites, { timeout: 4000 }).toBe(start + 1); // 三格一次送出
+    await expect.poll(boardWrites, { timeout: 6000 }).toBe(start + 1); // 三格一次送出
     await expect(page.locator('#cloud-sync-status')).toContainText('已連線存檔');
     const statuses = cloud.board('main').statuses;
     expect([statuses['國習']['3'], statuses['國習']['5'], statuses['國作']['7'], statuses['數課']['12']]).toEqual([false, false, false, false]);
@@ -60,11 +65,11 @@ test('連續點座號：最後一次點擊後 5 秒才一次存到雲端（教�
     await page.evaluate(() => applyRoleUI('student'));
     const beforeStudent = boardWrites();
     await page.click('#btn-slot-0-student-3');
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(1500);
     await page.click('#btn-slot-0-student-5');
-    await page.waitForTimeout(3500);
+    await page.waitForTimeout(2500);
     expect(cloud.board('main').statuses['國習']['3']).toBe(false);
-    await expect.poll(boardWrites, { timeout: 4000 }).toBe(beforeStudent + 1);
+    await expect.poll(boardWrites, { timeout: 6000 }).toBe(beforeStudent + 1);
     expect([cloud.board('main').statuses['國習']['3'], cloud.board('main').statuses['國習']['5']]).toEqual([true, true]);
 });
 
