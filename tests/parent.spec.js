@@ -1,6 +1,6 @@
 // 家長查詢：只讀得到自己孩子的資料、即時更新、精簡畫面、列印 QR Code
 const { test, expect } = require('@playwright/test');
-const { createCloud, openDevice } = require('./helpers');
+const { INDEX_URL, createCloud, openDevice } = require('./helpers');
 
 test('家長頁只讀自己孩子的摘要，不讀整班看板', async ({ browser }) => {
     const cloud = createCloud();
@@ -66,6 +66,8 @@ test('列印紙條的 QR Code 內容就是家長連結', async ({ browser }) => 
     expect(text).toContain('手機掃描左側 QR Code，即可查詢孩子的作業訂正狀態；也可自行輸入網址：');
     expect(text).toMatch(/專屬查詢碼：\s*[A-Z0-9]{6}/);
     expect(text).toContain('養成良好的學習習慣');
+    // 紙條上的網址是家長專用短網址（只會看到個別查詢），不是老師用的看板網址
+    expect(text).toMatch(/\/parent\s/);
     expect(text).toContain('讓我們一起陪伴孩子把學習做得更完整！🌷');
     // 用網頁內的 BarcodeDetector 不一定支援，改為確認圖片存在且連結格式正確
     for (const slip of slips) {
@@ -143,4 +145,23 @@ test('查詢碼和其他班級重複時自動換新，不會覆蓋或查到別�
     expect(cloud.view('MINE22').owner).toBe(boardId);
     // 班級編號不是班級代碼，家長看不到班級代碼
     expect(JSON.stringify(cloud.view('MINE22'))).not.toContain('main');
+});
+
+test('家長專用短網址 parent/ 只會打開個別查詢頁，空白查詢時提示輸入查詢碼', async ({ browser }) => {
+    const cloud = createCloud();
+    const teacher = await openDevice(browser, cloud);
+    const code = await teacher.evaluate(() => state.students.find((s) => s.id === 5).parentCode);
+    await expect.poll(() => cloud.view(code), { timeout: 20000 }).toBeTruthy();
+
+    const parent = await openDevice(browser, cloud, { query: '?p', viewport: { width: 390, height: 844 } });
+    await parent.goto(INDEX_URL.replace(/index\.html$/, 'parent/index.html'));
+    await expect(parent.locator('#parent-code-input')).toBeVisible();
+    expect(await parent.evaluate(() => window.IS_PARENT_MODE)).toBe(true);
+    await expect(parent.locator('#view-dashboard')).toBeHidden();
+    await expect(parent.locator('nav')).toBeHidden();
+    await parent.click('#view-parent button:has-text("查詢")');
+    await expect(parent.locator('#parent-code-msg')).toContainText('請輸入紙條上的專屬查詢碼');
+    await parent.fill('#parent-code-input', code);
+    await parent.press('#parent-code-input', 'Enter');
+    await expect(parent.locator('#parent-child-name')).toContainText('5 號');
 });
