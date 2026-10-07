@@ -66,9 +66,10 @@ test('列印紙條的 QR Code 內容就是家長連結', async ({ browser }) => 
     expect(text).toContain('手機掃描左側 QR Code，即可查詢孩子的作業訂正狀態；也可自行輸入網址：');
     expect(text).toMatch(/專屬查詢碼：\s*[A-Z0-9]{6}/);
     expect(text).toContain('養成良好的學習習慣');
-    // 紙條上的網址和教師後台「複製連結」一樣，是這位學生的個別查詢連結（只會看到個別查詢）
-    const personal = await teacher.evaluate(() => getParentLink(state.students[0].parentCode));
-    expect(text.replace(/\s/g, '')).toContain(personal);
+    // 紙條上的網址和教師後台「複製查詢連結」相同（全班共用、只會打開個別查詢頁），家長再輸入專屬查詢碼
+    const shared = await teacher.evaluate(() => getSharedParentLink());
+    expect(shared).toMatch(/\?p$/);
+    expect(text.replace(/\s/g, '')).toContain(shared + '專屬查詢碼');
     expect(text).toContain('讓我們一起陪伴孩子把學習做得更完整！🌷');
     // 用網頁內的 BarcodeDetector 不一定支援，改為確認圖片存在且連結格式正確
     for (const slip of slips) {
