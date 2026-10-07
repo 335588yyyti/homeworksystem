@@ -22,7 +22,8 @@ test('家長頁只讀自己孩子的摘要，不讀整班看板', async ({ brows
     await expect(parent.locator('nav')).toBeHidden();
     await expect(parent.locator('#slogan-title-display')).toBeHidden();
 
-    // 老師改回綠燈，家長頁即時更新；全部完成時不列出作業
+    // 老師改回綠燈（紅燈 → 缺交 → 綠燈），家長頁即時更新；全部完成時不列出作業
+    await teacher.click('#btn-slot-0-student-5');
     await teacher.click('#btn-slot-0-student-5');
     await expect(parent.locator('#parent-status-title')).toContainText('無需訂正', { timeout: 15000 });
     await expect(parent.locator('#parent-progress-percent')).toHaveText('100%');
@@ -91,9 +92,8 @@ test('重新開網頁時不重寫全班的家長查詢資料，只上傳有變�
     expect(viewWrites()).toBe(0); // 重新開網頁：沒有變動就不上傳
 
     await page.evaluate(() => { startTeacherSession(); applyRoleUI('teacher'); });
-    await page.click('#btn-slot-0-student-4');
-    await page.click('#btn-slot-0-student-4'); // 點錯又改回來
-    await page.click('#btn-slot-0-student-4');
+    // 點錯又改回來：紅燈 → 缺交 → 綠燈 → 紅燈
+    for (let i = 0; i < 4; i++) await page.click('#btn-slot-0-student-4');
     // 連點同一位學生：只上傳一次（等上傳發生，再多等一下確認沒有第二次）
     await expect.poll(viewWrites, { timeout: 15000 }).toBe(1);
     await page.waitForTimeout(2500);

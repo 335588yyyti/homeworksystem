@@ -97,9 +97,24 @@
             overflow: hidden;
             white-space: nowrap;
         }
-        /* 待訂正的座號右上角加「!」記號，紅綠色弱的學生也能分辨 */
-        .seat-pending {
+        /* 待訂正的座號右上角加「!」記號、缺交加「缺」字，紅綠色弱的學生也能分辨 */
+        .seat-pending, .seat-missing {
             position: relative;
+        }
+        .seat-missing::after {
+            content: '缺';
+            position: absolute;
+            top: 6%;
+            right: 8%;
+            width: 1.2em;
+            height: 1.2em;
+            border-radius: 9999px;
+            background: #fff;
+            color: #ea580c;
+            font-size: max(10px, calc(var(--seat-font) * 0.34));
+            line-height: 1.2em;
+            text-align: center;
+            font-weight: 900;
         }
         .seat-pending::after {
             content: '!';
@@ -608,7 +623,7 @@
             const statuses = {};
             Object.entries(window.state.assignmentStatuses).forEach(([asgn, map]) => {
                 statuses[asgn] = {};
-                Object.entries(map || {}).forEach(([id, done]) => { statuses[asgn][id] = !!done; });
+                Object.entries(map || {}).forEach(([id, done]) => { statuses[asgn][id] = done === STATUS_MISSING ? STATUS_MISSING : !!done; });
             });
             return statuses;
         }
@@ -1430,7 +1445,7 @@
 
                 <!-- 只列出需要訂正的作業；全部完成時整段隱藏 -->
                 <div id="parent-pending-section" class="hidden">
-                    <h6 class="text-sm font-black text-slate-700 mb-1.5">需要訂正的作業：</h6>
+                    <h6 id="parent-pending-title" class="text-sm font-black text-slate-700 mb-1.5">需要訂正的作業：</h6>
                     <div id="parent-assignment-list" class="grid grid-cols-2 gap-2">
                         <!-- 動態細目 -->
                     </div>
@@ -1932,12 +1947,16 @@
         const PARENT_CODE_LENGTH = 6;
         const PARENT_CODE_RE = /^[A-Z0-9]{6,8}$/;
 
-        function seatButtonClass(isDone, name) {
-            const base = isDone ? SEAT_DONE_CLASS : SEAT_PENDING_CLASS;
+        // 每格狀態：true＝完成（綠燈）、false＝待訂正（紅燈）、'missing'＝缺交（橘燈）
+        const STATUS_MISSING = 'missing';
+
+        function seatButtonClass(status, name) {
+            const base = status === STATUS_MISSING ? SEAT_MISSING_CLASS : (status ? SEAT_DONE_CLASS : SEAT_PENDING_CLASS);
             return getPureSeatNumber(name).length > 2 ? `${base} seat-long` : base;
         }
 
         const SEAT_DONE_CLASS = 'seat-btn bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm w-full h-full min-h-0 min-w-0 rounded-xl font-black flex items-center justify-center p-0';
+        const SEAT_MISSING_CLASS = 'seat-btn seat-missing bg-orange-500 hover:bg-orange-600 text-white shadow-sm ring-2 ring-orange-300/80 ring-offset-1 w-full h-full min-h-0 min-w-0 rounded-xl font-black flex items-center justify-center p-0';
         const SEAT_PENDING_CLASS = 'seat-btn seat-pending bg-rose-500 hover:bg-rose-600 text-white shadow-sm ring-2 ring-rose-300/80 ring-offset-1 w-full h-full min-h-0 min-w-0 rounded-xl font-black flex items-center justify-center p-0';
 
         // 使用者輸入的文字放進 innerHTML 前一律跳脫，避免破版或被注入腳本
@@ -1971,6 +1990,19 @@
             return window.state.assignmentStatuses[assignment][studentId];
         }
 
+        // 完成（綠燈）才算完成；待訂正和缺交都還沒完成
+        function isFinished(assignment, studentId) {
+            return getStudentStatus(assignment, studentId) === true;
+        }
+
+        function isMissing(assignment, studentId) {
+            return getStudentStatus(assignment, studentId) === STATUS_MISSING;
+        }
+
+        function countMissing(assignment) {
+            return window.state.students.filter(st => isMissing(assignment, st.id)).length;
+        }
+
         function setStudentStatus(assignment, studentId, isFinished) {
             if (!window.state.assignmentStatuses[assignment]) {
                 window.state.assignmentStatuses[assignment] = {};
@@ -1981,7 +2013,7 @@
         function countPending(assignment) {
             let count = 0;
             window.state.students.forEach(st => {
-                if (!getStudentStatus(assignment, st.id)) count++;
+                if (!isFinished(assignment, st.id)) count++;
             });
             return count;
         }
@@ -2054,7 +2086,8 @@
                 seat: getPureSeatNumber(student.name),
                 items: window.state.assignments.map(a => ({
                     name: a,
-                    finished: !!getStudentStatus(a, student.id),
+                    finished: isFinished(a, student.id),
+                    missing: isMissing(a, student.id),
                     onBoard: onBoard.has(a)
                 }))
             };
@@ -2515,8 +2548,8 @@
                             </div>
                         </div>
                         <div class="flex items-center gap-1 flex-shrink-0">
-                            <span id="slot-badge-${index}" class="text-base font-black px-2.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap ${pendingCount > 0 ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}">
-                                ${pendingCount > 0 ? `待訂正 ${pendingCount} 人` : '全員完成 🎉'}
+                            <span id="slot-badge-${index}" class="${slotBadgeClass(pendingCount, slot.assignment)}">
+                                ${slotBadgeText(slot.assignment)}
                             </span>
                             <button id="slot-done-${index}" onclick="markSlotAllDone(${index})" class="${canMarkAllDone() && pendingCount > 0 ? '' : 'hidden'} text-sm xl:text-base font-black px-2.5 py-0.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white flex-shrink-0 whitespace-nowrap shadow-sm" title="把這項作業全班設為完成（綠燈）">
                                 ✓<span class="slot-done-label"> 全部完成</span>
@@ -2591,8 +2624,8 @@
             return window.state.students.map(st => ({
                 student: st,
                 pending: window.state.assignments
-                    .filter(a => !getStudentStatus(a, st.id))
-                    .map(a => ({ name: a, onBoard: onBoard.has(a) }))
+                    .filter(a => !isFinished(a, st.id))
+                    .map(a => ({ name: a, onBoard: onBoard.has(a), missing: isMissing(a, st.id) }))
             })).filter(row => row.pending.length > 0);
         }
 
@@ -2648,7 +2681,8 @@
                     </div>`;
                 return;
             }
-            summary.textContent = `共 ${rows.length} 位同學、${totalItems} 項作業還沒訂正（依座號排列，變動停止 5 秒後自動更新）`;
+            const missingItems = rows.reduce((sum, row) => sum + row.pending.filter(item => item.missing).length, 0);
+            summary.textContent = `共 ${rows.length} 位同學、${totalItems} 項作業還沒完成${missingItems ? `（其中 ${missingItems} 項缺交）` : ''}（依座號排列，變動停止 5 秒後自動更新）`;
             body.innerHTML = `<div class="grid gap-3" style="grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));">${
                 rows.map(({ student, pending }) => `
                     <div class="border-2 border-rose-200 bg-rose-50 rounded-2xl p-3 flex gap-3 items-start">
@@ -2656,7 +2690,7 @@
                         <div class="min-w-0 flex-1">
                             <div class="text-lg font-black text-rose-800 mb-1">還有 ${pending.length} 項</div>
                             <div class="flex flex-wrap gap-1.5">${
-                                pending.map(item => `<span class="px-2 py-0.5 rounded-lg text-base font-bold ${item.onBoard ? 'bg-white text-slate-800 border border-rose-300' : 'bg-white/60 text-slate-600 border border-slate-200'}">${escapeHtml(item.name)}</span>`).join('')
+                                pending.map(item => `<span class="px-2 py-0.5 rounded-lg text-base font-bold ${item.missing ? 'bg-orange-100 text-orange-800 border border-orange-300' : (item.onBoard ? 'bg-white text-slate-800 border border-rose-300' : 'bg-white/60 text-slate-600 border border-slate-200')}">${item.missing ? '缺交・' : ''}${escapeHtml(item.name)}</span>`).join('')
                             }</div>
                         </div>
                     </div>`).join('')
@@ -2802,16 +2836,27 @@
             let nextStatus = currentStatus;
 
             if (isTeacherMode()) {
-                nextStatus = !currentStatus;
-                if (nextStatus) {
+                // 教師登記：綠燈（完成）→ 紅燈（待訂正）→ 橘燈（缺交）→ 綠燈
+                if (currentStatus === true) {
+                    nextStatus = false;
+                    window.soundEffect.playAlert();
+                    showToast(`座號 ${seat} 已登記需訂正【${assignment}】`);
+                } else if (currentStatus === STATUS_MISSING) {
+                    nextStatus = true;
                     window.soundEffect.playSuccess();
                     showToast(`座號 ${seat} 已更正為綠燈 (完成)`);
                 } else {
+                    nextStatus = STATUS_MISSING;
                     window.soundEffect.playAlert();
-                    showToast(`座號 ${seat} 已登記需訂正【${assignment}】`);
+                    showToast(`座號 ${seat} 已登記缺交【${assignment}】`);
                 }
             } else {
-                if (!currentStatus) {
+                if (currentStatus === STATUS_MISSING) {
+                    // 學生交了缺交的作業：先變成待訂正（紅燈），訂正完再消單
+                    nextStatus = false;
+                    window.soundEffect.playToggle();
+                    showToast(`座號 ${seat}【${assignment}】已補交，訂正完成後再點一次消單`);
+                } else if (currentStatus !== true) {
                     nextStatus = true;
                     window.soundEffect.playSuccess();
                     showToast(`座號 ${seat}【${assignment}】已消單！`);
@@ -2830,7 +2875,7 @@
             refreshPendingList();
             // 只上傳這一格，其他裝置同時點別的座號也不會被蓋掉
             window.syncStatusChange([[assignment, studentId, nextStatus]], { delay: true });
-            showUndo({ assignment, studentId, previous: currentStatus });
+            showUndo({ assignment, studentId, previous: currentStatus, next: nextStatus });
         }
 
         // ---- 點錯可以復原：最後一次點座號後 5 秒內可以改回來 ----
@@ -2841,7 +2886,8 @@
         function showUndo(change) {
             lastSeatChange = change;
             const seat = getSeatLabel(change.studentId);
-            document.getElementById('undo-text').textContent = `${seat} 號【${change.assignment}】${change.previous ? '改成紅燈' : '已消單'}`;
+            const what = change.next === STATUS_MISSING ? '登記缺交' : (change.next === true ? '已消單' : (change.previous === STATUS_MISSING ? '已補交' : '改成紅燈'));
+            document.getElementById('undo-text').textContent = `${seat} 號【${change.assignment}】${what}`;
             const bar = document.getElementById('undo-bar');
             bar.classList.remove('translate-y-24', 'opacity-0', 'pointer-events-none');
             clearTimeout(undoTimer);
@@ -2862,13 +2908,32 @@
             if (!window.state.students.some(st => st.id === change.studentId)) return;
             setStudentStatus(change.assignment, change.studentId, change.previous);
             window.soundEffect.playToggle();
-            renderDashboard();
+            refreshAssignmentCards(change.assignment, [change.studentId]);
+            refreshPendingList();
             window.syncStatusChange([[change.assignment, change.studentId, change.previous]], { delay: true });
             showToast(`已復原：${getSeatLabel(change.studentId)} 號【${change.assignment}】`);
         }
 
         function isTeacherMode() {
             return window.state.userRole === 'teacher' && canEditBoard();
+        }
+
+        // 卡片上的人數標籤：待訂正（紅）、缺交（橘）分開計算
+        function slotBadgeText(assignment) {
+            const notDone = countPending(assignment);
+            if (notDone === 0) return '全員完成 🎉';
+            const missing = countMissing(assignment);
+            const red = notDone - missing;
+            if (missing === 0) return `待訂正 ${red} 人`;
+            if (red === 0) return `缺交 ${missing} 人`;
+            return `訂正 ${red}・缺交 ${missing}`;
+        }
+
+        function slotBadgeClass(notDone, assignment) {
+            const onlyMissing = notDone > 0 && countMissing(assignment) === notDone;
+            const color = notDone === 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                : (onlyMissing ? 'bg-orange-50 text-orange-700 border border-orange-300' : 'bg-rose-50 text-rose-600 border border-rose-200');
+            return `text-base font-black px-2.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap ${color}`;
         }
 
         // 只更新看板上這項作業的座號顏色與標籤，不重畫整個看板（其他作業的卡片不會跳動）
@@ -2883,8 +2948,8 @@
 
                 const badge = document.getElementById(`slot-badge-${idx}`);
                 if (badge) {
-                    badge.className = `text-base font-black px-2.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap ${pCount > 0 ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`;
-                    badge.innerText = pCount > 0 ? `待訂正 ${pCount} 人` : '全員完成 🎉';
+                    badge.className = slotBadgeClass(pCount, assignment);
+                    badge.innerText = slotBadgeText(assignment);
                 }
                 const doneBtn = document.getElementById(`slot-done-${idx}`);
                 if (doneBtn) doneBtn.classList.toggle('hidden', !(canMarkAllDone() && pCount > 0));
@@ -3124,20 +3189,26 @@
             const list = document.getElementById('parent-assignment-list');
             list.innerHTML = '';
 
+            // 缺交和待訂正分開：缺交先列
+            const missing = pending.filter(item => item.missing);
+            const toFix = pending.filter(item => !item.missing);
             if (pending.length === 0) {
                 summary.className = 'rounded-2xl p-4 text-white bg-emerald-600';
                 statusTitle.innerText = '目前無需訂正 🎉';
                 pendingSection.classList.add('hidden');
             } else {
-                summary.className = 'rounded-2xl p-4 text-white bg-rose-600';
-                statusTitle.innerText = `還有 ${pending.length} 項作業需要訂正`;
+                summary.className = `rounded-2xl p-4 text-white ${toFix.length === 0 ? 'bg-orange-600' : 'bg-rose-600'}`;
+                statusTitle.innerText = missing.length === 0 ? `還有 ${toFix.length} 項作業需要訂正`
+                    : (toFix.length === 0 ? `有 ${missing.length} 項作業缺交` : `缺交 ${missing.length} 項、待訂正 ${toFix.length} 項`);
+                document.getElementById('parent-pending-title').innerText = missing.length ? '缺交與需要訂正的作業：' : '需要訂正的作業：';
                 pendingSection.classList.remove('hidden');
-                pending.forEach(item => {
+                [...missing, ...toFix].forEach(item => {
                     const itemDiv = document.createElement('div');
-                    itemDiv.className = 'flex items-center gap-1.5 px-3 py-2 rounded-xl border bg-rose-50 border-rose-200 min-w-0';
+                    // 名稱不截斷：空間不夠時「看板中」標籤換到下一行
+                    itemDiv.className = `flex flex-wrap items-center gap-1 px-2.5 py-2 rounded-xl border min-w-0 ${item.missing ? 'bg-orange-50 border-orange-300' : 'bg-rose-50 border-rose-200'}`;
                     itemDiv.innerHTML = `
-                        <span class="text-base flex-shrink-0">🚨</span>
-                        <span class="text-base font-black text-slate-800 truncate">${escapeHtml(item.name ?? '')}</span>
+                        ${item.missing ? `<span class="text-[13px] font-black px-1.5 py-0.5 rounded-md bg-orange-500 text-white whitespace-nowrap flex-shrink-0">缺交</span>` : `<span class="text-base flex-shrink-0">🚨</span>`}
+                        <span class="text-base font-black text-slate-800 min-w-0 break-all">${escapeHtml(item.name ?? '')}</span>
                         ${item.onBoard ? `<span class="ml-auto text-[13px] font-bold px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 whitespace-nowrap flex-shrink-0">看板中</span>` : ''}
                     `;
                     list.appendChild(itemDiv);
@@ -3345,7 +3416,7 @@
                     showToast(`無法刪除！作業項目不能少於看板的 ${window.state.slots.length} 框，請先新增其他作業。`, false);
                     return;
                 }
-                const pendingSeats = window.state.students.filter(st => !getStudentStatus(val, st.id)).map(st => getPureSeatNumber(st.name));
+                const pendingSeats = window.state.students.filter(st => !isFinished(val, st.id)).map(st => getPureSeatNumber(st.name));
                 let message = `【${val}】目前正在看板上（第 ${slotIndexes.map(i => i + 1).join('、')} 框），確定要刪除嗎？\n刪除後這一框會換成【${replacements.join('】、【')}】。`;
                 if (pendingSeats.length > 0) {
                     message += `\n\n⚠️ 注意：還有 ${pendingSeats.length} 位同學沒有訂正完成（座號 ${pendingSeats.join('、')}），刪除後這些紀錄會一起清除，無法復原！`;
@@ -3677,14 +3748,14 @@
                 first,
                 page('🔴', '老師登記需要訂正的同學', [
                     '按右上角「<b>教師登記</b>」，輸入教師密碼。',
-                    '點座號，座號變成<b class="text-rose-600">紅燈</b>＝這位同學要訂正。再點一次改回綠燈。',
+                    '點座號會依序切換：<b class="text-rose-600">紅燈</b>＝要訂正 → <b class="text-orange-600">橘燈（缺）</b>＝缺交 → <b class="text-emerald-600">綠燈</b>＝完成。',
                     '作業框的名稱可以點開換作業；新作業發下去時，按標語列的「<b>➕ 新增並放上看板</b>」。',
                     '一段時間沒有操作會自動上鎖，回到學生消單模式。'
                 ]),
                 page('🟢', '學生自己消單', [
                     '學生訂正完，到教室電腦點自己的<b class="text-rose-600">紅燈</b>座號，就會變成<b class="text-emerald-600">綠燈</b>。',
                     '點錯了可以按左下角的「<b>↩ 復原</b>」。',
-                    '學生模式只能把紅燈改成綠燈，不能亂點紅燈。',
+                    '學生模式只能把紅燈改成綠燈，不能亂點紅燈。<b class="text-orange-600">缺交</b>的同學補交後點一下會變紅燈，訂正完再點一次才變綠燈。',
                     '按「<b>📋 未訂正名單</b>」可以看全班還有誰沒訂正。'
                 ]),
                 page('👪', '家長查詢', [
