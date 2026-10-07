@@ -165,3 +165,34 @@ test('家長專用短網址 parent/ 只會打開個別查詢頁，空白查詢�
     await parent.press('#parent-code-input', 'Enter');
     await expect(parent.locator('#parent-child-name')).toContainText('5 號');
 });
+
+test('家長從短網址查到的進度會跟著看板同步（老師登記、全部完成、學生消單）', async ({ browser }) => {
+    test.setTimeout(120000);
+    const cloud = createCloud();
+    const teacher = await openDevice(browser, cloud);
+    await teacher.evaluate(() => { startTeacherSession(); applyRoleUI('teacher'); });
+    const code = await teacher.evaluate(() => state.students.find((s) => s.id === 5).parentCode);
+    await expect.poll(() => cloud.view(code), { timeout: 20000 }).toBeTruthy();
+
+    const parent = await openDevice(browser, cloud, { query: '?p', viewport: { width: 390, height: 844 } });
+    await parent.goto(INDEX_URL.replace(/index\.html$/, 'parent/index.html'));
+    await parent.fill('#parent-code-input', code.toLowerCase());
+    await parent.press('#parent-code-input', 'Enter');
+    await expect(parent.locator('#parent-child-name')).toContainText('5 號');
+    await expect(parent.locator('#parent-status-title')).toContainText('無需訂正');
+
+    // 老師在看板登記兩項紅燈
+    await teacher.click('#btn-slot-0-student-5');
+    await teacher.click('#btn-slot-1-student-5');
+    await expect(parent.locator('#parent-status-title')).toContainText('2 項', { timeout: 20000 });
+    // 老師按卡片「全部完成」
+    await teacher.click('#slot-done-0');
+    await expect(parent.locator('#parent-status-title')).toContainText('1 項', { timeout: 20000 });
+    // 學生自己消單
+    await teacher.evaluate(() => applyRoleUI('student'));
+    await teacher.click('#btn-slot-1-student-5');
+    await expect(parent.locator('#parent-status-title')).toContainText('無需訂正', { timeout: 20000 });
+    // 家長下次再打開短網址：記得查詢碼，直接顯示
+    await parent.goto(INDEX_URL.replace(/index\.html$/, 'parent/index.html'));
+    await expect(parent.locator('#parent-child-name')).toContainText('5 號');
+});
