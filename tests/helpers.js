@@ -121,7 +121,9 @@ async function openDevice(browser, cloud, opts = {}) {
         const url = route.request().url();
         if (url.startsWith(BASE_URL)) {
             // 網站本身的檔案直接從專案資料夾讀取（不需要另開伺服器，離線測試也能開啟）
-            const file = path.join(ROOT, decodeURIComponent(new URL(url).pathname));
+            let file = path.join(ROOT, decodeURIComponent(new URL(url).pathname));
+            // 和 GitHub Pages 一樣：網址是資料夾時讀取裡面的 index.html
+            if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file = path.join(file, 'index.html');
             if (!file.startsWith(ROOT + path.sep) || !fs.existsSync(file)) return route.fulfill({ status: 404, body: 'Not found' });
             return route.fulfill({ contentType: CONTENT_TYPES[path.extname(file)] || 'application/octet-stream', body: fs.readFileSync(file) });
         }

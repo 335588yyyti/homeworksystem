@@ -1,6 +1,6 @@
 // 家長查詢：只讀得到自己孩子的資料、即時更新、精簡畫面、列印 QR Code
 const { test, expect } = require('@playwright/test');
-const { createCloud, openDevice } = require('./helpers');
+const { INDEX_URL, createCloud, openDevice } = require('./helpers');
 
 test('家長頁只讀自己孩子的摘要，不讀整班看板', async ({ browser }) => {
     const cloud = createCloud();
@@ -66,6 +66,10 @@ test('列印紙條的 QR Code 內容就是家長連結', async ({ browser }) => 
     expect(text).toContain('手機掃描左側 QR Code，即可查詢孩子的作業訂正狀態；也可自行輸入網址：');
     expect(text).toMatch(/專屬查詢碼：\s*[A-Z0-9]{6}/);
     expect(text).toContain('養成良好的學習習慣');
+    // 紙條上的網址和教師後台「複製查詢連結」相同（全班共用、只會打開個別查詢頁），家長再輸入專屬查詢碼
+    const shared = await teacher.evaluate(() => getSharedParentLink());
+    expect(shared).toMatch(/\?p$/);
+    expect(text.replace(/\s/g, '')).toContain(shared + '專屬查詢碼');
     expect(text).toContain('讓我們一起陪伴孩子把學習做得更完整！🌷');
     // 用網頁內的 BarcodeDetector 不一定支援，改為確認圖片存在且連結格式正確
     for (const slip of slips) {
@@ -143,4 +147,50 @@ test('查詢碼和其他班級重複時自動換新，不會覆蓋或查到別�
     expect(cloud.view('MINE22').owner).toBe(boardId);
     // 班級編號不是班級代碼，家長看不到班級代碼
     expect(JSON.stringify(cloud.view('MINE22'))).not.toContain('main');
+});
+
+test('空白查詢時提示輸入查詢碼；個別連結只會打開個別查詢頁', async ({ browser }) => {
+    const cloud = createCloud();
+    const teacher = await openDevice(browser, cloud);
+    const code = await teacher.evaluate(() => state.students.find((s) => s.id === 5).parentCode);
+    await expect.poll(() => cloud.view(code), { timeout: 20000 }).toBeTruthy();
+
+    const parent = await openDevice(browser, cloud, { query: '?p', viewport: { width: 390, height: 844 } });
+    await parent.click('#view-parent button:has-text("查詢")');
+    await expect(parent.locator('#parent-code-msg')).toContainText('請輸入紙條上的專屬查詢碼');
+
+    const personal = await openDevice(browser, cloud, { query: '?p=' + code, viewport: { width: 390, height: 844 } });
+    await expect(personal.locator('#parent-child-name')).toContainText('5 號');
+    await expect(personal.locator('#view-dashboard')).toBeHidden();
+    await expect(personal.locator('nav')).toBeHidden();
+});
+
+test('家長用個別連結查到的進度會跟著看板同步（老師登記、全部完成、學生消單）', async ({ browser }) => {
+    test.setTimeout(120000);
+    const cloud = createCloud();
+    const teacher = await openDevice(browser, cloud);
+    await teacher.evaluate(() => { startTeacherSession(); applyRoleUI('teacher'); });
+    const code = await teacher.evaluate(() => state.students.find((s) => s.id === 5).parentCode);
+    await expect.poll(() => cloud.view(code), { timeout: 20000 }).toBeTruthy();
+
+    // 和紙條、教師後台「複製連結」相同的個別連結
+    const link = await teacher.evaluate((c) => getParentLink(c), code);
+    const parent = await openDevice(browser, cloud, { query: link.slice(link.indexOf('?')), viewport: { width: 390, height: 844 } });
+    await expect(parent.locator('#parent-child-name')).toContainText('5 號');
+    await expect(parent.locator('#parent-status-title')).toContainText('無需訂正');
+
+    // 老師在看板登記兩項紅燈
+    await teacher.click('#btn-slot-0-student-5');
+    await teacher.click('#btn-slot-1-student-5');
+    await expect(parent.locator('#parent-status-title')).toContainText('2 項', { timeout: 20000 });
+    // 老師按卡片「全部完成」
+    await teacher.click('#slot-done-0');
+    await expect(parent.locator('#parent-status-title')).toContainText('1 項', { timeout: 20000 });
+    // 學生自己消單
+    await teacher.evaluate(() => applyRoleUI('student'));
+    await teacher.click('#btn-slot-1-student-5');
+    await expect(parent.locator('#parent-status-title')).toContainText('無需訂正', { timeout: 20000 });
+    // 家長下次只打開查詢頁（沒有帶查詢碼）：記得查詢碼，直接顯示
+    await parent.goto(INDEX_URL + '?p');
+    await expect(parent.locator('#parent-child-name')).toContainText('5 號');
 });

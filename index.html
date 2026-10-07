@@ -3063,7 +3063,7 @@
 
             if (!PARENT_CODE_RE.test(code)) {
                 hideParentResult();
-                setParentMessage('查詢碼是 6 碼英文字母與數字，請再確認一次。', 'error');
+                setParentMessage(code ? '查詢碼是 6 碼英文字母與數字，請再確認一次。' : '請輸入紙條上的專屬查詢碼。', 'error');
                 return;
             }
 
@@ -3855,8 +3855,12 @@
         }
 
         // 全班共用的查詢連結：不含查詢碼，家長打開後輸入自己孩子的碼（之後這支手機會記住）
+        function getSharedParentLink() {
+            return `${location.origin}${location.pathname}?p`;
+        }
+
         function copySharedParentLink() {
-            copyText(`${location.origin}${location.pathname}?p`, '已複製全班共用的查詢連結，家長打開後輸入孩子的查詢碼即可', '請複製這個連結：');
+            copyText(getSharedParentLink(), '已複製全班共用的查詢連結，家長打開後輸入孩子的查詢碼即可', '請複製這個連結：');
         }
 
         function regenerateParentCode(id) {
@@ -3933,7 +3937,7 @@
                     <div class="info">
                         <div class="seat">${seat}號 家長您好：</div>
                         <div>${qr ? '手機掃描左側 QR Code，即可查詢孩子的作業訂正狀態；也可自行輸入網址：' : '請輸入以下網址，即可查詢孩子的作業訂正狀態：'}</div>
-                        <div class="mono">${link.split('?')[0]}</div>
+                        <div class="mono">${escapeHtml(getSharedParentLink()).replace(/\/(?!\/)/g, '/<wbr>')}</div>
                         <div class="code-line">專屬查詢碼：<span class="code">${code}</span></div>
                         <div class="note">請妥善保管查詢碼，此碼僅能查看您孩子的訂正狀態。也請協助提醒孩子，完成作業後別忘了確實訂正，養成良好的學習習慣。</div>
                         <div class="note">感謝您的配合與協助，讓我們一起陪伴孩子把學習做得更完整！🌷</div>
@@ -3950,7 +3954,7 @@
                     .qr { flex: 0 0 96px; width: 96px; height: 96px; }
                     .info { min-width: 0; }
                     .seat { font-weight: 900; font-size: 15px; }
-                    .mono { font-family: monospace; word-break: break-all; }
+                    .mono { font-family: monospace; overflow-wrap: anywhere; }
                     .code-line { margin: 2px 0; }
                     .code { font-family: monospace; font-weight: 900; font-size: 20px; letter-spacing: 4px; }
                     .note { color: #475569; font-size: 11.5px; }
