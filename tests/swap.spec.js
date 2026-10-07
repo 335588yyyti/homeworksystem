@@ -22,7 +22,9 @@ test('全班訂正完時出現「換下一項」，按下後換成還有人沒�
     // 還有人沒訂正：不顯示
     await page.click('#btn-slot-0-student-5');
     await expect(page.locator('#slot-next-0')).toBeHidden();
-    // 全部訂正完：出現
+    // 全部訂正完（紅燈 → 缺交 → 綠燈）：出現
+    await page.click('#btn-slot-0-student-5');
+    await expect(page.locator('#slot-next-0')).toBeHidden(); // 缺交也還沒完成
     await page.click('#btn-slot-0-student-5');
     await expect(page.locator('#slot-next-0')).toBeVisible();
     await expect(page.locator('#slot-next-0')).toContainText('換下一項');
