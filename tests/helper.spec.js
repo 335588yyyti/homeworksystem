@@ -34,8 +34,12 @@ test('小幫手（有密碼）：能登記紅燈、換作業，不能進設定�
     await room.press('#teacher-password-input', 'Enter');
     await expect(room.locator('#role-status-text')).toContainText('小幫手登記中');
 
-    // 登記紅燈、全部完成、換作業都可以
+    // 登記紅燈、換作業都可以
     await room.click('#btn-slot-0-student-6');
+    await expect(room.locator('#btn-slot-0-student-6')).toHaveClass(/seat-pending/);
+    // 「全部完成」只有老師可以用：小幫手看不到按鈕，直接呼叫也不會改
+    await expect(room.locator('#slot-done-0')).toBeHidden();
+    await room.evaluate(() => markSlotAllDone(0));
     await expect(room.locator('#btn-slot-0-student-6')).toHaveClass(/seat-pending/);
     await room.selectOption('.slot-select >> nth=1', { index: 10 });
     expect(await room.evaluate(() => state.slots[1].assignment)).toBe(await room.evaluate(() => state.assignments[10]));

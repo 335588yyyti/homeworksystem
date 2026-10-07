@@ -149,9 +149,14 @@ test('卡片「全部完成」只在教師登記模式出現，按下後只影�
     await expect(page.locator('#slot-done-0')).toBeHidden();
     await page.evaluate(() => applyRoleUI('teacher'));
 
+    // 其他作業的卡片不重畫（不會跳動）
+    await page.evaluate(() => { document.getElementById('btn-slot-1-student-7').dataset.keep = '1'; });
     await page.click('#slot-done-0');
     expect(page.dialogs.at(-1)).toContain('2 位待訂正');
     await expect(page.locator('#slot-badge-0')).toContainText('全員完成');
+    await expect(page.locator('#btn-slot-0-student-3')).not.toHaveClass(/seat-pending/);
+    expect(await page.evaluate(() => document.getElementById('btn-slot-1-student-7').dataset.keep)).toBe('1');
+    await expect(page.locator('#btn-slot-1-student-7')).toHaveClass(/seat-pending/);
     await expect(page.locator('#slot-done-0')).toBeHidden();
     await expect.poll(() => cloud.board('main').statuses['國作']['7'], { timeout: 10000 }).toBe(false);
     const statuses = cloud.board('main').statuses;

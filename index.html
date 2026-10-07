@@ -861,6 +861,13 @@
         };
 
         // 將本機備份或雲端文件套用到 state（兩種格式都支援）
+        // 畫面會用到的看板資料；前後相同代表不需要重畫
+        function boardViewSignature() {
+            const s = window.state;
+            return JSON.stringify([s.sloganTitle, s.sloganSub, s.students, s.assignments, s.slots, s.teacherPin,
+                s.helperEnabled, s.helperPin, s.lockMinutes, s.assignmentStatuses]);
+        }
+
         window.applyBoardData = function(d) {
             if (!d) return;
             if (d.sloganTitle) window.state.sloganTitle = d.sloganTitle;
@@ -997,9 +1004,11 @@
                     if (hasLocalPendingChanges()) { missedRemoteUpdate = true; return; }
                     missedRemoteUpdate = false;
                     const data = snapshot.data();
+                    const shownBefore = boardViewSignature();
                     window.applyBoardData(data);
                     window.saveLocalBackup();
-                    rerenderCurrentView();
+                    // 雲端傳回來的內容和畫面上一樣（例如自己剛存的資料）就不重畫，看板才不會跳動
+                    if (firstSnapshot || boardViewSignature() !== shownBefore) rerenderCurrentView();
                     refreshSyncBadge();
                     boardHasStatusMap = !!(data.statuses && typeof data.statuses === 'object');
                     // 舊格式的看板：整份轉存成新格式，之後才能逐格更新
@@ -2507,7 +2516,7 @@
                             <span id="slot-badge-${index}" class="text-base font-black px-2.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap ${pendingCount > 0 ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}">
                                 ${pendingCount > 0 ? `待訂正 ${pendingCount} 人` : '全員完成 🎉'}
                             </span>
-                            <button id="slot-done-${index}" onclick="markSlotAllDone(${index})" class="${isTeacherMode() && pendingCount > 0 ? '' : 'hidden'} text-sm xl:text-base font-black px-2.5 py-0.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white flex-shrink-0 whitespace-nowrap shadow-sm" title="把這項作業全班設為完成（綠燈）">
+                            <button id="slot-done-${index}" onclick="markSlotAllDone(${index})" class="${canMarkAllDone() && pendingCount > 0 ? '' : 'hidden'} text-sm xl:text-base font-black px-2.5 py-0.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white flex-shrink-0 whitespace-nowrap shadow-sm" title="把這項作業全班設為完成（綠燈）">
                                 ✓<span class="slot-done-label"> 全部完成</span>
                             </button>
                             <button id="slot-next-${index}" onclick="swapToNextPending(${index})" class="${isTeacherMode() && pendingCount === 0 && nextPendingAssignment() ? '' : 'hidden'} text-sm xl:text-base font-black px-2.5 py-0.5 rounded-full bg-sky-500 hover:bg-sky-600 text-white flex-shrink-0 whitespace-nowrap shadow-sm" title="換成下一項還有人沒訂正的作業">
@@ -2814,22 +2823,7 @@
             setStudentStatus(assignment, studentId, nextStatus);
 
             // 即時精確更新畫面中同科目的所有框框按鈕
-            const pCount = countPending(assignment);
-            window.state.slots.forEach((s, idx) => {
-                if (s.assignment !== assignment) return;
-                const btn = document.getElementById(`btn-slot-${idx}-student-${studentId}`);
-                if (btn) btn.className = seatButtonClass(nextStatus, window.state.students.find(st => st.id === studentId)?.name);
-
-                const badge = document.getElementById(`slot-badge-${idx}`);
-                if (badge) {
-                    badge.className = `text-base font-black px-2.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap ${pCount > 0 ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`;
-                    badge.innerText = pCount > 0 ? `待訂正 ${pCount} 人` : '全員完成 🎉';
-                }
-                const doneBtn = document.getElementById(`slot-done-${idx}`);
-                if (doneBtn) doneBtn.classList.toggle('hidden', !(isTeacherMode() && pCount > 0));
-                const nextBtn = document.getElementById(`slot-next-${idx}`);
-                if (nextBtn) nextBtn.classList.toggle('hidden', !(isTeacherMode() && pCount === 0 && nextPendingAssignment()));
-            });
+            refreshAssignmentCards(assignment, [studentId]);
 
             refreshPendingList();
             // 只上傳這一格，其他裝置同時點別的座號也不會被蓋掉
@@ -2875,9 +2869,36 @@
             return window.state.userRole === 'teacher' && canEditBoard();
         }
 
-        // 卡片上的「全部完成」：把這項作業全班設為綠燈（只有教師登記模式看得到）
+        // 只更新看板上這項作業的座號顏色與標籤，不重畫整個看板（其他作業的卡片不會跳動）
+        function refreshAssignmentCards(assignment, studentIds) {
+            const pCount = countPending(assignment);
+            window.state.slots.forEach((s, idx) => {
+                if (s.assignment !== assignment) return;
+                studentIds.forEach(studentId => {
+                    const btn = document.getElementById(`btn-slot-${idx}-student-${studentId}`);
+                    if (btn) btn.className = seatButtonClass(getStudentStatus(assignment, studentId), window.state.students.find(st => st.id === studentId)?.name);
+                });
+
+                const badge = document.getElementById(`slot-badge-${idx}`);
+                if (badge) {
+                    badge.className = `text-base font-black px-2.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap ${pCount > 0 ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`;
+                    badge.innerText = pCount > 0 ? `待訂正 ${pCount} 人` : '全員完成 🎉';
+                }
+                const doneBtn = document.getElementById(`slot-done-${idx}`);
+                if (doneBtn) doneBtn.classList.toggle('hidden', !(canMarkAllDone() && pCount > 0));
+                const nextBtn = document.getElementById(`slot-next-${idx}`);
+                if (nextBtn) nextBtn.classList.toggle('hidden', !(isTeacherMode() && pCount === 0 && nextPendingAssignment()));
+            });
+        }
+
+        // 「全部完成」一次改掉全班紅燈，只有老師可以用（小幫手看不到、也按不了）
+        function canMarkAllDone() {
+            return isTeacherMode() && !!window.state.isTeacherUnlocked;
+        }
+
+        // 卡片上的「全部完成」：把這項作業全班設為綠燈（只有老師的教師登記模式看得到）
         function markSlotAllDone(slotIndex) {
-            if (!isTeacherMode()) return;
+            if (!canMarkAllDone()) return;
             const assignment = window.state.slots[slotIndex]?.assignment;
             if (!assignment) return;
             const pending = countPending(assignment);
@@ -2887,7 +2908,8 @@
             window.state.students.forEach(st => { map[st.id] = true; });
             window.state.assignmentStatuses[assignment] = { ...(window.state.assignmentStatuses[assignment] || {}), ...map };
             window.soundEffect.playSuccess();
-            renderDashboard();
+            refreshAssignmentCards(assignment, window.state.students.map(st => st.id));
+            refreshPendingList();
             window.syncStatusChange([[assignment, null, window.state.assignmentStatuses[assignment]]]);
             showToast(`【${assignment}】已全班完成 🎉`);
         }
