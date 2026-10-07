@@ -66,8 +66,9 @@ test('列印紙條的 QR Code 內容就是家長連結', async ({ browser }) => 
     expect(text).toContain('手機掃描左側 QR Code，即可查詢孩子的作業訂正狀態；也可自行輸入網址：');
     expect(text).toMatch(/專屬查詢碼：\s*[A-Z0-9]{6}/);
     expect(text).toContain('養成良好的學習習慣');
-    // 紙條上的網址是家長專用短網址（只會看到個別查詢），不是老師用的看板網址
-    expect(text).toMatch(/\/parent\s/);
+    // 紙條上的網址和教師後台「複製連結」一樣，是這位學生的個別查詢連結（只會看到個別查詢）
+    const personal = await teacher.evaluate(() => getParentLink(state.students[0].parentCode));
+    expect(text.replace(/\s/g, '')).toContain(personal);
     expect(text).toContain('讓我們一起陪伴孩子把學習做得更完整！🌷');
     // 用網頁內的 BarcodeDetector 不一定支援，改為確認圖片存在且連結格式正確
     for (const slip of slips) {
@@ -147,26 +148,23 @@ test('查詢碼和其他班級重複時自動換新，不會覆蓋或查到別�
     expect(JSON.stringify(cloud.view('MINE22'))).not.toContain('main');
 });
 
-test('家長專用短網址 parent/ 只會打開個別查詢頁，空白查詢時提示輸入查詢碼', async ({ browser }) => {
+test('空白查詢時提示輸入查詢碼；個別連結只會打開個別查詢頁', async ({ browser }) => {
     const cloud = createCloud();
     const teacher = await openDevice(browser, cloud);
     const code = await teacher.evaluate(() => state.students.find((s) => s.id === 5).parentCode);
     await expect.poll(() => cloud.view(code), { timeout: 20000 }).toBeTruthy();
 
     const parent = await openDevice(browser, cloud, { query: '?p', viewport: { width: 390, height: 844 } });
-    await parent.goto(INDEX_URL.replace(/index\.html$/, 'parent/index.html'));
-    await expect(parent.locator('#parent-code-input')).toBeVisible();
-    expect(await parent.evaluate(() => window.IS_PARENT_MODE)).toBe(true);
-    await expect(parent.locator('#view-dashboard')).toBeHidden();
-    await expect(parent.locator('nav')).toBeHidden();
     await parent.click('#view-parent button:has-text("查詢")');
     await expect(parent.locator('#parent-code-msg')).toContainText('請輸入紙條上的專屬查詢碼');
-    await parent.fill('#parent-code-input', code);
-    await parent.press('#parent-code-input', 'Enter');
-    await expect(parent.locator('#parent-child-name')).toContainText('5 號');
+
+    const personal = await openDevice(browser, cloud, { query: '?p=' + code, viewport: { width: 390, height: 844 } });
+    await expect(personal.locator('#parent-child-name')).toContainText('5 號');
+    await expect(personal.locator('#view-dashboard')).toBeHidden();
+    await expect(personal.locator('nav')).toBeHidden();
 });
 
-test('家長從短網址查到的進度會跟著看板同步（老師登記、全部完成、學生消單）', async ({ browser }) => {
+test('家長用個別連結查到的進度會跟著看板同步（老師登記、全部完成、學生消單）', async ({ browser }) => {
     test.setTimeout(120000);
     const cloud = createCloud();
     const teacher = await openDevice(browser, cloud);
@@ -174,10 +172,9 @@ test('家長從短網址查到的進度會跟著看板同步（老師登記、�
     const code = await teacher.evaluate(() => state.students.find((s) => s.id === 5).parentCode);
     await expect.poll(() => cloud.view(code), { timeout: 20000 }).toBeTruthy();
 
-    const parent = await openDevice(browser, cloud, { query: '?p', viewport: { width: 390, height: 844 } });
-    await parent.goto(INDEX_URL.replace(/index\.html$/, 'parent/index.html'));
-    await parent.fill('#parent-code-input', code.toLowerCase());
-    await parent.press('#parent-code-input', 'Enter');
+    // 和紙條、教師後台「複製連結」相同的個別連結
+    const link = await teacher.evaluate((c) => getParentLink(c), code);
+    const parent = await openDevice(browser, cloud, { query: link.slice(link.indexOf('?')), viewport: { width: 390, height: 844 } });
     await expect(parent.locator('#parent-child-name')).toContainText('5 號');
     await expect(parent.locator('#parent-status-title')).toContainText('無需訂正');
 
@@ -192,7 +189,7 @@ test('家長從短網址查到的進度會跟著看板同步（老師登記、�
     await teacher.evaluate(() => applyRoleUI('student'));
     await teacher.click('#btn-slot-1-student-5');
     await expect(parent.locator('#parent-status-title')).toContainText('無需訂正', { timeout: 20000 });
-    // 家長下次再打開短網址：記得查詢碼，直接顯示
-    await parent.goto(INDEX_URL.replace(/index\.html$/, 'parent/index.html'));
+    // 家長下次只打開查詢頁（沒有帶查詢碼）：記得查詢碼，直接顯示
+    await parent.goto(INDEX_URL + '?p');
     await expect(parent.locator('#parent-child-name')).toContainText('5 號');
 });

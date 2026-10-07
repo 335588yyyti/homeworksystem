@@ -2041,11 +2041,6 @@
         }
         window.ensureParentCodes = ensureParentCodes;
 
-        // 紙條上給家長自己輸入的短網址：打開後只有「個別查詢」頁（parent/ 會轉到 ?p）
-        function getParentShortLink() {
-            return new URL('parent', location.href).href;
-        }
-
         function getParentLink(code) {
             return `${location.origin}${location.pathname}?p=${code}`;
         }
@@ -3938,7 +3933,7 @@
                     <div class="info">
                         <div class="seat">${seat}號 家長您好：</div>
                         <div>${qr ? '手機掃描左側 QR Code，即可查詢孩子的作業訂正狀態；也可自行輸入網址：' : '請輸入以下網址，即可查詢孩子的作業訂正狀態：'}</div>
-                        <div class="mono">${escapeHtml(getParentShortLink()).replace(/\/(?!\/)/g, '/<wbr>')}</div>
+                        <div class="mono">${link.replace(/\/(?!\/)/g, '/<wbr>')}</div>
                         <div class="code-line">專屬查詢碼：<span class="code">${code}</span></div>
                         <div class="note">請妥善保管查詢碼，此碼僅能查看您孩子的訂正狀態。也請協助提醒孩子，完成作業後別忘了確實訂正，養成良好的學習習慣。</div>
                         <div class="note">感謝您的配合與協助，讓我們一起陪伴孩子把學習做得更完整！🌷</div>
