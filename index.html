@@ -1392,6 +1392,8 @@
                         查詢
                     </button>
                 </div>
+                <!-- 用全班共用的連結打開時不自動顯示上次查的孩子；這支手機查過的話，可以一鍵再查 -->
+                <button id="parent-last-code" onclick="lookupLastParentCode()" class="hidden mt-2 text-sm font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3 py-1.5 rounded-xl transition-all"></button>
             </div>
 
             <!-- 教師專用：輸入座號或從清單選擇 -->
@@ -3056,6 +3058,7 @@
             const code = normalizeParentCode(codeArg !== undefined ? codeArg : input.value);
             input.value = code;
             stopParentWatch();
+            document.getElementById('parent-last-code')?.classList.add('hidden');
             const ps = window.state.parentSearch;
             ps.mode = null;
             ps.code = code;
@@ -3186,14 +3189,34 @@
             setupParentInstall();
             document.title = '家長查詢 - 下課檢查站';
             switchTab('parent', true);
-            let code = normalizeParentCode(new URLSearchParams(location.search).get('p'));
-            if (!code) {
-                try {
-                    code = normalizeParentCode(localStorage.getItem(PARENT_CODE_KEY));
-                } catch(e) {}
+            const code = normalizeParentCode(new URLSearchParams(location.search).get('p'));
+            if (code) {
+                lookupParentCode(code);
+                return;
             }
-            if (code) lookupParentCode(code);
+            let remembered = '';
+            try {
+                remembered = normalizeParentCode(localStorage.getItem(PARENT_CODE_KEY));
+            } catch(e) {}
+            if (!PARENT_CODE_RE.test(remembered)) return;
+            // 從手機主畫面打開（家長自己的 App）：直接顯示上次查的孩子
+            const isHomeScreenApp = window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;
+            if (isHomeScreenApp) {
+                lookupParentCode(remembered);
+                return;
+            }
+            // 用全班共用的查詢連結打開：顯示空白的查詢頁，另外提供「查上次的查詢碼」按鈕
+            const lastBtn = document.getElementById('parent-last-code');
+            lastBtn.textContent = `🔁 查上次的查詢碼 ${remembered}`;
+            lastBtn.dataset.code = remembered;
+            lastBtn.classList.remove('hidden');
         };
+
+        function lookupLastParentCode() {
+            const lastBtn = document.getElementById('parent-last-code');
+            lastBtn.classList.add('hidden');
+            lookupParentCode(lastBtn.dataset.code || '');
+        }
 
         function renderSettingsAssignments() {
             const list = document.getElementById('settings-assignment-list');

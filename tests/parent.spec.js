@@ -190,7 +190,12 @@ test('家長用個別連結查到的進度會跟著看板同步（老師登記�
     await teacher.evaluate(() => applyRoleUI('student'));
     await teacher.click('#btn-slot-1-student-5');
     await expect(parent.locator('#parent-status-title')).toContainText('無需訂正', { timeout: 20000 });
-    // 家長下次只打開查詢頁（沒有帶查詢碼）：記得查詢碼，直接顯示
+    // 用全班共用的查詢連結打開：是空白的查詢頁（不會自動顯示上次查的孩子），可以一鍵查上次的查詢碼
     await parent.goto(INDEX_URL + '?p');
+    await expect(parent.locator('#parent-code-input')).toHaveValue('');
+    await expect(parent.locator('#parent-result-box')).toBeHidden();
+    await expect(parent.locator('#parent-last-code')).toContainText(code);
+    await parent.click('#parent-last-code');
     await expect(parent.locator('#parent-child-name')).toContainText('5 號');
+    await expect(parent.locator('#parent-last-code')).toBeHidden();
 });
