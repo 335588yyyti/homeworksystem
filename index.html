@@ -1361,8 +1361,9 @@
 
     <!-- 醒目主題標語橫幅 -->
     <section class="teacher-ui max-w-[1920px] mx-auto px-3.5 pt-1.5 pb-1 w-full flex-shrink-0">
-        <div class="bg-gradient-to-r from-rose-500 via-rose-600 to-amber-500 rounded-2xl px-3 py-1 text-white shadow-sm flex items-center justify-between gap-3">
-            <div class="flex items-center gap-2.5 min-w-0 flex-1">
+        <div class="bg-gradient-to-r from-rose-500 via-rose-600 to-amber-500 rounded-2xl px-3 py-1 text-white shadow-sm flex flex-wrap sm:flex-nowrap items-center justify-end sm:justify-between gap-x-3 gap-y-1">
+            <!-- 手機：標語佔一整行，按鈕排到下一行，標語才不會被擠掉 -->
+            <div class="flex items-center gap-2.5 min-w-0 flex-1 basis-full sm:basis-0">
                 <span class="text-xl sm:text-2xl flex-shrink-0 animate-bounce">⚠️</span>
                 <div class="flex flex-col lg:flex-row lg:items-baseline gap-0.5 lg:gap-3 min-w-0 flex-1">
                     <h2 id="slogan-title-display" class="text-lg sm:text-xl md:text-2xl font-black tracking-wide text-amber-200 truncate min-w-0 flex-shrink-0 max-w-full">
@@ -1376,6 +1377,10 @@
             <!-- 新作業發下去時：一次完成「新增作業」和「放上看板」 -->
             <button id="new-on-board-button" onclick="openNewOnBoard()" class="teacher-ui flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white text-rose-600 hover:bg-amber-50 border-2 border-white/80 text-sm sm:text-base font-black whitespace-nowrap shadow-sm transition-colors" title="新增一項作業，並換掉看板上一框全班已完成的作業">
                 <span class="text-lg leading-none">➕</span><span class="hidden sm:inline">新增並放上看板</span><span class="sm:hidden">新作業</span>
+            </button>
+            <!-- 請假或缺交好幾項作業的同學：一次勾選登記缺交 -->
+            <button id="bulk-missing-button" onclick="openBulkMissing()" class="teacher-ui flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white text-orange-600 hover:bg-orange-50 border-2 border-white/80 text-sm sm:text-base font-black whitespace-nowrap shadow-sm transition-colors" title="請假或缺交好幾項作業的同學：選座號、勾選作業，一次登記缺交">
+                <span class="text-lg leading-none">🟠</span><span class="hidden sm:inline">登記缺交</span><span class="sm:hidden">缺交</span>
             </button>
             <div id="role-status-indicator" class="teacher-ui hidden sm:flex text-xs font-black px-3 py-1 rounded-xl bg-black/25 text-white/95 border border-white/20 flex-shrink-0 items-center gap-1.5 whitespace-nowrap">
                 <i class="fa-solid fa-shield-halved text-amber-300"></i>
@@ -1913,6 +1918,36 @@
         </div>
     </div>
 
+    <!-- 一次登記缺交（例如請假的同學）：選座號、勾選作業 -->
+    <div id="modal-bulk-missing" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden" onclick="if (event.target === this) closeBulkMissing()">
+        <div class="bg-white border-2 border-slate-200 rounded-3xl p-5 w-full max-w-md board-shadow flex flex-col max-h-full">
+            <div class="text-center mb-3">
+                <div class="text-3xl mb-1">🟠</div>
+                <h4 class="text-xl font-black text-slate-800">一次登記缺交</h4>
+                <p class="text-sm text-slate-500 mt-0.5">例如請假的同學：勾選他沒交的作業，一次變成缺交</p>
+            </div>
+            <label for="bulk-missing-seat" class="block text-base font-black text-slate-700 mb-1">座號</label>
+            <input type="text" id="bulk-missing-seat" inputmode="numeric" maxlength="4" autocomplete="off" oninput="renderBulkMissingList()" placeholder="例如：7" class="w-full bg-slate-50 border-2 border-slate-200 rounded-xl px-4 py-2 font-black text-slate-800 focus:outline-none focus:border-orange-400 mb-2 text-xl">
+            <div class="flex items-center justify-between gap-2 mb-1.5">
+                <span class="text-base font-black text-slate-700">沒交的作業</span>
+                <div class="flex gap-1.5">
+                    <button onclick="checkBulkMissing(true)" class="text-sm font-bold px-2 py-1 rounded-lg bg-orange-50 text-orange-700 border border-orange-200 whitespace-nowrap">勾選看板上的作業</button>
+                    <button onclick="checkBulkMissing(false)" class="text-sm font-bold px-2 py-1 rounded-lg bg-slate-50 text-slate-600 border border-slate-200 whitespace-nowrap">全部取消</button>
+                </div>
+            </div>
+            <div id="bulk-missing-list" class="grid grid-cols-2 gap-1.5 overflow-y-auto min-h-0 flex-1 pr-1"></div>
+            <p id="bulk-missing-hint" class="text-sm font-bold mt-1.5 min-h-[1.25rem] text-slate-500"></p>
+            <div class="grid grid-cols-2 gap-2.5 mt-3">
+                <button onclick="closeBulkMissing()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-base transition-all">
+                    取消
+                </button>
+                <button id="bulk-missing-confirm" onclick="confirmBulkMissing()" class="bg-orange-500 hover:bg-orange-600 text-white font-black py-2.5 rounded-xl text-base transition-all disabled:opacity-40">
+                    登記缺交
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- 點錯可以復原：點座號後顯示 5 秒 -->
     <div id="undo-bar" class="fixed bottom-5 left-5 z-50 flex items-center gap-3 bg-slate-900 text-white pl-4 pr-2 py-2 rounded-2xl shadow-lg border border-slate-700 transition-all duration-300 translate-y-24 opacity-0 pointer-events-none max-w-[calc(100vw-2.5rem)]">
         <span id="undo-text" class="text-sm font-bold truncate min-w-0"></span>
@@ -2116,6 +2151,7 @@
 
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && isPendingListOpen()) closePendingList();
+            if (e.key === 'Escape' && !document.getElementById('modal-bulk-missing').classList.contains('hidden')) closeBulkMissing();
             if (e.key === 'Escape' && !document.getElementById('modal-guide').classList.contains('hidden')) closeGuide();
         });
 
@@ -2776,6 +2812,82 @@
             renderNewOnBoardHint();
             document.getElementById('modal-new-on-board').classList.remove('hidden');
             setTimeout(() => document.getElementById('new-on-board-name').focus(), 100);
+        }
+
+        // ---- 一次登記缺交（例如請假的同學）----
+        function openBulkMissing() {
+            if (!canEditBoard()) {
+                openTeacherAuthModal(openBulkMissing, { allowHelper: true });
+                return;
+            }
+            document.getElementById('bulk-missing-seat').value = '';
+            renderBulkMissingList();
+            document.getElementById('modal-bulk-missing').classList.remove('hidden');
+            setTimeout(() => document.getElementById('bulk-missing-seat').focus(), 100);
+        }
+
+        function closeBulkMissing() {
+            document.getElementById('modal-bulk-missing').classList.add('hidden');
+        }
+
+        function findStudentBySeat(raw) {
+            const seat = String(raw || '').trim().replace(/[０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+            if (!/^\d+$/.test(seat)) return null;
+            return window.state.students.find(s => {
+                const own = getPureSeatNumber(s.name);
+                return /^\d+$/.test(own) && Number(own) === Number(seat);
+            }) || null;
+        }
+
+        // 看板上的作業排前面，其他作業接在後面；已經是缺交的會先勾好
+        function renderBulkMissingList() {
+            const st = findStudentBySeat(document.getElementById('bulk-missing-seat').value);
+            const list = document.getElementById('bulk-missing-list');
+            const onBoard = window.state.slots.map(s => s.assignment);
+            const ordered = [...new Set([...onBoard, ...window.state.assignments])];
+            list.innerHTML = ordered.map(a => {
+                const missing = st && isMissing(a, st.id);
+                const checked = missing;
+                return `<label class="flex items-center gap-1.5 px-2 py-1.5 rounded-xl border cursor-pointer ${onBoard.includes(a) ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}">
+                    <input type="checkbox" value="${escapeHtml(a)}" ${checked ? 'checked disabled' : ''} class="w-5 h-5 accent-orange-500 flex-shrink-0">
+                    <span class="text-base font-black text-slate-800 min-w-0 break-all">${escapeHtml(a)}</span>
+                    ${missing ? '<span class="ml-auto text-[13px] font-bold text-orange-600 whitespace-nowrap">已缺交</span>' : ''}
+                </label>`;
+            }).join('');
+            const hint = document.getElementById('bulk-missing-hint');
+            const raw = document.getElementById('bulk-missing-seat').value.trim();
+            hint.className = `text-sm font-bold mt-1.5 min-h-[1.25rem] ${raw && !st ? 'text-rose-600' : 'text-slate-500'}`;
+            hint.textContent = raw && !st ? `找不到 ${raw} 號，請確認座號。` : (st ? `${getPureSeatNumber(st.name)} 號：勾選沒交的作業後按「登記缺交」` : '先輸入座號');
+        }
+
+        function checkBulkMissing(onBoardOnly) {
+            const onBoard = new Set(window.state.slots.map(s => s.assignment));
+            document.querySelectorAll('#bulk-missing-list input:not(:disabled)').forEach(box => {
+                box.checked = onBoardOnly ? (box.checked || onBoard.has(box.value)) : false;
+            });
+        }
+
+        function confirmBulkMissing() {
+            const st = findStudentBySeat(document.getElementById('bulk-missing-seat').value);
+            if (!st) {
+                window.soundEffect.playAlert();
+                renderBulkMissingList();
+                document.getElementById('bulk-missing-seat').focus();
+                return;
+            }
+            const picked = [...document.querySelectorAll('#bulk-missing-list input:checked')].map(box => box.value)
+                .filter(a => window.state.assignments.includes(a) && !isMissing(a, st.id));
+            if (picked.length === 0) {
+                showToast('請勾選要登記缺交的作業', false);
+                return;
+            }
+            picked.forEach(a => setStudentStatus(a, st.id, STATUS_MISSING));
+            picked.forEach(a => refreshAssignmentCards(a, [st.id]));
+            refreshPendingList();
+            window.syncStatusChange(picked.map(a => [a, st.id, STATUS_MISSING]));
+            window.soundEffect.playAlert();
+            closeBulkMissing();
+            showToast(`${getPureSeatNumber(st.name)} 號已登記 ${picked.length} 項缺交：${picked.join('、')}`);
         }
 
         function closeNewOnBoard() {
@@ -3750,6 +3862,7 @@
                     '按右上角「<b>教師登記</b>」，輸入教師密碼。',
                     '點座號會依序切換：<b class="text-rose-600">紅燈</b>＝要訂正 → <b class="text-orange-600">橘燈（缺）</b>＝缺交 → <b class="text-emerald-600">綠燈</b>＝完成。',
                     '作業框的名稱可以點開換作業；新作業發下去時，按標語列的「<b>➕ 新增並放上看板</b>」。',
+                    '請假的同學缺好幾項作業：按標語列的「<b>🟠 登記缺交</b>」，輸入座號、勾選沒交的作業，一次登記。',
                     '一段時間沒有操作會自動上鎖，回到學生消單模式。'
                 ]),
                 page('🟢', '學生自己消單', [
