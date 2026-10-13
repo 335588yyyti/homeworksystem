@@ -56,9 +56,55 @@
         }
         .brush-tooth { transition: transform .15s ease; }
         .brush-tooth:active { transform: scale(.92); }
-        .brush-tooth.done svg { filter: drop-shadow(0 4px 6px rgba(16,185,129,.35)); }
+        /* 完成的牙齒：金色＋綠色光暈一閃一閃 */
+        .brush-tooth.done svg { animation: brush-glow 1.8s ease-in-out infinite; }
+        @keyframes brush-glow {
+            0%, 100% { filter: drop-shadow(0 0 3px rgba(250,204,21,.55)) drop-shadow(0 3px 6px rgba(16,185,129,.35)); }
+            50% { filter: drop-shadow(0 0 12px rgba(250,204,21,.95)) drop-shadow(0 0 18px rgba(52,211,153,.6)); }
+        }
+        /* 點下去：一圈光環擴散 */
+        .brush-ring {
+            position: absolute; left: 50%; top: 45%; width: 30px; height: 30px; margin: -15px 0 0 -15px;
+            border-radius: 9999px; pointer-events: none; z-index: 4;
+            background: radial-gradient(circle, rgba(255,255,255,.95) 0%, rgba(253,224,71,.8) 35%, rgba(52,211,153,.35) 60%, rgba(52,211,153,0) 72%);
+            animation: brush-ring 0.7s ease-out forwards;
+        }
+        @keyframes brush-ring { 0% { transform: scale(.3); opacity: 1; } 100% { transform: scale(5.5); opacity: 0; } }
         @keyframes brush-pop { 0% { transform: scale(.7); } 60% { transform: scale(1.12); } 100% { transform: scale(1); } }
         .brush-tooth.just-done svg { animation: brush-pop .35s ease; }
+        /* 亮晶晶：點下去時四周噴出星星，完成的牙齒持續閃爍 */
+        .brush-spark {
+            position: absolute;
+            left: 50%;
+            top: 45%;
+            width: var(--size, 18px);
+            height: var(--size, 18px);
+            margin: calc(var(--size, 18px) / -2) 0 0 calc(var(--size, 18px) / -2);
+            pointer-events: none;
+            animation: brush-spark-fly 1s ease-out forwards;
+            filter: drop-shadow(0 0 4px rgba(253,224,71,.9));
+            z-index: 5;
+        }
+        @keyframes brush-spark-fly {
+            0% { transform: translate(0, 0) scale(.2) rotate(0deg); opacity: 1; }
+            60% { opacity: 1; }
+            100% { transform: translate(var(--dx), var(--dy)) scale(1) rotate(160deg); opacity: 0; }
+        }
+        .brush-tooth .twinkle { transform-origin: center; transform-box: fill-box; animation: brush-twinkle 1.6s ease-in-out infinite; }
+        .brush-tooth .twinkle.t2 { animation-delay: .55s; }
+        .brush-tooth .twinkle.t3 { animation-delay: 1.1s; }
+        @keyframes brush-twinkle {
+            0%, 100% { transform: scale(.3) rotate(0deg); opacity: .2; }
+            50% { transform: scale(1.15) rotate(45deg); opacity: 1; }
+        }
+        .brush-tooth .shine { animation: brush-shine 2.8s ease-in-out infinite; }
+        @keyframes brush-shine {
+            0%, 55% { transform: translateX(-90px); }
+            85%, 100% { transform: translateX(110px); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .brush-tooth .twinkle, .brush-tooth .shine, .brush-spark { animation: none; }
+        }
         @keyframes brush-flash { 0%, 100% { background: #fff; } 50% { background: #fee2e2; } }
         .brush-timer-done { animation: brush-flash .6s ease 4; }
         /* body 設了 select-none，iOS Safari 會因此無法在輸入框打字，這裡把輸入元件還原 */
@@ -3866,7 +3912,13 @@
             const mouth = done
                 ? '<path d="M42 42 Q50 50 58 42" stroke="#065f46" stroke-width="3" fill="#fb7185" stroke-linecap="round"/>'
                 : '<path d="M45 43 Q50 47 55 43" stroke="#475569" stroke-width="2.5" fill="none" stroke-linecap="round"/>';
-            return `<svg viewBox="0 0 100 110" class="w-full h-auto" aria-hidden="true">
+            const toothPath = 'M50 14 C40 6 18 4 14 24 C10 44 20 56 24 74 C27 90 30 104 38 104 C46 104 44 82 50 82 C56 82 54 104 62 104 C70 104 73 90 76 74 C80 56 90 44 86 24 C82 4 60 6 50 14 Z';
+            const star = (x, y, r, cls) => `<path class="twinkle ${cls}" d="M${x} ${y - r} L${x + r * 0.28} ${y - r * 0.28} L${x + r} ${y} L${x + r * 0.28} ${y + r * 0.28} L${x} ${y + r} L${x - r * 0.28} ${y + r * 0.28} L${x - r} ${y} L${x - r * 0.28} ${y - r * 0.28} Z" fill="#fde047" stroke="#f59e0b" stroke-width="1"/>`;
+            const sparkle = done ? `
+                <clipPath id="tooth-clip-${seat}"><path d="${toothPath}"/></clipPath>
+                <g clip-path="url(#tooth-clip-${seat})"><g class="shine"><rect x="0" y="-10" width="26" height="130" fill="#ffffff" opacity=".85" transform="skewX(-20)"/></g></g>
+                ${star(8, 58, 10, 't1')}${star(94, 44, 9, 't2')}${star(16, 100, 8, 't3')}${star(86, 96, 7, 't1')}` : '';
+            return `<svg viewBox="0 0 100 110" class="w-full h-auto overflow-visible" aria-hidden="true">
                 <path d="M50 14 C40 6 18 4 14 24 C10 44 20 56 24 74 C27 90 30 104 38 104 C46 104 44 82 50 82 C56 82 54 104 62 104 C70 104 73 90 76 74 C80 56 90 44 86 24 C82 4 60 6 50 14 Z" fill="${fill}" stroke="${stroke}" stroke-width="5" stroke-linejoin="round"/>
                 <circle cx="38" cy="32" r="4.5" fill="#1e293b"/><circle cx="62" cy="32" r="4.5" fill="#1e293b"/>
                 <circle cx="39.4" cy="30.6" r="1.5" fill="#fff"/><circle cx="63.4" cy="30.6" r="1.5" fill="#fff"/>
@@ -3874,6 +3926,7 @@
                 ${mouth}
                 <text x="50" y="72" text-anchor="middle" font-size="24" font-weight="900" fill="${done ? '#047857' : '#334155'}" font-family="Nunito, sans-serif">${seat}</text>
                 <path d="M24 16 l2 5 l5 2 l-5 2 l-2 5 l-2 -5 l-5 -2 l5 -2 z" fill="#fde047"/>
+                ${sparkle}
                 ${done ? '<circle cx="82" cy="16" r="13" fill="#10b981" stroke="#fff" stroke-width="3"/><path d="M75.5 16 l4.5 4.5 l8.5 -9" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' : ''}
             </svg>`;
         }
@@ -3912,6 +3965,34 @@
             }
             saveBrush(data);
             renderBrush(index >= 0 ? null : studentId);
+            if (index < 0) burstSparkles(studentId);
+        }
+
+        // 點下去的瞬間：牙齒四周噴出一圈亮晶晶的星星
+        function burstSparkles(studentId) {
+            const btn = document.getElementById(`brush-${studentId}`);
+            if (!btn) return;
+            const colors = ['#fde047', '#facc15', '#f9a8d4', '#67e8f9', '#ffffff', '#a7f3d0'];
+            const ring = document.createElement('span');
+            ring.className = 'brush-ring';
+            btn.appendChild(ring);
+            setTimeout(() => ring.remove(), 800);
+            const count = 18;
+            for (let i = 0; i < count; i++) {
+                const angle = (Math.PI * 2 * i) / count + Math.random() * 0.3;
+                const distance = 60 + Math.random() * 50;
+                const size = 18 + Math.random() * 16;
+                const color = colors[i % colors.length];
+                const spark = document.createElement('span');
+                spark.className = 'brush-spark';
+                spark.style.setProperty('--dx', `${Math.cos(angle) * distance}px`);
+                spark.style.setProperty('--dy', `${Math.sin(angle) * distance}px`);
+                spark.style.setProperty('--size', `${size}px`);
+                spark.style.animationDelay = `${Math.random() * 0.12}s`;
+                spark.innerHTML = `<svg viewBox="0 0 20 20" width="100%" height="100%"><path d="M10 0 L12.6 7.4 L20 10 L12.6 12.6 L10 20 L7.4 12.6 L0 10 L7.4 7.4 Z" fill="${color}" stroke="#f59e0b" stroke-width=".6"/></svg>`;
+                btn.appendChild(spark);
+                setTimeout(() => spark.remove(), 1300);
+            }
         }
 
         function resetBrush() {
