@@ -47,6 +47,20 @@
             font-size: 1.375rem;
             font-weight: 900;
         }
+        /* ---- 潔牙站 ---- */
+        body.brush-mode #slogan-section { display: none; }
+        .brush-bg {
+            background-color: #effcfb;
+            background-image: radial-gradient(#bfe9e4 1.2px, transparent 1.2px);
+            background-size: 24px 24px;
+        }
+        .brush-tooth { transition: transform .15s ease; }
+        .brush-tooth:active { transform: scale(.92); }
+        .brush-tooth.done svg { filter: drop-shadow(0 4px 6px rgba(16,185,129,.35)); }
+        @keyframes brush-pop { 0% { transform: scale(.7); } 60% { transform: scale(1.12); } 100% { transform: scale(1); } }
+        .brush-tooth.just-done svg { animation: brush-pop .35s ease; }
+        @keyframes brush-flash { 0%, 100% { background: #fff; } 50% { background: #fee2e2; } }
+        .brush-timer-done { animation: brush-flash .6s ease 4; }
         /* body 設了 select-none，iOS Safari 會因此無法在輸入框打字，這裡把輸入元件還原 */
         input, textarea, select {
             -webkit-user-select: text;
@@ -946,6 +960,7 @@
             const tab = window.state.currentTab;
             window.enforceHelperAccess();
             if (tab === 'dashboard') window.renderDashboard();
+            if (tab === 'brush') window.renderBrush();
             if (tab === 'parent') window.initParentView();
             if (tab === 'settings') {
                 window.renderCurrentClassCode();
@@ -1327,27 +1342,30 @@
 
             <!-- 頁籤切換鈕 -->
             <nav class="teacher-ui flex bg-slate-100 p-1 rounded-xl border border-slate-200 flex-shrink-0">
-                <button onclick="switchTab('dashboard')" id="tab-dashboard" class="px-2.5 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-black flex items-center gap-1.5 whitespace-nowrap transition-all bg-white text-slate-900 shadow-sm">
-                    <i class="fa-solid fa-chalkboard-user text-amber-500"></i> 班級看板
+                <button onclick="switchTab('dashboard')" id="tab-dashboard" class="px-2 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-black flex items-center gap-1.5 whitespace-nowrap transition-all bg-white text-slate-900 shadow-sm">
+                    <i class="fa-solid fa-chalkboard-user text-amber-500 hidden 2xl:inline"></i> 班級看板
                 </button>
-                <button onclick="switchTab('parent')" id="tab-parent" class="px-2.5 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900">
-                    <i class="fa-solid fa-id-card text-indigo-500"></i> 個別查詢
+                <button onclick="switchTab('brush')" id="tab-brush" class="px-2 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900">
+                    <span class="leading-none hidden 2xl:inline">🦷</span>潔牙
                 </button>
-                <button onclick="switchTab('settings')" id="tab-settings" class="px-2.5 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900">
-                    <i class="fa-solid fa-gears text-slate-500"></i> 設定後台
+                <button onclick="switchTab('parent')" id="tab-parent" class="px-2 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900">
+                    <i class="fa-solid fa-id-card text-indigo-500 hidden 2xl:inline"></i> 個別查詢
+                </button>
+                <button onclick="switchTab('settings')" id="tab-settings" class="px-2 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900">
+                    <i class="fa-solid fa-gears text-slate-500 hidden 2xl:inline"></i> 設定後台
                 </button>
             </nav>
 
             <!-- 學生消單 / 教師模式按鈕組 -->
             <div class="teacher-ui flex items-center gap-2 flex-shrink-0">
                 <div class="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
-                    <button onclick="setRole('student')" id="role-student" class="px-2.5 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-black whitespace-nowrap transition-all flex items-center gap-1 bg-white text-emerald-600 shadow-sm">
+                    <button onclick="setRole('student')" id="role-student" class="px-2 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-black whitespace-nowrap transition-all flex items-center gap-1 bg-white text-emerald-600 shadow-sm">
                         <i class="fa-solid fa-child text-sm"></i> 學生消單
                     </button>
-                    <button onclick="setRole('teacher')" id="role-teacher" class="px-2.5 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold whitespace-nowrap transition-all flex items-center gap-1 text-slate-600 hover:text-slate-900">
+                    <button onclick="setRole('teacher')" id="role-teacher" class="px-2 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold whitespace-nowrap transition-all flex items-center gap-1 text-slate-600 hover:text-slate-900">
                         <i class="fa-solid fa-user-tie text-sm"></i> 教師登記
                     </button>
-                    <button onclick="setRole('helper')" id="role-helper" class="hidden px-2.5 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold whitespace-nowrap transition-all flex items-center gap-1 text-slate-600 hover:text-slate-900" title="小幫手：只能在看板登記紅燈、更換作業">
+                    <button onclick="setRole('helper')" id="role-helper" class="hidden px-2 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold whitespace-nowrap transition-all flex items-center gap-1 text-slate-600 hover:text-slate-900" title="小幫手：只能在看板登記紅燈、更換作業">
                         <i class="fa-solid fa-hands-helping text-sm"></i> 小幫手
                     </button>
                 </div>
@@ -1360,7 +1378,7 @@
     </header>
 
     <!-- 醒目主題標語橫幅 -->
-    <section class="teacher-ui max-w-[1920px] mx-auto px-3.5 pt-1.5 pb-1 w-full flex-shrink-0">
+    <section id="slogan-section" class="teacher-ui max-w-[1920px] mx-auto px-3.5 pt-1.5 pb-1 w-full flex-shrink-0">
         <div class="bg-gradient-to-r from-rose-500 via-rose-600 to-amber-500 rounded-2xl px-3 py-1 text-white shadow-sm flex flex-wrap sm:flex-nowrap items-center justify-end sm:justify-between gap-x-3 gap-y-1">
             <!-- 手機：標語佔一整行，按鈕排到下一行，標語才不會被擠掉 -->
             <div class="flex items-center gap-2.5 min-w-0 flex-1 basis-full sm:basis-0">
@@ -1395,6 +1413,57 @@
     </main>
 
     <!-- 個別查詢分頁：家長輸入查詢碼，只看得到自己孩子的狀態；老師解鎖後改為教師專用（輸入座號查詢）。版面精簡，盡量一頁看完 -->
+    <!-- 潔牙站：午餐後潔牙，學生點自己的牙齒打勾；每天自動歸零 -->
+    <main id="view-brush" class="brush-bg w-full flex-1 min-h-0 overflow-y-auto hidden">
+        <div class="max-w-[1500px] mx-auto px-3.5 py-3">
+            <div class="flex flex-col items-center gap-2 mb-3">
+                <h2 class="text-2xl sm:text-4xl font-black text-rose-500 bg-white border-4 border-pink-200 rounded-full px-6 sm:px-10 py-1.5 sm:py-2 shadow-sm text-center tracking-wide">潔牙做得好，健康沒煩惱</h2>
+                <div id="brush-date" class="text-lg sm:text-xl font-black text-sky-800 bg-sky-100 rounded-full px-5 py-1"></div>
+            </div>
+            <div class="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)] items-start">
+                <!-- 左：提醒與倒數計時 -->
+                <aside class="order-2 lg:order-none relative overflow-hidden bg-amber-50 border-4 border-amber-300 rounded-3xl p-4 shadow-md flex flex-col gap-3">
+                    <div class="absolute -top-6 -right-6 text-8xl opacity-30 select-none pointer-events-none">⭐</div>
+                    <div class="relative self-center bg-amber-300 text-amber-900 font-black text-xl rounded-full px-6 py-2 shadow-sm">📌 小天使提醒區</div>
+                    <div class="grid sm:grid-cols-3 lg:grid-cols-1 gap-2.5">
+                        <div class="bg-white rounded-2xl px-4 py-3 shadow-sm flex items-center gap-3 text-lg font-black text-slate-800"><span class="text-2xl">🦷</span>吃完飯要潔牙</div>
+                        <div class="bg-white rounded-2xl px-4 py-3 shadow-sm flex items-center gap-3 text-lg font-black text-slate-800"><span class="text-2xl">🧽</span>擦桌子</div>
+                        <div class="bg-white rounded-2xl px-4 py-3 shadow-sm flex items-center gap-3 text-lg font-black text-slate-800"><span class="text-2xl">🚽</span>上廁所</div>
+                    </div>
+                    <div id="brush-timer-box" class="bg-white border-4 border-sky-200 rounded-2xl p-4 flex flex-col items-center gap-2">
+                        <div class="flex items-center gap-2 text-lg font-black text-sky-700">
+                            ⏱️ 倒數
+                            <select id="brush-timer-minutes" onchange="resetBrushTimer()" class="bg-sky-50 border-2 border-sky-200 rounded-lg px-2 py-0.5 text-base font-black text-slate-700">
+                                <option value="1">1 分鐘</option>
+                                <option value="2">2 分鐘</option>
+                                <option value="3" selected>3 分鐘</option>
+                                <option value="5">5 分鐘</option>
+                            </select>
+                        </div>
+                        <div id="brush-timer-display" class="font-mono text-5xl font-black text-slate-700 tracking-wider">03:00</div>
+                        <div class="flex gap-2">
+                            <button id="brush-timer-start" onclick="toggleBrushTimer()" class="bg-emerald-500 hover:bg-emerald-600 text-white font-black px-5 py-1.5 rounded-xl text-lg">開始</button>
+                            <button onclick="resetBrushTimer()" class="bg-slate-400 hover:bg-slate-500 text-white font-black px-5 py-1.5 rounded-xl text-lg">重設</button>
+                        </div>
+                    </div>
+                    <div class="bg-yellow-200 rounded-xl text-center text-sm font-black tracking-widest text-amber-700 py-2">KEEP CLEAN &amp; HEALTHY</div>
+                </aside>
+                <!-- 右：全班牙齒 -->
+                <section class="bg-white border-4 border-sky-200 rounded-3xl p-4 shadow-md">
+                    <div class="flex flex-wrap items-center justify-between gap-2 pb-2 mb-3 border-b-4 border-sky-100">
+                        <h3 class="text-2xl font-black text-sky-800">✨ 班級潔牙任務表</h3>
+                        <div class="flex items-center gap-2">
+                            <span class="bg-slate-100 rounded-full px-3 py-1 text-base font-black text-slate-600">完成度 <span id="brush-progress" class="text-sky-700">0/0</span></span>
+                            <button onclick="resetBrush()" class="bg-rose-400 hover:bg-rose-500 text-white font-black px-3 py-1 rounded-full text-base">🔄 重置</button>
+                        </div>
+                    </div>
+                    <div id="brush-grid" class="grid gap-2 sm:gap-3" style="grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));"></div>
+                    <p class="text-center text-sm font-bold text-slate-400 mt-3">潔完牙，點自己的牙齒就會打勾 ✨（點錯再點一次取消；每天會自動歸零）</p>
+                </section>
+            </div>
+        </div>
+    </main>
+
     <main id="view-parent" class="max-w-xl mx-auto px-3 py-3 w-full flex-1 min-h-0 overflow-y-auto hidden">
         <div class="parent-card bg-white border-2 border-slate-200 rounded-3xl p-4 board-shadow space-y-3">
             <div class="parent-head">
@@ -2173,19 +2242,21 @@
             window.state.currentTab = tab;
             if (tab !== 'settings') document.getElementById('modal-force-pin').classList.add('hidden');
 
-            ['dashboard', 'parent', 'settings'].forEach(t => {
+            document.body.classList.toggle('brush-mode', tab === 'brush');
+            ['dashboard', 'brush', 'parent', 'settings'].forEach(t => {
                 const btn = document.getElementById(`tab-${t}`);
                 const view = document.getElementById(`view-${t}`);
                 if (t === tab) {
-                    btn.className = "px-2.5 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-black flex items-center gap-1.5 whitespace-nowrap transition-all bg-white text-slate-900 shadow-sm";
+                    btn.className = "px-2 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-black flex items-center gap-1.5 whitespace-nowrap transition-all bg-white text-slate-900 shadow-sm";
                     view.classList.remove('hidden');
                 } else {
-                    btn.className = "px-2.5 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900";
+                    btn.className = "px-2 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900";
                     view.classList.add('hidden');
                 }
             });
 
             if (tab === 'dashboard') renderDashboard();
+            if (tab === 'brush') renderBrush();
             if (tab === 'parent') initParentView();
             if (tab === 'settings') {
                 renderSettingsAssignments();
@@ -2240,8 +2311,8 @@
             resetTeacherTimeout();
         }
 
-        const ROLE_ON = "px-2.5 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-black whitespace-nowrap transition-all flex items-center gap-1 shadow-sm";
-        const ROLE_OFF = "px-2.5 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold whitespace-nowrap transition-all flex items-center gap-1 text-slate-600 hover:text-slate-900";
+        const ROLE_ON = "px-2 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-black whitespace-nowrap transition-all flex items-center gap-1 shadow-sm";
+        const ROLE_OFF = "px-2 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold whitespace-nowrap transition-all flex items-center gap-1 text-slate-600 hover:text-slate-900";
 
         function applyRoleUI(role) {
             window.state.userRole = role;
@@ -3769,6 +3840,130 @@
         }
 
         // 透過分享連結建立新看板後：直接打開使用說明，第一頁顯示班級代碼
+        // ---- 潔牙站 ----
+        // 只存在這台裝置（教室電腦），每個班級代碼分開，日期不同就自動歸零
+        const BRUSH_KEY_PREFIX = 'checkpoint_brush_';
+
+        function todayKey() {
+            const d = new Date();
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+
+        function loadBrush() {
+            let data = null;
+            try { data = JSON.parse(localStorage.getItem(BRUSH_KEY_PREFIX + window.getClassCode()) || 'null'); } catch(e) {}
+            if (!data || data.date !== todayKey() || !Array.isArray(data.done)) data = { date: todayKey(), done: [] };
+            return data;
+        }
+
+        function saveBrush(data) {
+            try { localStorage.setItem(BRUSH_KEY_PREFIX + window.getClassCode(), JSON.stringify(data)); } catch(e) {}
+        }
+
+        function toothSvg(done, seat) {
+            const fill = done ? '#d1fae5' : '#ffffff';
+            const stroke = done ? '#059669' : '#64748b';
+            const mouth = done
+                ? '<path d="M42 42 Q50 50 58 42" stroke="#065f46" stroke-width="3" fill="#fb7185" stroke-linecap="round"/>'
+                : '<path d="M45 43 Q50 47 55 43" stroke="#475569" stroke-width="2.5" fill="none" stroke-linecap="round"/>';
+            return `<svg viewBox="0 0 100 110" class="w-full h-auto" aria-hidden="true">
+                <path d="M50 14 C40 6 18 4 14 24 C10 44 20 56 24 74 C27 90 30 104 38 104 C46 104 44 82 50 82 C56 82 54 104 62 104 C70 104 73 90 76 74 C80 56 90 44 86 24 C82 4 60 6 50 14 Z" fill="${fill}" stroke="${stroke}" stroke-width="5" stroke-linejoin="round"/>
+                <circle cx="38" cy="32" r="4.5" fill="#1e293b"/><circle cx="62" cy="32" r="4.5" fill="#1e293b"/>
+                <circle cx="39.4" cy="30.6" r="1.5" fill="#fff"/><circle cx="63.4" cy="30.6" r="1.5" fill="#fff"/>
+                <ellipse cx="28" cy="41" rx="5" ry="3" fill="#f9a8d4" opacity=".8"/><ellipse cx="72" cy="41" rx="5" ry="3" fill="#f9a8d4" opacity=".8"/>
+                ${mouth}
+                <text x="50" y="72" text-anchor="middle" font-size="24" font-weight="900" fill="${done ? '#047857' : '#334155'}" font-family="Nunito, sans-serif">${seat}</text>
+                <path d="M24 16 l2 5 l5 2 l-5 2 l-2 5 l-2 -5 l-5 -2 l5 -2 z" fill="#fde047"/>
+                ${done ? '<circle cx="82" cy="16" r="13" fill="#10b981" stroke="#fff" stroke-width="3"/><path d="M75.5 16 l4.5 4.5 l8.5 -9" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' : ''}
+            </svg>`;
+        }
+
+        function renderBrush(justDoneId = null) {
+            const data = loadBrush();
+            const weekday = ['日', '一', '二', '三', '四', '五', '六'][new Date().getDay()];
+            const now = new Date();
+            document.getElementById('brush-date').textContent = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 星期${weekday}`;
+            const students = window.state.students;
+            const doneSet = new Set(data.done.filter(id => students.some(st => st.id === id)));
+            document.getElementById('brush-progress').textContent = `${doneSet.size}/${students.length}`;
+            document.getElementById('brush-grid').innerHTML = students.map(st => {
+                const done = doneSet.has(st.id);
+                const seat = escapeHtml(getPureSeatNumber(st.name));
+                return `<button id="brush-${st.id}" onclick="toggleBrush(${st.id})" class="brush-tooth ${done ? 'done' : ''} ${justDoneId === st.id ? 'just-done' : ''} relative flex flex-col items-center rounded-2xl p-1 hover:bg-sky-50" title="${seat} 號">
+                    ${toothSvg(done, seat)}
+                </button>`;
+            }).join('');
+        }
+
+        function toggleBrush(studentId) {
+            const data = loadBrush();
+            const seat = getSeatLabel(studentId);
+            const index = data.done.indexOf(studentId);
+            if (index >= 0) {
+                data.done.splice(index, 1);
+                window.soundEffect.playToggle();
+                showToast(`${seat} 號已取消打勾`);
+            } else {
+                data.done.push(studentId);
+                window.soundEffect.playSuccess();
+                const total = window.state.students.length;
+                const count = data.done.filter(id => window.state.students.some(st => st.id === id)).length;
+                showToast(count >= total ? '全班都潔牙完成了！🎉' : `${seat} 號潔牙完成 ✨`);
+            }
+            saveBrush(data);
+            renderBrush(index >= 0 ? null : studentId);
+        }
+
+        function resetBrush() {
+            if (!confirm('要把今天的潔牙紀錄全部清除嗎？')) return;
+            saveBrush({ date: todayKey(), done: [] });
+            window.soundEffect.playToggle();
+            renderBrush();
+            showToast('潔牙任務表已重置');
+        }
+
+        // 倒數計時
+        let brushTimer = null;
+        let brushRemaining = 180;
+
+        function renderBrushTimer() {
+            const m = Math.floor(brushRemaining / 60);
+            const sec = brushRemaining % 60;
+            document.getElementById('brush-timer-display').textContent = `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+            document.getElementById('brush-timer-start').textContent = brushTimer ? '暫停' : (brushRemaining === 0 ? '再一次' : '開始');
+        }
+
+        function toggleBrushTimer() {
+            if (brushTimer) {
+                clearInterval(brushTimer);
+                brushTimer = null;
+                renderBrushTimer();
+                return;
+            }
+            if (brushRemaining === 0) brushRemaining = Number(document.getElementById('brush-timer-minutes').value) * 60;
+            document.getElementById('brush-timer-box').classList.remove('brush-timer-done');
+            brushTimer = setInterval(() => {
+                brushRemaining = Math.max(0, brushRemaining - 1);
+                if (brushRemaining === 0) {
+                    clearInterval(brushTimer);
+                    brushTimer = null;
+                    window.soundEffect.playAlert();
+                    document.getElementById('brush-timer-box').classList.add('brush-timer-done');
+                    showToast('⏰ 時間到！');
+                }
+                renderBrushTimer();
+            }, 1000);
+            renderBrushTimer();
+        }
+
+        function resetBrushTimer() {
+            clearInterval(brushTimer);
+            brushTimer = null;
+            brushRemaining = Number(document.getElementById('brush-timer-minutes').value) * 60;
+            document.getElementById('brush-timer-box').classList.remove('brush-timer-done');
+            renderBrushTimer();
+        }
+
         // 打開「分享全新看板」連結時的選擇視窗，回傳 { type: 'new' | 'join' | 'keep', code }
         let newBoardChoiceResolve = null;
         window.askNewBoardChoice = function(existing) {
