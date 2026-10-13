@@ -104,3 +104,30 @@ test('潔牙提醒可以修改（需要教師或小幫手密碼），並同步�
     await page.click('button:has-text("恢復預設提醒")');
     await expect(page.locator('#brush-tips > div')).toHaveCount(3);
 });
+
+test('抬餐任務：四菜一湯桶，抬完點一下變色，存雲端、每天歸零', async ({ browser }) => {
+    test.setTimeout(60000);
+    const cloud = createCloud();
+    const room = await openDevice(browser, cloud);
+    await room.click('#tab-brush');
+    await expect(room.locator('#meal-grid > button')).toHaveCount(5);
+    await expect(room.locator('#meal-4')).toContainText('湯桶');
+    await expect(room.locator('#meal-progress')).toHaveText('0/5');
+
+    await room.click('#meal-0');
+    await room.click('#meal-4');
+    await expect(room.locator('#meal-0')).toHaveClass(/done/);
+    await expect(room.locator('#meal-0')).toContainText('已抬');
+    await expect(room.locator('#meal-1')).toContainText('還沒抬');
+    await expect(room.locator('#meal-progress')).toHaveText('2/5');
+    await room.click('#meal-0');
+    await expect(room.locator('#meal-progress')).toHaveText('1/5');
+    await expect.poll(() => cloud.board('main').brush?.meal, { timeout: 12000 }).toEqual([false, false, false, false, true]);
+
+    // 另一台裝置看得到；換一天自動歸零
+    const phone = await openDevice(browser, cloud);
+    await phone.click('#tab-brush');
+    await expect(phone.locator('#meal-4')).toHaveClass(/done/);
+    await phone.evaluate(() => { state.brush.date = '2000-01-01'; renderBrush(); });
+    await expect(phone.locator('#meal-progress')).toHaveText('0/5');
+});

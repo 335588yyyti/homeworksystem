@@ -339,6 +339,9 @@
         // 潔牙站預設提醒（老師可以在潔牙頁修改），最多幾則
         window.DEFAULT_BRUSH_TIPS = ['🦷 吃完飯要潔牙', '🧽 擦桌子', '🚽 上廁所'];
         window.BRUSH_TIPS_MAX = 5;
+        // 抬餐：四個菜桶、一個湯桶
+        window.MEAL_ITEMS = ['菜 1', '菜 2', '菜 3', '菜 4', '湯桶'];
+        const MEAL_ITEMS = window.MEAL_ITEMS;
         const DEFAULT_BRUSH_TIPS = window.DEFAULT_BRUSH_TIPS;
         const BRUSH_TIPS_MAX = window.BRUSH_TIPS_MAX;
         const queuedStatusUpdates = new Map();
@@ -480,7 +483,7 @@
                 assignmentStatuses: {},
 
                 // 潔牙站：今天的日期、已打勾的學生 ID、提醒文字
-                brush: { date: '', done: [], tips: [...DEFAULT_BRUSH_TIPS] },
+                brush: { date: '', done: [], meal: MEAL_ITEMS.map(() => false), tips: [...DEFAULT_BRUSH_TIPS] },
 
                 slots: [
                     { id: 1, assignment: '國習' },
@@ -1032,6 +1035,7 @@
             window.state.brush = {
                 date: typeof b.date === 'string' ? b.date : '',
                 done: Array.isArray(b.done) ? b.done.map(Number).filter(Number.isFinite) : [],
+                meal: Array.from({ length: MEAL_ITEMS.length }, (_, i) => !!(Array.isArray(b.meal) && b.meal[i])),
                 tips: Array.isArray(b.tips) ? b.tips.map(String).filter(t => t.trim()).slice(0, BRUSH_TIPS_MAX).map(t => t.slice(0, 20)) : [...DEFAULT_BRUSH_TIPS]
             };
 
@@ -1530,9 +1534,10 @@
     <!-- 個別查詢分頁：家長輸入查詢碼，只看得到自己孩子的狀態；老師解鎖後改為教師專用（輸入座號查詢）。版面精簡，盡量一頁看完 -->
     <!-- 潔牙站：午餐後潔牙，學生點自己的牙齒打勾；每天自動歸零 -->
     <main id="view-brush" class="brush-bg w-full flex-1 min-h-0 overflow-y-auto hidden">
-        <div class="max-w-[1500px] mx-auto px-3.5 py-3">
-            <div class="flex flex-col items-center gap-2 mb-3">
-                <h2 class="text-2xl sm:text-4xl font-black text-rose-500 bg-white border-4 border-pink-200 rounded-full px-6 sm:px-10 py-1.5 sm:py-2 shadow-sm text-center tracking-wide">潔牙做得好，健康沒煩惱</h2>
+        <div class="max-w-[1500px] mx-auto px-3.5 py-2">
+            <!-- 標題和日期排同一行（電腦），整頁不用捲動 -->
+            <div class="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 mb-2">
+                <h2 class="text-2xl sm:text-3xl font-black text-rose-500 bg-white border-4 border-pink-200 rounded-full px-6 sm:px-8 py-1 shadow-sm text-center tracking-wide">潔牙做得好，健康沒煩惱</h2>
                 <div id="brush-date" class="text-lg sm:text-xl font-black text-sky-800 bg-sky-100 rounded-full px-5 py-1"></div>
             </div>
             <div class="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)] items-start">
@@ -1561,16 +1566,24 @@
                     <div class="bg-yellow-200 rounded-xl text-center text-sm font-black tracking-widest text-amber-700 py-2">KEEP CLEAN &amp; HEALTHY</div>
                 </aside>
                 <!-- 右：全班牙齒 -->
-                <section class="bg-white border-4 border-sky-200 rounded-3xl p-4 shadow-md">
-                    <div class="flex flex-wrap items-center justify-between gap-2 pb-2 mb-3 border-b-4 border-sky-100">
+                <section class="bg-white border-4 border-sky-200 rounded-3xl px-4 py-3 shadow-md">
+                    <div class="flex flex-wrap items-center justify-between gap-2 pb-1.5 mb-2 border-b-4 border-sky-100">
                         <h3 class="text-2xl font-black text-sky-800">✨ 班級潔牙任務表</h3>
                         <div class="flex items-center gap-2">
                             <span class="bg-slate-100 rounded-full px-3 py-1 text-base font-black text-slate-600">完成度 <span id="brush-progress" class="text-sky-700">0/0</span></span>
                             <button onclick="resetBrush()" class="bg-rose-400 hover:bg-rose-500 text-white font-black px-3 py-1 rounded-full text-base">🔄 重置</button>
                         </div>
                     </div>
-                    <div id="brush-grid" class="grid gap-2 sm:gap-3" style="grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));"></div>
-                    <p class="text-center text-sm font-bold text-slate-400 mt-3">潔完牙，點自己的牙齒就會打勾 ✨（點錯再點一次取消；每天會自動歸零）</p>
+                    <div id="brush-grid" class="grid gap-2 sm:gap-3" style="grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));"></div>
+                    <p class="text-center text-sm font-bold text-slate-400 mt-2">潔完牙，點自己的牙齒就會打勾 ✨（點錯再點一次取消；每天會自動歸零）</p>
+                    <!-- 抬餐：四菜一湯桶，抬完點一下變色 -->
+                    <div class="mt-3 pt-2 border-t-4 border-amber-100">
+                        <div class="flex items-center justify-between gap-2 mb-2">
+                            <h3 class="text-2xl font-black text-amber-700">🍱 抬餐任務</h3>
+                            <span class="bg-amber-50 rounded-full px-3 py-1 text-base font-black text-amber-700">已抬 <span id="meal-progress">0/5</span></span>
+                        </div>
+                        <div id="meal-grid" class="grid grid-cols-5 gap-1.5 sm:gap-3"></div>
+                    </div>
                 </section>
             </div>
         </div>
@@ -3988,11 +4001,16 @@
 
         function loadBrush() {
             const b = window.state.brush || {};
-            return { date: todayKey(), done: b.date === todayKey() && Array.isArray(b.done) ? [...b.done] : [] };
+            const today = b.date === todayKey();
+            return {
+                date: todayKey(),
+                done: today && Array.isArray(b.done) ? [...b.done] : [],
+                meal: MEAL_ITEMS.map((_, i) => !!(today && Array.isArray(b.meal) && b.meal[i]))
+            };
         }
 
         function saveBrush(data, immediate = false) {
-            window.state.brush = { ...(window.state.brush || {}), date: data.date, done: data.done };
+            window.state.brush = { ...(window.state.brush || {}), date: data.date, done: data.done, meal: data.meal };
             window.syncBrush(immediate);
         }
 
@@ -4077,6 +4095,7 @@
 
         function renderBrush(justDoneId = null) {
             renderBrushTips();
+            renderMeal();
             const data = loadBrush();
             const weekday = ['日', '一', '二', '三', '四', '五', '六'][new Date().getDay()];
             const now = new Date();
@@ -4091,6 +4110,58 @@
                     ${toothSvg(done, seat)}
                 </button>`;
             }).join('');
+        }
+
+        function mealIcon(index, done) {
+            const stroke = done ? '#047857' : '#64748b';
+            const body = done ? '#a7f3d0' : '#f1f5f9';
+            const lid = done ? '#34d399' : '#cbd5e1';
+            if (index === MEAL_ITEMS.length - 1) {
+                // 湯桶：有提把的圓桶
+                return `<svg viewBox="0 0 100 80" class="w-full h-auto max-h-14 sm:max-h-16" aria-hidden="true">
+                    <path d="M30 22 Q50 0 70 22" stroke="${stroke}" stroke-width="5" fill="none" stroke-linecap="round"/>
+                    <rect x="18" y="20" width="64" height="10" rx="5" fill="${lid}" stroke="${stroke}" stroke-width="4"/>
+                    <path d="M22 30 H78 L74 72 Q50 80 26 72 Z" fill="${body}" stroke="${stroke}" stroke-width="4" stroke-linejoin="round"/>
+                    <path d="M14 40 h8 M78 40 h8" stroke="${stroke}" stroke-width="5" stroke-linecap="round"/>
+                    ${done ? '<path d="M36 52 l9 9 l18 -18" stroke="#047857" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' : '<path d="M38 50 q6 -6 12 0 t12 0" stroke="#94a3b8" stroke-width="3" fill="none" stroke-linecap="round"/>'}
+                </svg>`;
+            }
+            // 菜桶：長方形餐桶加蓋
+            return `<svg viewBox="0 0 100 80" class="w-full h-auto max-h-14 sm:max-h-16" aria-hidden="true">
+                <rect x="40" y="10" width="20" height="8" rx="4" fill="${lid}" stroke="${stroke}" stroke-width="4"/>
+                <rect x="12" y="18" width="76" height="14" rx="7" fill="${lid}" stroke="${stroke}" stroke-width="4"/>
+                <rect x="16" y="32" width="68" height="38" rx="8" fill="${body}" stroke="${stroke}" stroke-width="4"/>
+                ${done ? '<path d="M36 50 l9 9 l18 -18" stroke="#047857" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' : ''}
+            </svg>`;
+        }
+
+        function renderMeal(justDoneIndex = null) {
+            const meal = loadBrush().meal;
+            document.getElementById('meal-progress').textContent = `${meal.filter(Boolean).length}/${MEAL_ITEMS.length}`;
+            document.getElementById('meal-grid').innerHTML = MEAL_ITEMS.map((name, i) => {
+                const done = meal[i];
+                return `<button id="meal-${i}" onclick="toggleMeal(${i})" class="brush-tooth ${done ? 'done' : ''} ${justDoneIndex === i ? 'just-done' : ''} relative flex flex-col items-center gap-0.5 rounded-2xl border-4 px-1 py-1.5 transition-colors ${done ? 'bg-emerald-50 border-emerald-300' : 'bg-white border-dashed border-slate-300 hover:bg-amber-50'}">
+                    ${mealIcon(i, done)}
+                    <span class="text-base sm:text-xl font-black whitespace-nowrap ${done ? 'text-emerald-700' : 'text-slate-700'}">${escapeHtml(name)}</span>
+                    <span class="text-[11px] sm:text-sm font-black whitespace-nowrap ${done ? 'text-emerald-600' : 'text-rose-500'}">${done ? '已抬<span class="hidden sm:inline"> ✨</span>' : '還沒抬'}</span>
+                </button>`;
+            }).join('');
+        }
+
+        function toggleMeal(index) {
+            const data = loadBrush();
+            data.meal[index] = !data.meal[index];
+            saveBrush(data);
+            const name = MEAL_ITEMS[index];
+            if (data.meal[index]) {
+                window.soundEffect.playSuccess();
+                showToast(data.meal.every(Boolean) ? '四菜一湯都抬完了！🎉' : `${name} 已抬 ✨`);
+            } else {
+                window.soundEffect.playToggle();
+                showToast(`${name} 已取消`);
+            }
+            renderMeal(data.meal[index] ? index : null);
+            if (data.meal[index]) burstSparklesAt(document.getElementById(`meal-${index}`));
         }
 
         function toggleBrush(studentId) {
@@ -4115,7 +4186,10 @@
 
         // 點下去的瞬間：牙齒四周噴出一圈亮晶晶的星星
         function burstSparkles(studentId) {
-            const btn = document.getElementById(`brush-${studentId}`);
+            burstSparklesAt(document.getElementById(`brush-${studentId}`));
+        }
+
+        function burstSparklesAt(btn) {
             if (!btn) return;
             const colors = ['#fde047', '#facc15', '#f9a8d4', '#67e8f9', '#ffffff', '#a7f3d0'];
             const ring = document.createElement('span');
@@ -4141,8 +4215,8 @@
         }
 
         function resetBrush() {
-            if (!confirm('要把今天的潔牙紀錄全部清除嗎？')) return;
-            saveBrush({ date: todayKey(), done: [] }, true);
+            if (!confirm('要把今天的潔牙和抬餐紀錄全部清除嗎？')) return;
+            saveBrush({ date: todayKey(), done: [], meal: MEAL_ITEMS.map(() => false) }, true);
             window.soundEffect.playToggle();
             renderBrush();
             showToast('潔牙任務表已重置');
