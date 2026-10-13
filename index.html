@@ -483,7 +483,7 @@
                 assignmentStatuses: {},
 
                 // 潔牙站：今天的日期、已打勾的學生 ID、提醒文字
-                brush: { date: '', done: [], meal: MEAL_ITEMS.map(() => false), tips: [...DEFAULT_BRUSH_TIPS] },
+                brush: { enabled: false, date: '', done: [], meal: MEAL_ITEMS.map(() => false), tips: [...DEFAULT_BRUSH_TIPS] },
 
                 slots: [
                     { id: 1, assignment: '國習' },
@@ -928,10 +928,10 @@
             let saved = null;
             try { saved = JSON.parse(localStorage.getItem(PENDING_BRUSH_KEY) || 'null'); } catch(e) {}
             if (!saved || saved.code !== window.getClassCode() || !saved.brush) return false;
-            // 前幾天沒送出的打勾已經過期，只補送提醒文字，不蓋掉今天的紀錄
+            // 前幾天沒送出的打勾已經過期，只補送開關和提醒文字，不蓋掉今天的紀錄
             window.state.brush = saved.brush.date === todayKey()
                 ? { ...window.state.brush, ...saved.brush }
-                : { ...window.state.brush, tips: saved.brush.tips || window.state.brush.tips };
+                : { ...window.state.brush, enabled: saved.brush.enabled === true, tips: saved.brush.tips || window.state.brush.tips };
             flushBrush();
             return true;
         }
@@ -1033,6 +1033,7 @@
             // 潔牙站：今天的日期、已打勾的學生、提醒文字（沒有資料時用預設提醒）
             const b = d.brush && typeof d.brush === 'object' ? d.brush : {};
             window.state.brush = {
+                enabled: b.enabled === true,
                 date: typeof b.date === 'string' ? b.date : '',
                 done: Array.isArray(b.done) ? b.done.map(Number).filter(Number.isFinite) : [],
                 meal: Array.from({ length: MEAL_ITEMS.length }, (_, i) => !!(Array.isArray(b.meal) && b.meal[i])),
@@ -1077,6 +1078,7 @@
             window.refreshPendingList();
             const tab = window.state.currentTab;
             window.enforceHelperAccess();
+            window.applyBrushVisibility();
             if (tab === 'dashboard') window.renderDashboard();
             if (tab === 'brush') window.renderBrush();
             if (tab === 'parent') window.initParentView();
@@ -1464,7 +1466,7 @@
                 <button onclick="switchTab('dashboard')" id="tab-dashboard" class="px-2 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-black flex items-center gap-1.5 whitespace-nowrap transition-all bg-white text-slate-900 shadow-sm">
                     <i class="fa-solid fa-chalkboard-user text-amber-500 hidden 2xl:inline"></i> 班級看板
                 </button>
-                <button onclick="switchTab('brush')" id="tab-brush" class="px-2 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900">
+                <button onclick="switchTab('brush')" id="tab-brush" class="hidden "px-2 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900">
                     <span class="leading-none hidden 2xl:inline">🦷</span>潔牙
                 </button>
                 <button onclick="switchTab('parent')" id="tab-parent" class="px-2 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900">
@@ -1756,6 +1758,15 @@
                             </button>
                             <span id="helper-status" class="text-[14px] font-bold text-slate-500"></span>
                         </div>
+                    </div>
+
+                    <!-- 潔牙站開關 -->
+                    <div class="mt-4 pt-3 border-t border-slate-100">
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="brush-enabled" onchange="setBrushEnabled(this.checked)" class="w-5 h-5 accent-emerald-500">
+                            <span class="text-sm font-black text-slate-800">🦷 開啟潔牙站</span>
+                        </label>
+                        <p class="text-[14px] text-slate-500 mt-1">開啟後上方多一個「潔牙」分頁（潔牙打勾、抬餐、倒數計時），家長查詢也會顯示「今日潔牙」。關閉時都不會出現。</p>
                     </div>
                 </div>
 
@@ -2338,7 +2349,7 @@
                     onBoard: onBoard.has(a)
                 })),
                 // 今天完成潔牙時記下日期；家長頁和自己手機的日期相同才顯示「已完成」
-                ...(isBrushedToday(student.id) ? { brushed: todayKey() } : {})
+                ...(isBrushEnabled() ? { brushed: isBrushedToday(student.id) ? todayKey() : '' } : {})
             };
         }
 
@@ -2380,6 +2391,7 @@
         function switchTab(tab, silent = false) {
             if (!silent) window.soundEffect.playToggle();
 
+            if (tab === 'brush' && !isBrushEnabled()) tab = 'dashboard';
             if (tab === 'settings' && !window.state.isTeacherUnlocked) {
                 openTeacherAuthModal(() => switchTab('settings', true));
                 return;
@@ -2400,6 +2412,7 @@
                     view.classList.add('hidden');
                 }
             });
+            document.getElementById('tab-brush').classList.toggle('hidden', !isBrushEnabled());
 
             if (tab === 'dashboard') renderDashboard();
             if (tab === 'brush') renderBrush();
@@ -2415,6 +2428,7 @@
                 renderSlotCountButtons();
                 renderPinWarning();
                 renderHelperSettings();
+                document.getElementById('brush-enabled').checked = isBrushEnabled();
                 renderLockMinuteButtons();
                 // 還是預設密碼 8888：先請老師改成自己的密碼
                 if (window.state.teacherPin === DEFAULT_TEACHER_PIN) openForcePinModal();
@@ -3547,6 +3561,7 @@
             const brushEl = document.getElementById('parent-brush');
             const brushed = view.brushed === todayKey();
             brushEl.className = `rounded-2xl px-4 py-2.5 text-base font-black flex items-center gap-2 border-2 ${brushed ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-slate-50 border-slate-200 text-slate-500'}`;
+            brushEl.classList.toggle('hidden', typeof view.brushed !== 'string');
             brushEl.innerHTML = brushed ? '🦷 今日潔牙：已完成 ✨' : '🦷 今日潔牙：還沒登記';
 
             const updatedEl = document.getElementById('parent-updated-at');
@@ -4016,6 +4031,25 @@
 
         function isBrushedToday(studentId) {
             return loadBrush().done.includes(studentId);
+        }
+
+        function isBrushEnabled() {
+            return window.state.brush?.enabled === true;
+        }
+
+        // 潔牙站有開啟才顯示「潔牙」分頁；關閉時若正在潔牙頁就回到看板
+        function applyBrushVisibility() {
+            const on = isBrushEnabled();
+            document.getElementById('tab-brush')?.classList.toggle('hidden', !on);
+            if (!on && window.state.currentTab === 'brush') switchTab('dashboard', true);
+        }
+
+        function setBrushEnabled(on) {
+            window.state.brush = { ...(window.state.brush || {}), enabled: !!on };
+            window.syncBrush(true);
+            applyBrushVisibility();
+            window.soundEffect.playToggle();
+            showToast(on ? '已開啟潔牙站，上方多了「潔牙」分頁' : '已關閉潔牙站');
         }
 
         function brushTips() {

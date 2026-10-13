@@ -1,9 +1,51 @@
 // 潔牙站：點牙齒打勾、完成度、每天自動歸零、重置、倒數計時
 const { test, expect } = require('@playwright/test');
-const { createCloud, openDevice } = require('./helpers');
+const { createCloud, openDevice, unlockTeacher } = require('./helpers');
+
+// 潔牙站預設關閉，測試前先從後台打開
+async function enableBrush(page) {
+    await page.evaluate(() => setBrushEnabled(true));
+    await expect(page.locator('#tab-brush')).toBeVisible();
+}
+
+test('潔牙站預設關閉；後台勾選後才出現分頁，其他裝置和家長頁也跟著', async ({ browser }) => {
+    test.setTimeout(60000);
+    const cloud = createCloud();
+    const room = await openDevice(browser, cloud);
+    const phone = await openDevice(browser, cloud);
+    await expect(room.locator('#tab-brush')).toBeHidden();
+    const code = await room.evaluate(() => state.students.find((s) => s.id === 6).parentCode);
+    await expect.poll(() => cloud.view(code), { timeout: 20000 }).toBeTruthy();
+    expect('brushed' in cloud.view(code)).toBe(false);
+    const parent = await openDevice(browser, cloud, { query: '?p=' + code, viewport: { width: 390, height: 844 } });
+    await expect(parent.locator('#parent-result-box')).toBeVisible();
+    await expect(parent.locator('#parent-brush')).toBeHidden();
+
+    await unlockTeacher(room, 'settings');
+    await expect(room.locator('#brush-enabled')).not.toBeChecked();
+    await room.check('#brush-enabled');
+    await expect(room.locator('#tab-brush')).toBeVisible();
+    // 切換分頁後依然顯示
+    await room.click('#tab-dashboard');
+    await expect(room.locator('#tab-brush')).toBeVisible();
+    await expect.poll(() => cloud.board('main').brush?.enabled, { timeout: 12000 }).toBe(true);
+    await expect(phone.locator('#tab-brush')).toBeVisible({ timeout: 10000 });
+    await expect(parent.locator('#parent-brush')).toContainText('還沒登記', { timeout: 20000 });
+
+    // 另一台正在潔牙頁時被關閉：自動回到看板
+    await phone.click('#tab-brush');
+    await unlockTeacher(room, 'settings');
+    await expect(room.locator('#brush-enabled')).toBeChecked();
+    await room.uncheck('#brush-enabled');
+    await expect(room.locator('#tab-brush')).toBeHidden();
+    await expect(phone.locator('#tab-brush')).toBeHidden({ timeout: 10000 });
+    await expect(phone.locator('#view-dashboard')).toBeVisible();
+    await expect(parent.locator('#parent-brush')).toBeHidden({ timeout: 20000 });
+});
 
 test('潔牙站：學生點自己的牙齒打勾，再點一次取消；換一天自動歸零', async ({ browser }) => {
     const page = await openDevice(browser, createCloud());
+    await enableBrush(page);
     await page.click('#tab-brush');
     await expect(page.locator('#view-brush')).toBeVisible();
     await expect(page.locator('#slogan-section')).toBeHidden();
@@ -39,6 +81,7 @@ test('潔牙站：學生點自己的牙齒打勾，再點一次取消；換一�
 
 test('潔牙站倒數計時：開始、暫停、時間到提示', async ({ browser }) => {
     const page = await openDevice(browser, createCloud());
+    await enableBrush(page);
     await page.click('#tab-brush');
     await expect(page.locator('#brush-timer-display')).toHaveText('03:00');
     await page.selectOption('#brush-timer-minutes', '1');
@@ -58,8 +101,9 @@ test('潔牙紀錄存在雲端：另一台裝置看得到，家長頁顯示今�
     const cloud = createCloud();
     const room = await openDevice(browser, cloud);
     const phone = await openDevice(browser, cloud);
+    await enableBrush(room);
     const code = await room.evaluate(() => state.students.find((s) => s.id === 6).parentCode);
-    await expect.poll(() => cloud.view(code), { timeout: 20000 }).toBeTruthy();
+    await expect.poll(() => cloud.view(code)?.brushed, { timeout: 20000 }).toBe('');
     const parent = await openDevice(browser, cloud, { query: '?p=' + code, viewport: { width: 390, height: 844 } });
     await expect(parent.locator('#parent-brush')).toContainText('還沒登記');
 
@@ -70,6 +114,7 @@ test('潔牙紀錄存在雲端：另一台裝置看得到，家長頁顯示今�
     await expect.poll(() => cloud.board('main').brush?.done, { timeout: 12000 }).toEqual([6, 7]);
     expect(cloud.board('main').brush.date).toBe(await room.evaluate(() => todayKey()));
 
+    await expect(phone.locator('#tab-brush')).toBeVisible({ timeout: 10000 });
     await phone.click('#tab-brush');
     await expect(phone.locator('#brush-6')).toHaveClass(/done/, { timeout: 10000 });
     await expect(phone.locator('#brush-progress')).toHaveText('2/28');
@@ -80,6 +125,7 @@ test('潔牙紀錄存在雲端：另一台裝置看得到，家長頁顯示今�
 test('潔牙提醒可以修改（需要教師或小幫手密碼），並同步到雲端', async ({ browser }) => {
     const cloud = createCloud();
     const page = await openDevice(browser, cloud);
+    await enableBrush(page);
     await page.click('#tab-brush');
     await expect(page.locator('#brush-tips > div')).toHaveCount(3);
     await expect(page.locator('#brush-tips')).toContainText('吃完飯要潔牙');
@@ -109,6 +155,7 @@ test('抬餐任務：四菜一湯桶，抬完點一下變色，存雲端、每�
     test.setTimeout(60000);
     const cloud = createCloud();
     const room = await openDevice(browser, cloud);
+    await enableBrush(room);
     await room.click('#tab-brush');
     await expect(room.locator('#meal-grid > button')).toHaveCount(5);
     await expect(room.locator('#meal-4')).toContainText('湯桶');
@@ -126,6 +173,7 @@ test('抬餐任務：四菜一湯桶，抬完點一下變色，存雲端、每�
 
     // 另一台裝置看得到；換一天自動歸零
     const phone = await openDevice(browser, cloud);
+    await expect(phone.locator('#tab-brush')).toBeVisible();
     await phone.click('#tab-brush');
     await expect(phone.locator('#meal-4')).toHaveClass(/done/);
     await phone.evaluate(() => { state.brush.date = '2000-01-01'; renderBrush(); });
