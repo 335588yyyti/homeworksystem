@@ -295,6 +295,9 @@
             background: #cbd5e1;
             border-radius: 4px;
         }
+        /* 抬餐感謝：畫面中間跳出大字 */
+        #meal-pop { position: fixed; left: 50%; top: 42%; transform: translate(-50%, -50%) scale(.6); opacity: 0; pointer-events: none; z-index: 60; transition: opacity .25s, transform .35s cubic-bezier(.34,1.56,.64,1); }
+        #meal-pop.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
     </style>
 </head>
 <body class="h-screen w-screen overflow-hidden flex flex-col text-slate-800 select-none">
@@ -2177,6 +2180,11 @@
         <button id="undo-button" onclick="undoLastSeat()" class="flex-shrink-0 bg-amber-400 hover:bg-amber-300 text-slate-900 font-black px-3 py-1.5 rounded-xl text-base whitespace-nowrap">
             ↩ 復原
         </button>
+    </div>
+
+    <!-- 抬餐感謝 -->
+    <div id="meal-pop" class="bg-white border-4 border-pink-200 rounded-3xl shadow-2xl px-6 sm:px-8 py-5 text-center" style="width: max-content; max-width: 92vw;">
+        <div id="meal-pop-msg" class="font-black text-pink-500 text-3xl sm:text-5xl"></div>
     </div>
 
     <!-- Toast 通知浮動提示 -->
@@ -4182,6 +4190,18 @@
             }).join('');
         }
 
+        let mealPopTimer = null;
+        function showMealPop(allDone) {
+            const pop = document.getElementById('meal-pop');
+            const msg = document.getElementById('meal-pop-msg');
+            // 長句分兩段，手機太窄時在「～」後面換行
+            msg.innerHTML = allDone ? '<span class="inline-block">謝謝你們的幫忙～</span><span class="inline-block">都抬完了！🎉</span>' : '謝謝你💖';
+            msg.className = `font-black text-pink-500 ${allDone ? 'text-2xl sm:text-4xl' : 'text-3xl sm:text-5xl'}`;
+            pop.classList.add('show');
+            clearTimeout(mealPopTimer);
+            mealPopTimer = setTimeout(() => pop.classList.remove('show'), allDone ? 2800 : 1600);
+        }
+
         function toggleMeal(index) {
             const data = loadBrush();
             data.meal[index] = !data.meal[index];
@@ -4189,7 +4209,7 @@
             const name = MEAL_ITEMS[index];
             if (data.meal[index]) {
                 window.soundEffect.playSuccess();
-                showToast(data.meal.every(Boolean) ? '四菜一湯都抬完了！🎉' : `${name} 已抬 ✨`);
+                showMealPop(data.meal.every(Boolean));
             } else {
                 window.soundEffect.playToggle();
                 showToast(`${name} 已取消`);

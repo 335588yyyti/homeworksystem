@@ -162,6 +162,8 @@ test('抬餐任務：四菜一湯桶，抬完點一下變色，存雲端、每�
     await expect(room.locator('#meal-progress')).toHaveText('0/5');
 
     await room.click('#meal-0');
+    await expect(room.locator('#meal-pop-msg')).toHaveText('謝謝你💖');
+    await expect(room.locator('#meal-pop')).toHaveClass(/show/);
     await room.click('#meal-4');
     await expect(room.locator('#meal-0')).toHaveClass(/done/);
     await expect(room.locator('#meal-0')).toContainText('已抬');
@@ -178,4 +180,8 @@ test('抬餐任務：四菜一湯桶，抬完點一下變色，存雲端、每�
     await expect(phone.locator('#meal-4')).toHaveClass(/done/);
     await phone.evaluate(() => { state.brush.date = '2000-01-01'; renderBrush(); });
     await expect(phone.locator('#meal-progress')).toHaveText('0/5');
+
+    // 五格都抬完
+    for (let i = 0; i < 5; i++) await phone.click(`#meal-${i}`);
+    await expect(phone.locator('#meal-pop-msg')).toHaveText('謝謝你們的幫忙～都抬完了！🎉');
 });
