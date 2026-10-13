@@ -336,6 +336,11 @@
         let syncDebounceTimer = null;
         // 點座號的紅綠燈：等 5 秒沒有新變動才上傳（見 syncStatusChange）
         const STATUS_SAVE_DELAY_MS = 5000;
+        // 潔牙站預設提醒（老師可以在潔牙頁修改），最多幾則
+        window.DEFAULT_BRUSH_TIPS = ['🦷 吃完飯要潔牙', '🧽 擦桌子', '🚽 上廁所'];
+        window.BRUSH_TIPS_MAX = 5;
+        const DEFAULT_BRUSH_TIPS = window.DEFAULT_BRUSH_TIPS;
+        const BRUSH_TIPS_MAX = window.BRUSH_TIPS_MAX;
         const queuedStatusUpdates = new Map();
         const sendingStatusUpdates = new Map(); // 已送出、雲端還沒確認收到的
         let statusFlushTimer = null;
@@ -473,6 +478,9 @@
                 ],
 
                 assignmentStatuses: {},
+
+                // 潔牙站：今天的日期、已打勾的學生 ID、提醒文字
+                brush: { date: '', done: [], tips: [...DEFAULT_BRUSH_TIPS] },
 
                 slots: [
                     { id: 1, assignment: '國習' },
@@ -702,6 +710,7 @@
                 lockMinutes: window.state.lockMinutes,
                 boardId: window.state.boardId,
                 statuses: copyStatuses(),
+                brush: window.state.brush,
                 lastUpdated: Date.now()
             };
         }
@@ -710,7 +719,7 @@
             if (!window.isCloudConnected()) return;
             if (!navigator.onLine) {
                 window.updateCloudStatusBadge('offline');
-            } else if (pendingWrites > 0 || syncDebounceTimer !== null || statusFlushTimer !== null) {
+            } else if (pendingWrites > 0 || syncDebounceTimer !== null || statusFlushTimer !== null || brushFlushTimer !== null) {
                 window.updateCloudStatusBadge('syncing');
             } else {
                 window.updateCloudStatusBadge('synced');
@@ -872,6 +881,7 @@
             if (!window.isCloudConnected()) return 'not-connected';
             if (!navigator.onLine) return 'offline';
             flushStatusUpdates();
+            if (brushFlushTimer !== null) flushBrush();
             if (syncDebounceTimer !== null) {
                 clearTimeout(syncDebounceTimer);
                 performSync();
@@ -893,10 +903,60 @@
             return 'ok';
         };
 
-        // 還有變更在等待送出（整份存檔前的 0.3 秒緩衝、或紅綠燈的 5 秒等待）時，不要用雲端資料覆蓋本機
+        // 還有變更在等待送出（整份存檔前的 0.3 秒緩衝、紅綠燈或潔牙的 5 秒等待）時，不要用雲端資料覆蓋本機
         function hasLocalPendingChanges() {
-            return syncDebounceTimer !== null || statusFlushTimer !== null;
+            return syncDebounceTimer !== null || statusFlushTimer !== null || brushFlushTimer !== null;
         }
+
+        // 潔牙站：只更新 brush 這一欄（不會蓋到紅綠燈）；打勾時等最後一次點擊後 5 秒才送
+        let brushFlushTimer = null;
+        // 還沒送出的潔牙紀錄也記在這台電腦，萬一 5 秒內關掉網頁，下次開啟時補送
+        const PENDING_BRUSH_KEY = 'checkpoint_pending_brush';
+        function savePendingBrush() {
+            try { localStorage.setItem(PENDING_BRUSH_KEY, JSON.stringify({ code: window.getClassCode(), brush: window.state.brush })); } catch(e) {}
+        }
+        function clearPendingBrush(brush) {
+            try {
+                const saved = JSON.parse(localStorage.getItem(PENDING_BRUSH_KEY) || 'null');
+                if (saved && JSON.stringify(saved.brush) === JSON.stringify(brush)) localStorage.removeItem(PENDING_BRUSH_KEY);
+            } catch(e) {}
+        }
+        function resendSavedBrush() {
+            let saved = null;
+            try { saved = JSON.parse(localStorage.getItem(PENDING_BRUSH_KEY) || 'null'); } catch(e) {}
+            if (!saved || saved.code !== window.getClassCode() || !saved.brush) return false;
+            // 前幾天沒送出的打勾已經過期，只補送提醒文字，不蓋掉今天的紀錄
+            window.state.brush = saved.brush.date === todayKey()
+                ? { ...window.state.brush, ...saved.brush }
+                : { ...window.state.brush, tips: saved.brush.tips || window.state.brush.tips };
+            flushBrush();
+            return true;
+        }
+        function flushBrush() {
+            clearTimeout(brushFlushTimer);
+            brushFlushTimer = null;
+            if (!window.isCloudConnected()) return;
+            const brush = window.state.brush;
+            trackWrite(updateDoc(cloudDocRef, 'brush', brush, 'lastUpdated', Date.now())).then(() => clearPendingBrush(brush), err => {
+                console.warn("潔牙紀錄更新失敗，改為整份存檔:", err);
+                window.syncStateToCloud(true);
+            });
+            scheduleParentPublish();
+            refreshSyncBadge();
+        }
+        window.syncBrush = function(immediate = false) {
+            if (window.IS_PARENT_MODE) return;
+            window.saveLocalBackup();
+            if (!window.isCloudConnected()) return;
+            savePendingBrush();
+            clearTimeout(brushFlushTimer);
+            if (immediate) {
+                flushBrush();
+            } else {
+                brushFlushTimer = setTimeout(flushBrush, STATUS_SAVE_DELAY_MS);
+                refreshSyncBadge();
+            }
+        };
 
         window.syncStateToCloud = function(immediate = false) {
             if (window.IS_PARENT_MODE) return;
@@ -924,6 +984,7 @@
                     assignments: window.state.assignments,
                     slots: window.state.slots,
                     assignmentStatuses: window.state.assignmentStatuses,
+                    brush: window.state.brush,
                     teacherPin: window.state.teacherPin,
                     helperEnabled: !!window.state.helperEnabled,
                     helperPin: window.state.helperPin || '',
@@ -940,7 +1001,7 @@
         function boardViewSignature() {
             const s = window.state;
             return JSON.stringify([s.sloganTitle, s.sloganSub, s.students, s.assignments, s.slots, s.teacherPin,
-                s.helperEnabled, s.helperPin, s.lockMinutes, s.assignmentStatuses]);
+                s.helperEnabled, s.helperPin, s.lockMinutes, s.assignmentStatuses, s.brush]);
         }
 
         window.applyBoardData = function(d) {
@@ -966,6 +1027,13 @@
             window.state.lockMinutes = LOCK_MINUTE_OPTIONS.includes(Number(d.lockMinutes)) ? Number(d.lockMinutes) : 1.5;
             // 舊資料沒有班級編號：留空，連上雲端後補上
             window.state.boardId = typeof d.boardId === 'string' && /^[a-z0-9]{8,32}$/.test(d.boardId) ? d.boardId : '';
+            // 潔牙站：今天的日期、已打勾的學生、提醒文字（沒有資料時用預設提醒）
+            const b = d.brush && typeof d.brush === 'object' ? d.brush : {};
+            window.state.brush = {
+                date: typeof b.date === 'string' ? b.date : '',
+                done: Array.isArray(b.done) ? b.done.map(Number).filter(Number.isFinite) : [],
+                tips: Array.isArray(b.tips) ? b.tips.map(String).filter(t => t.trim()).slice(0, BRUSH_TIPS_MAX).map(t => t.slice(0, 20)) : [...DEFAULT_BRUSH_TIPS]
+            };
 
             if (d.statuses && typeof d.statuses === 'object') {
                 const parsed = {};
@@ -1099,6 +1167,7 @@
                             .catch(err => console.warn("補上班級編號失敗:", err));
                     }
                     if (firstSnapshot && resendSavedStatusUpdates()) rerenderCurrentView();
+                    if (firstSnapshot && resendSavedBrush()) rerenderCurrentView();
                     // 開啟看板時同步一次家長查詢資料（沒變的不會重寫）
                     if (firstSnapshot) publishParentViews().catch(err => console.warn("家長查詢資料更新失敗:", err));
                 } else if (firstSnapshot && (startFreshIfMissing || cleared)) {
@@ -1471,11 +1540,8 @@
                 <aside class="order-2 lg:order-none relative overflow-hidden bg-amber-50 border-4 border-amber-300 rounded-3xl p-4 shadow-md flex flex-col gap-3">
                     <div class="absolute -top-6 -right-6 text-8xl opacity-30 select-none pointer-events-none">⭐</div>
                     <div class="relative self-center bg-amber-300 text-amber-900 font-black text-xl rounded-full px-6 py-2 shadow-sm">📌 小天使提醒區</div>
-                    <div class="grid sm:grid-cols-3 lg:grid-cols-1 gap-2.5">
-                        <div class="bg-white rounded-2xl px-4 py-3 shadow-sm flex items-center gap-3 text-lg font-black text-slate-800"><span class="text-2xl">🦷</span>吃完飯要潔牙</div>
-                        <div class="bg-white rounded-2xl px-4 py-3 shadow-sm flex items-center gap-3 text-lg font-black text-slate-800"><span class="text-2xl">🧽</span>擦桌子</div>
-                        <div class="bg-white rounded-2xl px-4 py-3 shadow-sm flex items-center gap-3 text-lg font-black text-slate-800"><span class="text-2xl">🚽</span>上廁所</div>
-                    </div>
+                    <div id="brush-tips" class="grid sm:grid-cols-3 lg:grid-cols-1 gap-2.5"></div>
+                    <button onclick="openBrushTips()" class="teacher-ui self-end -mt-1 text-sm font-bold text-amber-700 hover:text-amber-900 underline underline-offset-2">✏️ 修改提醒</button>
                     <div id="brush-timer-box" class="bg-white border-4 border-sky-200 rounded-2xl p-4 flex flex-col items-center gap-2">
                         <div class="flex items-center gap-2 text-lg font-black text-sky-700">
                             ⏱️ 倒數
@@ -1562,6 +1628,7 @@
                     </div>
                     <div id="parent-status-title" class="mt-2 text-base font-black">目前無需訂正 🎉</div>
                 </div>
+                <div id="parent-brush" class="rounded-2xl px-4 py-2.5 text-base font-black flex items-center gap-2 border-2"></div>
 
                 <!-- 只列出需要訂正的作業；全部完成時整段隱藏 -->
                 <div id="parent-pending-section" class="hidden">
@@ -2033,6 +2100,23 @@
         </div>
     </div>
 
+    <!-- 潔牙站：修改小天使提醒 -->
+    <div id="modal-brush-tips" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden" onclick="if (event.target === this) closeBrushTips()">
+        <div class="bg-white border-2 border-slate-200 rounded-3xl p-5 w-full max-w-md board-shadow">
+            <div class="text-center mb-3">
+                <div class="text-3xl mb-1">📌</div>
+                <h4 class="text-xl font-black text-slate-800">修改小天使提醒</h4>
+                <p class="text-sm text-slate-500 mt-0.5">每則最多 20 字，開頭可以放一個表情符號當圖示；留白的不會顯示</p>
+            </div>
+            <div id="brush-tips-inputs" class="flex flex-col gap-2"></div>
+            <button onclick="saveBrushTips(true)" class="mt-2 text-sm font-bold text-slate-500 hover:text-slate-700 underline underline-offset-2">恢復預設提醒</button>
+            <div class="grid grid-cols-2 gap-2.5 mt-3">
+                <button onclick="closeBrushTips()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-base transition-all">取消</button>
+                <button onclick="saveBrushTips()" class="bg-amber-400 hover:bg-amber-500 text-slate-900 font-black py-2.5 rounded-xl text-base transition-all">儲存</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 一次登記缺交（例如請假的同學）：選座號、勾選作業 -->
     <div id="modal-bulk-missing" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden" onclick="if (event.target === this) closeBulkMissing()">
         <div class="bg-white border-2 border-slate-200 rounded-3xl p-5 w-full max-w-md board-shadow flex flex-col max-h-full">
@@ -2239,7 +2323,9 @@
                     finished: isFinished(a, student.id),
                     missing: isMissing(a, student.id),
                     onBoard: onBoard.has(a)
-                }))
+                })),
+                // 今天完成潔牙時記下日期；家長頁和自己手機的日期相同才顯示「已完成」
+                ...(isBrushedToday(student.id) ? { brushed: todayKey() } : {})
             };
         }
 
@@ -2267,6 +2353,7 @@
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && isPendingListOpen()) closePendingList();
             if (e.key === 'Escape' && !document.getElementById('modal-bulk-missing').classList.contains('hidden')) closeBulkMissing();
+            if (e.key === 'Escape' && !document.getElementById('modal-brush-tips').classList.contains('hidden')) closeBrushTips();
             if (e.key === 'Escape' && !document.getElementById('modal-guide').classList.contains('hidden')) closeGuide();
         });
 
@@ -3444,6 +3531,11 @@
                 });
             }
 
+            const brushEl = document.getElementById('parent-brush');
+            const brushed = view.brushed === todayKey();
+            brushEl.className = `rounded-2xl px-4 py-2.5 text-base font-black flex items-center gap-2 border-2 ${brushed ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-slate-50 border-slate-200 text-slate-500'}`;
+            brushEl.innerHTML = brushed ? '🦷 今日潔牙：已完成 ✨' : '🦷 今日潔牙：還沒登記';
+
             const updatedEl = document.getElementById('parent-updated-at');
             updatedEl.textContent = view.updatedAt ? `最後更新：${new Date(view.updatedAt).toLocaleString('zh-TW')}（資料會自動更新）` : '';
         }
@@ -3887,8 +3979,7 @@
 
         // 透過分享連結建立新看板後：直接打開使用說明，第一頁顯示班級代碼
         // ---- 潔牙站 ----
-        // 只存在這台裝置（教室電腦），每個班級代碼分開，日期不同就自動歸零
-        const BRUSH_KEY_PREFIX = 'checkpoint_brush_';
+        // 存在班級看板（雲端），老師手機、家長查詢都看得到；日期不同就當作新的一天（自動歸零）
 
         function todayKey() {
             const d = new Date();
@@ -3896,14 +3987,67 @@
         }
 
         function loadBrush() {
-            let data = null;
-            try { data = JSON.parse(localStorage.getItem(BRUSH_KEY_PREFIX + window.getClassCode()) || 'null'); } catch(e) {}
-            if (!data || data.date !== todayKey() || !Array.isArray(data.done)) data = { date: todayKey(), done: [] };
-            return data;
+            const b = window.state.brush || {};
+            return { date: todayKey(), done: b.date === todayKey() && Array.isArray(b.done) ? [...b.done] : [] };
         }
 
-        function saveBrush(data) {
-            try { localStorage.setItem(BRUSH_KEY_PREFIX + window.getClassCode(), JSON.stringify(data)); } catch(e) {}
+        function saveBrush(data, immediate = false) {
+            window.state.brush = { ...(window.state.brush || {}), date: data.date, done: data.done };
+            window.syncBrush(immediate);
+        }
+
+        function isBrushedToday(studentId) {
+            return loadBrush().done.includes(studentId);
+        }
+
+        function brushTips() {
+            const tips = window.state.brush?.tips;
+            return Array.isArray(tips) && tips.length ? tips : DEFAULT_BRUSH_TIPS;
+        }
+
+        // 提醒開頭如果是表情符號，就當作圖示
+        function splitTipIcon(tip) {
+            const m = String(tip).match(/^(\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic})*)\s*(.*)$/u);
+            return m ? { icon: m[1], text: m[2] } : { icon: '⭐', text: String(tip) };
+        }
+
+        function renderBrushTips() {
+            document.getElementById('brush-tips').innerHTML = brushTips().map(tip => {
+                const { icon, text } = splitTipIcon(tip);
+                return `<div class="bg-white rounded-2xl px-4 py-3 shadow-sm flex items-center gap-3 text-lg font-black text-slate-800"><span class="text-2xl">${escapeHtml(icon)}</span>${escapeHtml(text)}</div>`;
+            }).join('');
+        }
+
+        // 修改提醒（教師或小幫手）
+        function openBrushTips() {
+            if (!canEditBoard()) {
+                openTeacherAuthModal(openBrushTips, { allowHelper: true });
+                return;
+            }
+            const tips = brushTips();
+            document.getElementById('brush-tips-inputs').innerHTML = Array.from({ length: BRUSH_TIPS_MAX }, (_, i) =>
+                `<input type="text" maxlength="20" value="${escapeHtml(tips[i] || '')}" placeholder="${i < 3 ? escapeHtml(DEFAULT_BRUSH_TIPS[i]) : '（可留白）'}" class="brush-tip-input w-full bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2 text-lg font-black text-slate-800 focus:outline-none focus:border-amber-400">`
+            ).join('');
+            document.getElementById('modal-brush-tips').classList.remove('hidden');
+        }
+
+        function closeBrushTips() {
+            document.getElementById('modal-brush-tips').classList.add('hidden');
+        }
+
+        function saveBrushTips(useDefault = false) {
+            const tips = useDefault ? [...DEFAULT_BRUSH_TIPS]
+                : [...document.querySelectorAll('.brush-tip-input')].map(i => i.value.trim()).filter(Boolean).slice(0, BRUSH_TIPS_MAX);
+            if (tips.length === 0) {
+                showToast('至少要有一則提醒', false);
+                return;
+            }
+            window.state.brush = { ...(window.state.brush || {}), tips };
+            window.syncBrush(true);
+            renderBrushTips();
+            closeBrushTips();
+            window.soundEffect.playSuccess();
+            showToast(useDefault ? '已恢復預設提醒' : '提醒已更新');
         }
 
         function toothSvg(done, seat) {
@@ -3932,6 +4076,7 @@
         }
 
         function renderBrush(justDoneId = null) {
+            renderBrushTips();
             const data = loadBrush();
             const weekday = ['日', '一', '二', '三', '四', '五', '六'][new Date().getDay()];
             const now = new Date();
@@ -3997,7 +4142,7 @@
 
         function resetBrush() {
             if (!confirm('要把今天的潔牙紀錄全部清除嗎？')) return;
-            saveBrush({ date: todayKey(), done: [] });
+            saveBrush({ date: todayKey(), done: [] }, true);
             window.soundEffect.playToggle();
             renderBrush();
             showToast('潔牙任務表已重置');
