@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
-    <link href="assets/tailwind.css" rel="stylesheet">
+    <!-- 改了樣式就把 v= 加一，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
+    <link href="assets/tailwind.css?v=2" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -1550,17 +1551,17 @@
                 <h2 class="text-2xl sm:text-3xl font-black text-rose-500 bg-white border-4 border-pink-200 rounded-full px-6 sm:px-8 py-1 shadow-sm text-center tracking-wide">潔牙做得好，健康沒煩惱</h2>
                 <div id="brush-date" class="text-lg sm:text-xl font-black text-sky-800 bg-sky-100 rounded-full px-5 py-1"></div>
             </div>
-            <div class="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)] items-start">
+            <div class="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)] items-start">
                 <!-- 左：提醒與倒數計時 -->
                 <aside class="order-2 lg:order-none relative overflow-hidden bg-amber-50 border-4 border-amber-300 rounded-3xl p-4 shadow-md flex flex-col gap-3">
                     <div class="absolute -top-6 -right-6 text-8xl opacity-30 select-none pointer-events-none">⭐</div>
-                    <div class="relative self-center bg-amber-300 text-amber-900 font-black text-xl rounded-full px-6 py-2 shadow-sm">📌 小天使提醒區</div>
+                    <div class="relative self-center bg-amber-300 text-amber-900 font-black text-lg 2xl:text-xl rounded-full px-4 py-2 shadow-sm whitespace-nowrap">📌 小天使提醒區</div>
                     <div id="brush-tips" class="grid sm:grid-cols-3 lg:grid-cols-1 gap-2.5"></div>
                     <button onclick="openBrushTips()" class="teacher-ui self-end -mt-1 text-sm font-bold text-amber-700 hover:text-amber-900 underline underline-offset-2">✏️ 修改提醒</button>
                     <div id="brush-timer-box" class="bg-white border-4 border-sky-200 rounded-2xl p-4 flex flex-col items-center gap-2">
-                        <div class="flex items-center gap-2 text-lg font-black text-sky-700">
+                        <div class="flex items-center gap-2 text-lg font-black text-sky-700 whitespace-nowrap">
                             ⏱️ 倒數
-                            <select id="brush-timer-minutes" onchange="resetBrushTimer()" class="bg-sky-50 border-2 border-sky-200 rounded-lg px-2 py-0.5 text-base font-black text-slate-700">
+                            <select id="brush-timer-minutes" onchange="resetBrushTimer()" class="bg-sky-50 border-2 border-sky-200 rounded-lg px-1.5 py-0.5 text-base font-black text-slate-700 whitespace-nowrap">
                                 <option value="1">1 分鐘</option>
                                 <option value="2">2 分鐘</option>
                                 <option value="3" selected>3 分鐘</option>
@@ -1573,7 +1574,7 @@
                             <button onclick="resetBrushTimer()" class="bg-slate-400 hover:bg-slate-500 text-white font-black px-5 py-1.5 rounded-xl text-lg">重設</button>
                         </div>
                     </div>
-                    <div class="bg-yellow-200 rounded-xl text-center text-sm font-black tracking-wider whitespace-nowrap text-amber-700 py-2">KEEP CLEAN &amp; HEALTHY</div>
+                    <div class="bg-yellow-200 rounded-xl text-center text-sm font-black tracking-widest text-amber-700 py-2">KEEP CLEAN &amp; HEALTHY</div>
                 </aside>
                 <!-- 右：全班牙齒 -->
                 <section class="bg-white border-4 border-sky-200 rounded-3xl px-4 py-3 shadow-md">
@@ -1584,7 +1585,7 @@
                             <button onclick="resetBrush()" class="bg-rose-400 hover:bg-rose-500 text-white font-black px-3 py-1 rounded-full text-base">🔄 重置</button>
                         </div>
                     </div>
-                    <div id="brush-grid" class="grid gap-2 sm:gap-3" style="grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));"></div>
+                    <div id="brush-grid" class="grid gap-2 sm:gap-x-3 sm:gap-y-1" style="grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));"></div>
                     <p class="text-center text-sm font-bold text-slate-400 mt-2">潔完牙，點自己的牙齒就會打勾 ✨（點錯再點一次取消；每天會自動歸零）</p>
                     <!-- 抬餐：預設四菜一湯桶（可修改），抬完點一下變色 -->
                     <div class="mt-3 pt-2 border-t-4 border-amber-100">
@@ -4166,7 +4167,7 @@
                 <clipPath id="tooth-clip-${seat}"><path d="${toothPath}"/></clipPath>
                 <g clip-path="url(#tooth-clip-${seat})"><g class="shine"><rect x="0" y="-10" width="26" height="130" fill="#ffffff" opacity=".85" transform="skewX(-20)"/></g></g>
                 ${star(8, 58, 10, 't1')}${star(94, 44, 9, 't2')}${star(16, 100, 8, 't3')}${star(86, 96, 7, 't1')}` : '';
-            return `<svg viewBox="0 0 100 110" class="w-full h-auto overflow-visible" aria-hidden="true">
+            return `<svg viewBox="8 2 84 104" class="w-full h-auto overflow-visible" aria-hidden="true">
                 <path d="M50 14 C40 6 18 4 14 24 C10 44 20 56 24 74 C27 90 30 104 38 104 C46 104 44 82 50 82 C56 82 54 104 62 104 C70 104 73 90 76 74 C80 56 90 44 86 24 C82 4 60 6 50 14 Z" fill="${fill}" stroke="${stroke}" stroke-width="5" stroke-linejoin="round"/>
                 <circle cx="38" cy="25" r="4" fill="#1e293b"/><circle cx="62" cy="25" r="4" fill="#1e293b"/>
                 <circle cx="39.3" cy="23.7" r="1.3" fill="#fff"/><circle cx="63.3" cy="23.7" r="1.3" fill="#fff"/>
@@ -4209,18 +4210,19 @@
             if (window.innerWidth < 1024 || view.classList.contains('hidden') || count === 0) return;
             const section = grid.closest('section');
             const gap = parseFloat(getComputedStyle(grid).columnGap) || 12;
+            const rowGap = parseFloat(getComputedStyle(grid).rowGap) || 0;
             const fixed = section.offsetHeight - grid.offsetHeight + (section.getBoundingClientRect().top - view.getBoundingClientRect().top + view.scrollTop) + 10;
             const availH = view.clientHeight - fixed;
             const availW = grid.clientWidth;
             let best = null;
             for (let cols = 1; cols <= count; cols++) {
                 const rows = Math.ceil(count / cols);
-                // 牙齒圖 100×110，按鈕四周還有 4px 內距
-                const rowH = (availH - gap * (rows - 1)) / rows;
-                const w = Math.min((availW - gap * (cols - 1)) / cols, (rowH - 8) / 1.1 + 8, 160);
+                // 牙齒圖 84×104，按鈕四周還有 4px 內距
+                const rowH = (availH - rowGap * (rows - 1)) / rows;
+                const w = Math.min((availW - gap * (cols - 1)) / cols, (rowH - 8) / (104 / 84) + 8, 160);
                 if (!best || w > best.w) best = { cols, w };
             }
-            if (!best || best.w < 60) return;
+            if (!best || best.w < 56) return;
             grid.style.gridTemplateColumns = `repeat(${best.cols}, ${Math.floor(best.w)}px)`;
             grid.style.justifyContent = 'center';
         }
@@ -4276,12 +4278,10 @@
             grid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
             grid.innerHTML = items.map((name, i) => {
                 const done = meal[i];
-                return `<button id="meal-${i}" onclick="toggleMeal(${i})" class="brush-tooth ${done ? 'done' : ''} ${justDoneIndex === i ? 'just-done' : ''} relative flex flex-col lg:flex-row items-center justify-center gap-0.5 lg:gap-2 rounded-2xl border-4 px-1 py-1.5 lg:py-1 min-w-0 transition-colors ${done ? 'bg-emerald-50 border-emerald-300' : 'bg-white border-dashed border-slate-300 hover:bg-amber-50'}">
-                    <span class="block w-full lg:w-14 lg:flex-shrink-0">${mealIcon(name, done)}</span>
-                    <span class="flex flex-col items-center min-w-0">
-                        <span class="text-base sm:text-xl font-black whitespace-nowrap ${done ? 'text-emerald-700' : 'text-slate-700'}">${escapeHtml(name)}</span>
-                        <span class="text-[11px] sm:text-sm font-black whitespace-nowrap ${done ? 'text-emerald-600' : 'text-rose-500'}">${done ? '已抬<span class="hidden sm:inline"> ✨</span>' : '還沒抬'}</span>
-                    </span>
+                return `<button id="meal-${i}" onclick="toggleMeal(${i})" class="brush-tooth ${done ? 'done' : ''} ${justDoneIndex === i ? 'just-done' : ''} relative flex flex-col items-center gap-0.5 rounded-2xl border-4 px-1 py-1.5 min-w-0 transition-colors ${done ? 'bg-emerald-50 border-emerald-300' : 'bg-white border-dashed border-slate-300 hover:bg-amber-50'}">
+                    ${mealIcon(name, done)}
+                    <span class="text-base sm:text-xl font-black whitespace-nowrap ${done ? 'text-emerald-700' : 'text-slate-700'}">${escapeHtml(name)}</span>
+                    <span class="text-[11px] sm:text-sm font-black whitespace-nowrap ${done ? 'text-emerald-600' : 'text-rose-500'}">${done ? '已抬<span class="hidden sm:inline"> ✨</span>' : '還沒抬'}</span>
                 </button>`;
             }).join('');
         }
