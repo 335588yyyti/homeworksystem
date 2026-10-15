@@ -4181,11 +4181,20 @@
         }
 
         // 潔牙頁整天開著時，過了午夜要自動換成新的一天（打勾和抬餐歸零、日期更新）
+        // 只在午夜排一次計時，不用一直檢查
         let brushRenderedDay = '';
         function checkBrushNewDay() {
             if (window.state.currentTab === 'brush' && brushRenderedDay && brushRenderedDay !== todayKey()) renderBrush();
         }
-        setInterval(checkBrushNewDay, 60 * 1000);
+        function scheduleBrushMidnight() {
+            const now = new Date();
+            const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 5);
+            setTimeout(() => {
+                checkBrushNewDay();
+                scheduleBrushMidnight();
+            }, midnight - now);
+        }
+        scheduleBrushMidnight();
 
         function renderBrush(justDoneId = null) {
             brushRenderedDay = todayKey();
