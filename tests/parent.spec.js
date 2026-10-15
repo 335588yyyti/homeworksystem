@@ -83,7 +83,8 @@ test('重新開網頁時不重寫全班的家長查詢資料，只上傳有變�
     const cloud = createCloud();
     const page = await openDevice(browser, cloud);
     const viewWrites = () => page.writes.filter((p) => p.includes('/parent_views/')).length;
-    await expect.poll(viewWrites).toBe(28); // 第一次使用：上傳全班
+    // 模擬雲端一筆一筆寫入，GitHub 的測試電腦較慢時 28 筆要超過 10 秒
+    await expect.poll(viewWrites, { timeout: 20000 }).toBe(28); // 第一次使用：上傳全班
 
     page.writes.length = 0;
     await page.reload();
@@ -107,7 +108,7 @@ test('重新開網頁時不重寫全班的家長查詢資料，只上傳有變�
         localStorage.setItem('checkpoint_published_views_v2', JSON.stringify(cache));
     });
     await page.reload();
-    await expect.poll(viewWrites).toBe(28);
+    await expect.poll(viewWrites, { timeout: 20000 }).toBe(28);
 });
 
 test('輸入框的範例查詢碼不可能是真的查詢碼', async ({ browser }) => {
