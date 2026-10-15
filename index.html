@@ -4180,7 +4180,24 @@
             </svg>`;
         }
 
+        // 潔牙頁整天開著時，過了午夜要自動換成新的一天（打勾和抬餐歸零、日期更新）
+        // 只在午夜排一次計時，不用一直檢查
+        let brushRenderedDay = '';
+        function checkBrushNewDay() {
+            if (window.state.currentTab === 'brush' && brushRenderedDay && brushRenderedDay !== todayKey()) renderBrush();
+        }
+        function scheduleBrushMidnight() {
+            const now = new Date();
+            const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 5);
+            setTimeout(() => {
+                checkBrushNewDay();
+                scheduleBrushMidnight();
+            }, midnight - now);
+        }
+        scheduleBrushMidnight();
+
         function renderBrush(justDoneId = null) {
+            brushRenderedDay = todayKey();
             renderBrushTips();
             renderMeal();
             const data = loadBrush();
@@ -4580,6 +4597,13 @@
                     '也可以按「<b>列印家長查詢碼</b>」印出 QR Code 紙條，或用每位學生旁的「複製連結」個別傳。',
                     '家長只看得到自己孩子的作業狀況，看不到其他同學。',
                     '<b class="text-rose-600">班級代碼不要給家長</b>，家長只需要查詢碼。'
+                ]),
+                page('🦷', '潔牙站（可選用）', [
+                    '到「設定後台 → 看板設定」勾選「<b>🦷 開啟潔牙站</b>」，上方會多一個「<b>潔牙</b>」分頁；沒開啟就不會出現。',
+                    '學生潔完牙，點自己座號的牙齒就會打勾 ✨，點錯再點一次取消。',
+                    '<b>抬餐任務</b>：抬完點一下變色。今天的項目不一樣（例如多了豆奶、水果），按「<b>✏️ 修改項目</b>」增減格數。',
+                    '<b>小天使提醒區</b>的文字可以按「<b>✏️ 修改提醒</b>」更改；倒數計時可選 1～5 分鐘。',
+                    '潔牙和抬餐的紀錄<b>每天自動歸零</b>；家長查詢也會顯示孩子「今日潔牙」是否完成。'
                 ]),
                 page('⚙️', '其他小技巧', [
                     '<b>🙋 小幫手模式</b>：在設定後台開啟，讓小老師幫忙點紅燈、換作業，但不能進設定後台。',

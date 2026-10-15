@@ -249,3 +249,17 @@ test('筆電一頁放得下：版面不變、牙齒放大、座號清楚，不�
     expect(Math.round(r.asideW)).toBe(300);
     expect(r.tooth).toBeGreaterThanOrEqual(76);
 });
+
+test('潔牙頁整天開著：過了午夜自動歸零，不用重新整理', async ({ browser }) => {
+    const page = await openDevice(browser, createCloud());
+    await enableBrush(page);
+    await page.click('#tab-brush');
+    await page.click('#brush-5');
+    await page.click('#meal-0');
+    await expect(page.locator('#brush-progress')).toHaveText('1/28');
+    await expect(page.locator('#meal-progress')).toHaveText('1/5');
+    // 模擬昨天打勾、畫面停在昨天，時間走到今天
+    await page.evaluate(() => { state.brush.date = '2000-01-01'; brushRenderedDay = '2000-01-01'; checkBrushNewDay(); });
+    await expect(page.locator('#brush-progress')).toHaveText('0/28');
+    await expect(page.locator('#meal-progress')).toHaveText('0/5');
+});
