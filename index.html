@@ -1555,13 +1555,13 @@
                 <!-- 左：提醒與倒數計時 -->
                 <aside class="order-2 lg:order-none relative overflow-hidden bg-amber-50 border-4 border-amber-300 rounded-3xl p-4 shadow-md flex flex-col gap-3">
                     <div class="absolute -top-6 -right-6 text-8xl opacity-30 select-none pointer-events-none">⭐</div>
-                    <div class="relative self-center bg-amber-300 text-amber-900 font-black text-xl rounded-full px-6 py-2 shadow-sm">📌 小天使提醒區</div>
+                    <div class="relative self-center bg-amber-300 text-amber-900 font-black text-lg 2xl:text-xl rounded-full px-4 py-2 shadow-sm whitespace-nowrap">📌 小天使提醒區</div>
                     <div id="brush-tips" class="grid sm:grid-cols-3 lg:grid-cols-1 gap-2.5"></div>
                     <button onclick="openBrushTips()" class="teacher-ui self-end -mt-1 text-sm font-bold text-amber-700 hover:text-amber-900 underline underline-offset-2">✏️ 修改提醒</button>
                     <div id="brush-timer-box" class="bg-white border-4 border-sky-200 rounded-2xl p-4 flex flex-col items-center gap-2">
-                        <div class="flex items-center gap-2 text-lg font-black text-sky-700">
+                        <div class="flex items-center gap-2 text-lg font-black text-sky-700 whitespace-nowrap">
                             ⏱️ 倒數
-                            <select id="brush-timer-minutes" onchange="resetBrushTimer()" class="bg-sky-50 border-2 border-sky-200 rounded-lg px-2 py-0.5 text-base font-black text-slate-700">
+                            <select id="brush-timer-minutes" onchange="resetBrushTimer()" class="bg-sky-50 border-2 border-sky-200 rounded-lg px-1.5 py-0.5 text-base font-black text-slate-700 whitespace-nowrap">
                                 <option value="1">1 分鐘</option>
                                 <option value="2">2 分鐘</option>
                                 <option value="3" selected>3 分鐘</option>
