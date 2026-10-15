@@ -342,8 +342,9 @@
         // 潔牙站預設提醒（老師可以在潔牙頁修改），最多幾則
         window.DEFAULT_BRUSH_TIPS = ['🦷 吃完飯要潔牙', '🧽 擦桌子', '🚽 上廁所'];
         window.BRUSH_TIPS_MAX = 5;
-        // 抬餐：四個菜桶、一個湯桶
+        // 抬餐預設四個菜桶、一個湯桶（老師可在潔牙頁修改），最多幾格
         window.MEAL_ITEMS = ['菜 1', '菜 2', '菜 3', '菜 4', '湯桶'];
+        window.MEAL_MAX = 8;
         const MEAL_ITEMS = window.MEAL_ITEMS;
         const DEFAULT_BRUSH_TIPS = window.DEFAULT_BRUSH_TIPS;
         const BRUSH_TIPS_MAX = window.BRUSH_TIPS_MAX;
@@ -486,7 +487,7 @@
                 assignmentStatuses: {},
 
                 // 潔牙站：今天的日期、已打勾的學生 ID、提醒文字
-                brush: { enabled: false, date: '', done: [], meal: MEAL_ITEMS.map(() => false), tips: [...DEFAULT_BRUSH_TIPS] },
+                brush: { enabled: false, date: '', done: [], items: [...MEAL_ITEMS], meal: MEAL_ITEMS.map(() => false), tips: [...DEFAULT_BRUSH_TIPS] },
 
                 slots: [
                     { id: 1, assignment: '國習' },
@@ -931,10 +932,10 @@
             let saved = null;
             try { saved = JSON.parse(localStorage.getItem(PENDING_BRUSH_KEY) || 'null'); } catch(e) {}
             if (!saved || saved.code !== window.getClassCode() || !saved.brush) return false;
-            // 前幾天沒送出的打勾已經過期，只補送開關和提醒文字，不蓋掉今天的紀錄
+            // 前幾天沒送出的打勾已經過期，只補送開關、提醒文字和抬餐項目，不蓋掉今天的紀錄
             window.state.brush = saved.brush.date === todayKey()
                 ? { ...window.state.brush, ...saved.brush }
-                : { ...window.state.brush, enabled: saved.brush.enabled === true, tips: saved.brush.tips || window.state.brush.tips };
+                : { ...window.state.brush, enabled: saved.brush.enabled === true, tips: saved.brush.tips || window.state.brush.tips, items: saved.brush.items || window.state.brush.items };
             flushBrush();
             return true;
         }
@@ -1035,11 +1036,15 @@
             window.state.boardId = typeof d.boardId === 'string' && /^[a-z0-9]{8,32}$/.test(d.boardId) ? d.boardId : '';
             // 潔牙站：今天的日期、已打勾的學生、提醒文字（沒有資料時用預設提醒）
             const b = d.brush && typeof d.brush === 'object' ? d.brush : {};
+            // 抬餐項目可以自訂（每天菜色不同、加豆奶或水果）；舊資料用預設四菜一湯
+            const mealNames = Array.isArray(b.items) ? b.items.map(String).map(t => t.trim().slice(0, 8)).filter(Boolean).slice(0, MEAL_MAX) : [];
+            const items = mealNames.length ? mealNames : [...MEAL_ITEMS];
             window.state.brush = {
                 enabled: b.enabled === true,
                 date: typeof b.date === 'string' ? b.date : '',
                 done: Array.isArray(b.done) ? b.done.map(Number).filter(Number.isFinite) : [],
-                meal: Array.from({ length: MEAL_ITEMS.length }, (_, i) => !!(Array.isArray(b.meal) && b.meal[i])),
+                items,
+                meal: items.map((_, i) => !!(Array.isArray(b.meal) && b.meal[i])),
                 tips: Array.isArray(b.tips) ? b.tips.map(String).filter(t => t.trim()).slice(0, BRUSH_TIPS_MAX).map(t => t.slice(0, 20)) : [...DEFAULT_BRUSH_TIPS]
             };
 
@@ -1545,7 +1550,7 @@
                 <h2 class="text-2xl sm:text-3xl font-black text-rose-500 bg-white border-4 border-pink-200 rounded-full px-6 sm:px-8 py-1 shadow-sm text-center tracking-wide">潔牙做得好，健康沒煩惱</h2>
                 <div id="brush-date" class="text-lg sm:text-xl font-black text-sky-800 bg-sky-100 rounded-full px-5 py-1"></div>
             </div>
-            <div class="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)] items-start">
+            <div class="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)] items-start">
                 <!-- 左：提醒與倒數計時 -->
                 <aside class="order-2 lg:order-none relative overflow-hidden bg-amber-50 border-4 border-amber-300 rounded-3xl p-4 shadow-md flex flex-col gap-3">
                     <div class="absolute -top-6 -right-6 text-8xl opacity-30 select-none pointer-events-none">⭐</div>
@@ -1568,7 +1573,7 @@
                             <button onclick="resetBrushTimer()" class="bg-slate-400 hover:bg-slate-500 text-white font-black px-5 py-1.5 rounded-xl text-lg">重設</button>
                         </div>
                     </div>
-                    <div class="bg-yellow-200 rounded-xl text-center text-sm font-black tracking-widest text-amber-700 py-2">KEEP CLEAN &amp; HEALTHY</div>
+                    <div class="bg-yellow-200 rounded-xl text-center text-sm font-black tracking-wider whitespace-nowrap text-amber-700 py-2">KEEP CLEAN &amp; HEALTHY</div>
                 </aside>
                 <!-- 右：全班牙齒 -->
                 <section class="bg-white border-4 border-sky-200 rounded-3xl px-4 py-3 shadow-md">
@@ -1581,13 +1586,16 @@
                     </div>
                     <div id="brush-grid" class="grid gap-2 sm:gap-3" style="grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));"></div>
                     <p class="text-center text-sm font-bold text-slate-400 mt-2">潔完牙，點自己的牙齒就會打勾 ✨（點錯再點一次取消；每天會自動歸零）</p>
-                    <!-- 抬餐：四菜一湯桶，抬完點一下變色 -->
+                    <!-- 抬餐：預設四菜一湯桶（可修改），抬完點一下變色 -->
                     <div class="mt-3 pt-2 border-t-4 border-amber-100">
                         <div class="flex items-center justify-between gap-2 mb-2">
-                            <h3 class="text-2xl font-black text-amber-700">🍱 抬餐任務</h3>
-                            <span class="bg-amber-50 rounded-full px-3 py-1 text-base font-black text-amber-700">已抬 <span id="meal-progress">0/5</span></span>
+                            <h3 class="text-xl sm:text-2xl font-black text-amber-700 whitespace-nowrap">🍱 抬餐任務</h3>
+                            <div class="flex items-center gap-2">
+                                <button onclick="openMealEditor()" class="text-sm font-bold text-amber-700 hover:text-amber-900 underline underline-offset-2 whitespace-nowrap">✏️ 修改項目</button>
+                                <span class="bg-amber-50 rounded-full px-3 py-1 text-base font-black text-amber-700 whitespace-nowrap">已抬 <span id="meal-progress">0/5</span></span>
+                            </div>
                         </div>
-                        <div id="meal-grid" class="grid grid-cols-5 gap-1.5 sm:gap-3"></div>
+                        <div id="meal-grid" class="grid gap-1.5 sm:gap-3"></div>
                     </div>
                 </section>
             </div>
@@ -2140,6 +2148,31 @@
             <div class="grid grid-cols-2 gap-2.5 mt-3">
                 <button onclick="closeBrushTips()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-base transition-all">取消</button>
                 <button onclick="saveBrushTips()" class="bg-amber-400 hover:bg-amber-500 text-slate-900 font-black py-2.5 rounded-xl text-base transition-all">儲存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 修改抬餐項目 -->
+    <div id="modal-meal-items" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden" onclick="if (event.target === this) closeMealEditor()">
+        <div class="bg-white border-2 border-slate-200 rounded-3xl p-5 w-full max-w-md board-shadow flex flex-col max-h-full">
+            <div class="text-center mb-3">
+                <div class="text-3xl mb-1">🍱</div>
+                <h4 class="text-xl font-black text-slate-800">修改抬餐項目</h4>
+                <p class="text-sm text-slate-500 mt-0.5">今天要抬幾樣就留幾格（最多 8 格，每格最多 8 字）</p>
+            </div>
+            <div id="meal-item-inputs" class="flex flex-col gap-2 overflow-y-auto min-h-0"></div>
+            <div class="flex flex-wrap items-center gap-1.5 mt-2.5">
+                <span class="text-sm font-black text-slate-500">快速加入：</span>
+                <button onclick="addMealItemInput('菜')" class="text-sm font-bold px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200">＋ 菜</button>
+                <button onclick="addMealItemInput('湯桶')" class="text-sm font-bold px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200">＋ 湯桶</button>
+                <button onclick="addMealItemInput('豆奶')" class="text-sm font-bold px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200">＋ 豆奶</button>
+                <button onclick="addMealItemInput('水果')" class="text-sm font-bold px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200">＋ 水果</button>
+                <button onclick="addMealItemInput('')" class="text-sm font-bold px-2.5 py-1 rounded-lg bg-slate-50 text-slate-600 border border-slate-200">＋ 空白格</button>
+            </div>
+            <button onclick="saveMealItems(true)" class="mt-2 self-start text-sm font-bold text-slate-500 hover:text-slate-700 underline underline-offset-2">恢復預設（四菜一湯桶）</button>
+            <div class="grid grid-cols-2 gap-2.5 mt-3">
+                <button onclick="closeMealEditor()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-base transition-all">取消</button>
+                <button onclick="saveMealItems()" class="bg-amber-400 hover:bg-amber-500 text-slate-900 font-black py-2.5 rounded-xl text-base transition-all">儲存</button>
             </div>
         </div>
     </div>
@@ -2770,6 +2803,12 @@
         } else {
             window.addEventListener('resize', () => layoutDashboard());
         }
+        window.addEventListener('resize', () => {
+            if (window.state.currentTab === 'brush') {
+                renderMeal();
+                fitBrushGrid();
+            }
+        });
 
         // 渲染班級主看板
         function renderDashboard() {
@@ -4028,8 +4067,13 @@
             return {
                 date: todayKey(),
                 done: today && Array.isArray(b.done) ? [...b.done] : [],
-                meal: MEAL_ITEMS.map((_, i) => !!(today && Array.isArray(b.meal) && b.meal[i]))
+                meal: mealItems().map((_, i) => !!(today && Array.isArray(b.meal) && b.meal[i]))
             };
+        }
+
+        function mealItems() {
+            const items = window.state.brush?.items;
+            return Array.isArray(items) && items.length ? items : MEAL_ITEMS;
         }
 
         function saveBrush(data, immediate = false) {
@@ -4114,8 +4158,8 @@
             const fill = done ? '#d1fae5' : '#ffffff';
             const stroke = done ? '#059669' : '#64748b';
             const mouth = done
-                ? '<path d="M42 42 Q50 50 58 42" stroke="#065f46" stroke-width="3" fill="#fb7185" stroke-linecap="round"/>'
-                : '<path d="M45 43 Q50 47 55 43" stroke="#475569" stroke-width="2.5" fill="none" stroke-linecap="round"/>';
+                ? '<path d="M43 32 Q50 39 57 32" stroke="#065f46" stroke-width="2.5" fill="#fb7185" stroke-linecap="round"/>'
+                : '<path d="M45 33 Q50 37 55 33" stroke="#475569" stroke-width="2.5" fill="none" stroke-linecap="round"/>';
             const toothPath = 'M50 14 C40 6 18 4 14 24 C10 44 20 56 24 74 C27 90 30 104 38 104 C46 104 44 82 50 82 C56 82 54 104 62 104 C70 104 73 90 76 74 C80 56 90 44 86 24 C82 4 60 6 50 14 Z';
             const star = (x, y, r, cls) => `<path class="twinkle ${cls}" d="M${x} ${y - r} L${x + r * 0.28} ${y - r * 0.28} L${x + r} ${y} L${x + r * 0.28} ${y + r * 0.28} L${x} ${y + r} L${x - r * 0.28} ${y + r * 0.28} L${x - r} ${y} L${x - r * 0.28} ${y - r * 0.28} Z" fill="#fde047" stroke="#f59e0b" stroke-width="1"/>`;
             const sparkle = done ? `
@@ -4124,11 +4168,11 @@
                 ${star(8, 58, 10, 't1')}${star(94, 44, 9, 't2')}${star(16, 100, 8, 't3')}${star(86, 96, 7, 't1')}` : '';
             return `<svg viewBox="0 0 100 110" class="w-full h-auto overflow-visible" aria-hidden="true">
                 <path d="M50 14 C40 6 18 4 14 24 C10 44 20 56 24 74 C27 90 30 104 38 104 C46 104 44 82 50 82 C56 82 54 104 62 104 C70 104 73 90 76 74 C80 56 90 44 86 24 C82 4 60 6 50 14 Z" fill="${fill}" stroke="${stroke}" stroke-width="5" stroke-linejoin="round"/>
-                <circle cx="38" cy="32" r="4.5" fill="#1e293b"/><circle cx="62" cy="32" r="4.5" fill="#1e293b"/>
-                <circle cx="39.4" cy="30.6" r="1.5" fill="#fff"/><circle cx="63.4" cy="30.6" r="1.5" fill="#fff"/>
-                <ellipse cx="28" cy="41" rx="5" ry="3" fill="#f9a8d4" opacity=".8"/><ellipse cx="72" cy="41" rx="5" ry="3" fill="#f9a8d4" opacity=".8"/>
+                <circle cx="38" cy="25" r="4" fill="#1e293b"/><circle cx="62" cy="25" r="4" fill="#1e293b"/>
+                <circle cx="39.3" cy="23.7" r="1.3" fill="#fff"/><circle cx="63.3" cy="23.7" r="1.3" fill="#fff"/>
+                <ellipse cx="28" cy="32" rx="4.5" ry="2.6" fill="#f9a8d4" opacity=".8"/><ellipse cx="72" cy="32" rx="4.5" ry="2.6" fill="#f9a8d4" opacity=".8"/>
                 ${mouth}
-                <text x="50" y="72" text-anchor="middle" font-size="24" font-weight="900" fill="${done ? '#047857' : '#334155'}" font-family="Nunito, sans-serif">${seat}</text>
+                <text x="50" y="${seat.length > 2 ? 74 : 78}" text-anchor="middle" font-size="${seat.length > 2 ? 28 : seat.length > 1 ? 38 : 44}" font-weight="900" fill="${done ? '#047857' : '#1e293b'}" font-family="Nunito, sans-serif">${seat}</text>
                 <path d="M24 16 l2 5 l5 2 l-5 2 l-2 5 l-2 -5 l-5 -2 l5 -2 z" fill="#fde047"/>
                 ${sparkle}
                 ${done ? '<circle cx="82" cy="16" r="13" fill="#10b981" stroke="#fff" stroke-width="3"/><path d="M75.5 16 l4.5 4.5 l8.5 -9" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' : ''}
@@ -4152,20 +4196,65 @@
                     ${toothSvg(done, seat)}
                 </button>`;
             }).join('');
+            fitBrushGrid();
         }
 
-        function mealIcon(index, done) {
+        // 電腦和投影：依螢幕剩下的空間算出每排幾顆，讓牙齒盡量大又不用捲動
+        function fitBrushGrid() {
+            const grid = document.getElementById('brush-grid');
+            const view = document.getElementById('view-brush');
+            const count = grid.children.length;
+            grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(72px, 1fr))';
+            grid.style.justifyContent = '';
+            if (window.innerWidth < 1024 || view.classList.contains('hidden') || count === 0) return;
+            const section = grid.closest('section');
+            const gap = parseFloat(getComputedStyle(grid).columnGap) || 12;
+            const fixed = section.offsetHeight - grid.offsetHeight + (section.getBoundingClientRect().top - view.getBoundingClientRect().top + view.scrollTop) + 10;
+            const availH = view.clientHeight - fixed;
+            const availW = grid.clientWidth;
+            let best = null;
+            for (let cols = 1; cols <= count; cols++) {
+                const rows = Math.ceil(count / cols);
+                // 牙齒圖 100×110，按鈕四周還有 4px 內距
+                const rowH = (availH - gap * (rows - 1)) / rows;
+                const w = Math.min((availW - gap * (cols - 1)) / cols, (rowH - 8) / 1.1 + 8, 160);
+                if (!best || w > best.w) best = { cols, w };
+            }
+            if (!best || best.w < 60) return;
+            grid.style.gridTemplateColumns = `repeat(${best.cols}, ${Math.floor(best.w)}px)`;
+            grid.style.justifyContent = 'center';
+        }
+
+        function mealIcon(name, done) {
             const stroke = done ? '#047857' : '#64748b';
             const body = done ? '#a7f3d0' : '#f1f5f9';
             const lid = done ? '#34d399' : '#cbd5e1';
-            if (index === MEAL_ITEMS.length - 1) {
+            const check = '<path d="M36 50 l9 9 l18 -18" stroke="#047857" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>';
+            if (/奶|漿|飲|乳/.test(name)) {
+                // 豆奶／牛奶：紙盒
+                return `<svg viewBox="0 0 100 80" class="w-full h-auto max-h-14 sm:max-h-16" aria-hidden="true">
+                    <path d="M32 22 L50 6 L68 22 Z" fill="${lid}" stroke="${stroke}" stroke-width="4" stroke-linejoin="round"/>
+                    <rect x="32" y="22" width="36" height="52" rx="4" fill="${body}" stroke="${stroke}" stroke-width="4"/>
+                    ${done ? check.replace('M36 50', 'M38 48').replace('l18 -18', 'l14 -14') : '<path d="M40 44 h20 M40 54 h14" stroke="#94a3b8" stroke-width="3" stroke-linecap="round"/>'}
+                </svg>`;
+            }
+            if (/果|蕉|蘋|橘|柳|瓜/.test(name)) {
+                // 水果：蘋果
+                return `<svg viewBox="0 0 100 80" class="w-full h-auto max-h-14 sm:max-h-16" aria-hidden="true">
+                    <path d="M50 22 Q50 10 58 6" stroke="${stroke}" stroke-width="4" fill="none" stroke-linecap="round"/>
+                    <path d="M52 14 Q64 6 70 14 Q60 20 52 14 Z" fill="${lid}" stroke="${stroke}" stroke-width="3"/>
+                    <path d="M50 24 C40 16 22 20 24 42 C26 62 38 76 50 72 C62 76 74 62 76 42 C78 20 60 16 50 24 Z" fill="${done ? '#a7f3d0' : '#fee2e2'}" stroke="${stroke}" stroke-width="4" stroke-linejoin="round"/>
+                    ${done ? check : ''}
+                </svg>`;
+            }
+            if (/湯/.test(name)) {
                 // 湯桶：有提把的圓桶
                 return `<svg viewBox="0 0 100 80" class="w-full h-auto max-h-14 sm:max-h-16" aria-hidden="true">
                     <path d="M30 22 Q50 0 70 22" stroke="${stroke}" stroke-width="5" fill="none" stroke-linecap="round"/>
                     <rect x="18" y="20" width="64" height="10" rx="5" fill="${lid}" stroke="${stroke}" stroke-width="4"/>
                     <path d="M22 30 H78 L74 72 Q50 80 26 72 Z" fill="${body}" stroke="${stroke}" stroke-width="4" stroke-linejoin="round"/>
                     <path d="M14 40 h8 M78 40 h8" stroke="${stroke}" stroke-width="5" stroke-linecap="round"/>
-                    ${done ? '<path d="M36 52 l9 9 l18 -18" stroke="#047857" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' : '<path d="M38 50 q6 -6 12 0 t12 0" stroke="#94a3b8" stroke-width="3" fill="none" stroke-linecap="round"/>'}
+                    ${done ? check.replace('M36 50', 'M36 52') : '<path d="M38 50 q6 -6 12 0 t12 0" stroke="#94a3b8" stroke-width="3" fill="none" stroke-linecap="round"/>'}
                 </svg>`;
             }
             // 菜桶：長方形餐桶加蓋
@@ -4173,21 +4262,86 @@
                 <rect x="40" y="10" width="20" height="8" rx="4" fill="${lid}" stroke="${stroke}" stroke-width="4"/>
                 <rect x="12" y="18" width="76" height="14" rx="7" fill="${lid}" stroke="${stroke}" stroke-width="4"/>
                 <rect x="16" y="32" width="68" height="38" rx="8" fill="${body}" stroke="${stroke}" stroke-width="4"/>
-                ${done ? '<path d="M36 50 l9 9 l18 -18" stroke="#047857" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' : ''}
+                ${done ? check : ''}
             </svg>`;
         }
 
         function renderMeal(justDoneIndex = null) {
             const meal = loadBrush().meal;
-            document.getElementById('meal-progress').textContent = `${meal.filter(Boolean).length}/${MEAL_ITEMS.length}`;
-            document.getElementById('meal-grid').innerHTML = MEAL_ITEMS.map((name, i) => {
+            const items = mealItems();
+            document.getElementById('meal-progress').textContent = `${meal.filter(Boolean).length}/${items.length}`;
+            const grid = document.getElementById('meal-grid');
+            // 手機太窄：超過 5 格就分兩排
+            const cols = window.innerWidth < 640 && items.length > 5 ? Math.ceil(items.length / 2) : items.length;
+            grid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+            grid.innerHTML = items.map((name, i) => {
                 const done = meal[i];
-                return `<button id="meal-${i}" onclick="toggleMeal(${i})" class="brush-tooth ${done ? 'done' : ''} ${justDoneIndex === i ? 'just-done' : ''} relative flex flex-col items-center gap-0.5 rounded-2xl border-4 px-1 py-1.5 transition-colors ${done ? 'bg-emerald-50 border-emerald-300' : 'bg-white border-dashed border-slate-300 hover:bg-amber-50'}">
-                    ${mealIcon(i, done)}
-                    <span class="text-base sm:text-xl font-black whitespace-nowrap ${done ? 'text-emerald-700' : 'text-slate-700'}">${escapeHtml(name)}</span>
-                    <span class="text-[11px] sm:text-sm font-black whitespace-nowrap ${done ? 'text-emerald-600' : 'text-rose-500'}">${done ? '已抬<span class="hidden sm:inline"> ✨</span>' : '還沒抬'}</span>
+                return `<button id="meal-${i}" onclick="toggleMeal(${i})" class="brush-tooth ${done ? 'done' : ''} ${justDoneIndex === i ? 'just-done' : ''} relative flex flex-col lg:flex-row items-center justify-center gap-0.5 lg:gap-2 rounded-2xl border-4 px-1 py-1.5 lg:py-1 min-w-0 transition-colors ${done ? 'bg-emerald-50 border-emerald-300' : 'bg-white border-dashed border-slate-300 hover:bg-amber-50'}">
+                    <span class="block w-full lg:w-14 lg:flex-shrink-0">${mealIcon(name, done)}</span>
+                    <span class="flex flex-col items-center min-w-0">
+                        <span class="text-base sm:text-xl font-black whitespace-nowrap ${done ? 'text-emerald-700' : 'text-slate-700'}">${escapeHtml(name)}</span>
+                        <span class="text-[11px] sm:text-sm font-black whitespace-nowrap ${done ? 'text-emerald-600' : 'text-rose-500'}">${done ? '已抬<span class="hidden sm:inline"> ✨</span>' : '還沒抬'}</span>
+                    </span>
                 </button>`;
             }).join('');
+        }
+
+        // 修改抬餐項目（教師或小幫手）
+        function openMealEditor() {
+            if (!canEditBoard()) {
+                openTeacherAuthModal(openMealEditor, { allowHelper: true });
+                return;
+            }
+            document.getElementById('meal-item-inputs').innerHTML = '';
+            mealItems().forEach(name => addMealItemInput(name, false));
+            document.getElementById('modal-meal-items').classList.remove('hidden');
+        }
+
+        function closeMealEditor() {
+            document.getElementById('modal-meal-items').classList.add('hidden');
+        }
+
+        // 「菜」會自動編號：菜 1、菜 2…
+        function addMealItemInput(name, focus = true) {
+            const box = document.getElementById('meal-item-inputs');
+            if (box.children.length >= MEAL_MAX) {
+                showToast(`最多 ${MEAL_MAX} 格`, false);
+                return;
+            }
+            if (name === '菜') {
+                const used = [...box.querySelectorAll('.meal-item-input')].map(i => i.value.trim());
+                let n = 1;
+                while (used.includes(`菜 ${n}`)) n++;
+                name = `菜 ${n}`;
+            }
+            const row = document.createElement('div');
+            row.className = 'flex gap-2';
+            row.innerHTML = `<input type="text" maxlength="8" value="${escapeHtml(name)}" placeholder="例如：菜 5、豆奶" class="meal-item-input flex-grow min-w-0 bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2 text-lg font-black text-slate-800 focus:outline-none focus:border-amber-400">
+                <button onclick="this.parentElement.remove()" class="flex-shrink-0 w-11 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-500 font-black text-lg" title="刪除這格">✕</button>`;
+            box.appendChild(row);
+            if (focus && !name) row.querySelector('input').focus();
+        }
+
+        function saveMealItems(useDefault = false) {
+            const items = useDefault ? [...MEAL_ITEMS]
+                : [...document.querySelectorAll('.meal-item-input')].map(i => i.value.trim().slice(0, 8)).filter(Boolean).slice(0, MEAL_MAX);
+            if (items.length === 0) {
+                showToast('至少要有一格', false);
+                return;
+            }
+            // 名稱沒變的格子保留今天「已抬」的紀錄
+            const data = loadBrush();
+            const oldItems = mealItems();
+            const meal = items.map(name => {
+                const j = oldItems.indexOf(name);
+                return j >= 0 ? data.meal[j] : false;
+            });
+            window.state.brush = { ...(window.state.brush || {}), items, date: data.date, done: data.done, meal };
+            window.syncBrush(true);
+            renderMeal();
+            closeMealEditor();
+            window.soundEffect.playSuccess();
+            showToast(useDefault ? '已恢復四菜一湯桶' : '抬餐項目已更新');
         }
 
         let mealPopTimer = null;
@@ -4206,7 +4360,7 @@
             const data = loadBrush();
             data.meal[index] = !data.meal[index];
             saveBrush(data);
-            const name = MEAL_ITEMS[index];
+            const name = mealItems()[index];
             if (data.meal[index]) {
                 window.soundEffect.playSuccess();
                 showMealPop(data.meal.every(Boolean));
@@ -4270,7 +4424,7 @@
 
         function resetBrush() {
             if (!confirm('要把今天的潔牙和抬餐紀錄全部清除嗎？')) return;
-            saveBrush({ date: todayKey(), done: [], meal: MEAL_ITEMS.map(() => false) }, true);
+            saveBrush({ date: todayKey(), done: [], meal: mealItems().map(() => false) }, true);
             window.soundEffect.playToggle();
             renderBrush();
             showToast('潔牙任務表已重置');

@@ -185,3 +185,62 @@ test('抬餐任務：四菜一湯桶，抬完點一下變色，存雲端、每�
     for (let i = 0; i < 5; i++) await phone.click(`#meal-${i}`);
     await expect(phone.locator('#meal-pop-msg')).toHaveText('謝謝你們的幫忙～都抬完了！🎉');
 });
+
+test('抬餐項目可以修改：加豆奶、水果，刪掉一格，名稱沒變的保留已抬', async ({ browser }) => {
+    const cloud = createCloud();
+    const page = await openDevice(browser, cloud);
+    await enableBrush(page);
+    await page.click('#tab-brush');
+    await page.click('#meal-4');
+
+    await page.click('button:has-text("修改項目")');
+    await expect(page.locator('#modal-teacher-auth')).toBeVisible();
+    await page.click('#modal-teacher-auth button:has-text("取消")');
+    await page.evaluate(() => { startTeacherSession(); applyRoleUI('teacher'); });
+
+    await page.click('button:has-text("修改項目")');
+    const inputs = page.locator('.meal-item-input');
+    await expect(inputs).toHaveCount(5);
+    // 刪掉「菜 4」，再加「菜」（自動編號成菜 4）、豆奶、水果
+    await page.locator('#meal-item-inputs > div').nth(3).locator('button').click();
+    await page.click('#modal-meal-items button:has-text("＋ 菜")');
+    await page.click('#modal-meal-items button:has-text("＋ 豆奶")');
+    await page.click('#modal-meal-items button:has-text("＋ 水果")');
+    await expect(inputs).toHaveCount(7);
+    await expect(inputs.nth(4)).toHaveValue('菜 4');
+    await page.click('#modal-meal-items button:has-text("儲存")');
+
+    await expect(page.locator('#meal-grid > button')).toHaveCount(7);
+    await expect(page.locator('#meal-5')).toContainText('豆奶');
+    await expect(page.locator('#meal-6')).toContainText('水果');
+    // 湯桶原本已抬，換位置後仍是已抬
+    await expect(page.locator('#meal-3')).toContainText('湯桶');
+    await expect(page.locator('#meal-3')).toHaveClass(/done/);
+    await expect(page.locator('#meal-progress')).toHaveText('1/7');
+    await expect.poll(() => cloud.board('main').brush?.items).toEqual(['菜 1', '菜 2', '菜 3', '湯桶', '菜 4', '豆奶', '水果']);
+
+    // 其他裝置同步；重新開啟也還在
+    const phone = await openDevice(browser, cloud);
+    await expect(phone.locator('#tab-brush')).toBeVisible();
+    await phone.click('#tab-brush');
+    await expect(phone.locator('#meal-grid > button')).toHaveCount(7);
+    await expect(phone.locator('#meal-3')).toHaveClass(/done/);
+
+    // 恢復預設
+    await page.click('button:has-text("修改項目")');
+    await page.click('#modal-meal-items button:has-text("恢復預設")');
+    await expect(page.locator('#meal-grid > button')).toHaveCount(5);
+    await expect(page.locator('#meal-4')).toHaveClass(/done/);
+});
+
+test('筆電一頁放得下：牙齒放大、座號清楚，不用捲動', async ({ browser }) => {
+    const page = await openDevice(browser, createCloud(), { viewport: { width: 1366, height: 768 } });
+    await enableBrush(page);
+    await page.click('#tab-brush');
+    const r = await page.evaluate(() => {
+        const v = document.getElementById('view-brush');
+        return { scroll: v.scrollHeight - v.clientHeight, tooth: document.getElementById('brush-28').getBoundingClientRect().width };
+    });
+    expect(r.scroll).toBeLessThanOrEqual(0);
+    expect(r.tooth).toBeGreaterThanOrEqual(86);
+});
