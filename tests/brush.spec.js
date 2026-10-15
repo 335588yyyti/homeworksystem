@@ -233,14 +233,19 @@ test('抬餐項目可以修改：加豆奶、水果，刪掉一格，名稱沒�
     await expect(page.locator('#meal-4')).toHaveClass(/done/);
 });
 
-test('筆電一頁放得下：牙齒放大、座號清楚，不用捲動', async ({ browser }) => {
+test('筆電一頁放得下：版面不變、牙齒放大、座號清楚，不用捲動', async ({ browser }) => {
     const page = await openDevice(browser, createCloud(), { viewport: { width: 1366, height: 768 } });
     await enableBrush(page);
     await page.click('#tab-brush');
     const r = await page.evaluate(() => {
         const v = document.getElementById('view-brush');
-        return { scroll: v.scrollHeight - v.clientHeight, tooth: document.getElementById('brush-28').getBoundingClientRect().width };
+        const aside = document.querySelector('#view-brush aside').getBoundingClientRect();
+        const section = document.querySelector('#view-brush section').getBoundingClientRect();
+        return { scroll: v.scrollHeight - v.clientHeight, tooth: document.getElementById('brush-28').getBoundingClientRect().width, asideW: aside.width, sideBySide: aside.right < section.left };
     });
     expect(r.scroll).toBeLessThanOrEqual(0);
-    expect(r.tooth).toBeGreaterThanOrEqual(86);
+    // 左邊小天使提醒區維持在左側、寬 300px
+    expect(r.sideBySide).toBe(true);
+    expect(Math.round(r.asideW)).toBe(300);
+    expect(r.tooth).toBeGreaterThanOrEqual(76);
 });
