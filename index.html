@@ -511,7 +511,6 @@
             isHelperUnlocked: false, // 小幫手：只能在看板登記紅燈、更換作業，不能進設定後台
             teacherTimer: null,
             pendingTeacherAction: null,
-            targetCustomSlotIndex: null,
 
             ...window.createDefaultBoard(),
 
@@ -1980,28 +1979,6 @@
         </div>
     </main>
 
-    <!-- 1. 自訂作業輸入 Modal -->
-    <div id="modal-custom-input" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
-        <div class="bg-white border-2 border-slate-200 rounded-3xl p-5 w-full max-w-sm board-shadow">
-            <div class="text-center mb-4">
-                <div class="bg-amber-50 text-amber-600 w-11 h-11 rounded-2xl flex items-center justify-center mx-auto mb-2 border border-amber-200">
-                    <i class="fa-solid fa-keyboard text-lg"></i>
-                </div>
-                <h4 class="text-base font-black text-slate-800">自行輸入作業名稱</h4>
-                <p class="text-xs text-slate-400 mt-0.5">請輸入新追加或臨時的作業項目</p>
-            </div>
-            <input type="text" id="custom-assignment-name" maxlength="20" onkeydown="if(event.key === 'Enter') closeCustomInputModal(true)" placeholder="例如: 國單、大考卷、勞作" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-center font-black text-slate-800 focus:outline-none focus:border-amber-400 mb-4 text-sm">
-            <div class="grid grid-cols-2 gap-2.5">
-                <button onclick="closeCustomInputModal(false)" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2 rounded-xl text-xs transition-all">
-                    取消
-                </button>
-                <button onclick="closeCustomInputModal(true)" class="bg-amber-400 hover:bg-amber-500 text-slate-900 font-black py-2 rounded-xl text-xs transition-all">
-                    確認新增
-                </button>
-            </div>
-        </div>
-    </div>
-
     <!-- 未訂正名單（全螢幕，方便投影給全班看） -->
     <div id="modal-pending-list" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-stretch justify-center p-3 sm:p-6 hidden" onclick="if (event.target === this) closePendingList()">
         <div class="bg-white border-2 border-slate-200 rounded-3xl w-full max-w-[1600px] flex flex-col min-h-0 board-shadow">
@@ -2884,7 +2861,7 @@
                 let optionsHtml = window.state.assignments.map(asgn =>
                     `<option value="${escapeHtml(asgn)}" ${asgn === slot.assignment ? 'selected' : ''}>${escapeHtml(asgn === slot.assignment ? splitAssignment(asgn).base : asgn)}</option>`
                 ).join('');
-                optionsHtml += `<option value="__custom__">+ 自行輸入...</option>`;
+                optionsHtml += `<option value="__custom__">＋ 新增作業（可填日期頁數）…</option>`;
 
                 // 卡片標頭：序號 + 作業名稱選單 + 右側狀態標籤
                 const headerHtml = `
@@ -3115,10 +3092,9 @@
                 return;
             }
             if (val === '__custom__') {
-                window.state.targetCustomSlotIndex = slotIndex;
-                document.getElementById('custom-assignment-name').value = '';
-                document.getElementById('modal-custom-input').classList.remove('hidden');
-                setTimeout(() => document.getElementById('custom-assignment-name').focus(), 100);
+                // 和「新增並放上看板」同一個視窗（可選日期、填頁數），預設放到這一框
+                renderDashboard(); // 選單先還原，取消時不會停在「新增作業」
+                openNewOnBoard(slotIndex);
                 return;
             }
             applyAssignmentToSlot(slotIndex, val);
@@ -3140,38 +3116,10 @@
             window.syncStateToCloud();
         }
 
-        function closeCustomInputModal(confirmed) {
-            const modal = document.getElementById('modal-custom-input');
-            modal.classList.add('hidden');
-
-            if (confirmed && window.state.targetCustomSlotIndex !== null) {
-                const name = document.getElementById('custom-assignment-name').value.trim();
-                if (name) {
-                    if (!window.state.assignments.includes(name)) {
-                        if (window.state.assignments.length >= MAX_ASSIGNMENTS) {
-                            window.soundEffect.playAlert();
-                            showToast(`作業項目最多 ${MAX_ASSIGNMENTS} 項，請先到設定後台刪除用不到的`, false);
-                            renderDashboard();
-                            window.state.targetCustomSlotIndex = null;
-                            return;
-                        }
-                        window.state.assignments.push(name);
-                    }
-                    applyAssignmentToSlot(window.state.targetCustomSlotIndex, name);
-                    showToast(`新增作業：【${name}】`);
-                } else {
-                    renderDashboard();
-                }
-            } else {
-                renderDashboard();
-            }
-            window.state.targetCustomSlotIndex = null;
-        }
-
         // ---- 新增作業並放上看板 ----
-        function openNewOnBoard() {
+        function openNewOnBoard(slotIndex = null) {
             if (!canEditBoard()) {
-                openTeacherAuthModal(openNewOnBoard, { allowHelper: true });
+                openTeacherAuthModal(() => openNewOnBoard(slotIndex), { allowHelper: true });
                 return;
             }
             const select = document.getElementById('new-on-board-slot');
@@ -3181,7 +3129,7 @@
                 const label = `第 ${i + 1} 框：${slot.assignment}（${pending > 0 ? `還有 ${pending} 人沒訂正` : '全班已完成'}）`;
                 return `<option value="${i}">${escapeHtml(label)}</option>`;
             }).join('');
-            select.value = String(firstDone >= 0 ? firstDone : 0);
+            select.value = String(Number.isInteger(slotIndex) ? slotIndex : (firstDone >= 0 ? firstDone : 0));
             document.getElementById('new-on-board-name').value = '';
             // 通常是改前一天的作業：日期預設前一個上課日（週一、週日預設上週五），可以自己改
             document.getElementById('new-on-board-date').value = toDateInputValue(previousSchoolDay(new Date()));
