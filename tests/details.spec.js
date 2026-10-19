@@ -103,3 +103,31 @@ test('設定後台可以一次刪除全班已完成、不在看板上的舊日�
     expect(list).toContain('國習');
     await expect(page.locator('#toast-msg')).toContainText('已刪除 1 項');
 });
+
+test('家長頁和未訂正名單：同一本作業的不同次合在一起，日期頁數列在下面', async ({ browser }) => {
+    const cloud = createCloud();
+    const page = await openDevice(browser, cloud);
+    await page.evaluate(() => {
+        state.assignments.push('國習｜10/15 p.20', '國習｜10/16 p.23-24', '國習｜10/17');
+        setStudentStatus('國習｜10/15 p.20', 3, false);
+        setStudentStatus('國習｜10/16 p.23-24', 3, false);
+        setStudentStatus('國習｜10/17', 3, 'missing');
+        renderDashboard();
+        syncStateToCloud(true);
+    });
+    const code = await page.evaluate(() => state.students.find((s) => s.id === 3).parentCode);
+    await expect.poll(() => cloud.view(code)?.items.filter((i) => !i.finished).length, { timeout: 20000 }).toBe(3);
+    const parent = await openDevice(browser, cloud, { query: '?p=' + code, viewport: { width: 390, height: 844 } });
+    const cards = parent.locator('#parent-assignment-list > div');
+    await expect(cards).toHaveCount(2); // 缺交一格、待訂正一格
+    await expect(cards.nth(0)).toContainText('缺交');
+    await expect(cards.nth(0)).toContainText('10/17');
+    await expect(cards.nth(1)).toContainText('國習');
+    await expect(cards.nth(1)).toContainText('10/15 p.20');
+    await expect(cards.nth(1)).toContainText('10/16 p.23-24');
+    await expect(parent.locator('#parent-status-title')).toHaveText('缺交 1 項、待訂正 2 項');
+
+    await page.click('#pending-list-button');
+    await expect(page.locator('#pending-list-body')).toContainText('國習 10/15 p.20、10/16 p.23-24');
+    await expect(page.locator('#pending-list-body')).toContainText('缺交・國習 10/17');
+});

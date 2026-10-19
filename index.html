@@ -3096,7 +3096,11 @@
                         <div class="min-w-0 flex-1">
                             <div class="text-lg font-black text-rose-800 mb-1">還有 ${pending.length} 項</div>
                             <div class="flex flex-wrap gap-1.5">${
-                                pending.map(item => `<span class="px-2 py-0.5 rounded-lg text-base font-bold ${item.missing ? 'bg-orange-100 text-orange-800 border border-orange-300' : (item.onBoard ? 'bg-white text-slate-800 border border-rose-300' : 'bg-white/60 text-slate-600 border border-slate-200')}">${item.missing ? '缺交・' : ''}${escapeHtml(item.name)}</span>`).join('')
+                                [...groupByBase(pending.filter(i => i.missing)).map(g => ({ ...g, missing: true })), ...groupByBase(pending.filter(i => !i.missing))].map(g => {
+                                    const onBoard = g.items.some(i => i.onBoard);
+                                    const details = g.items.map(i => i.detail).filter(Boolean);
+                                    return `<span class="px-2 py-0.5 rounded-lg text-base font-bold ${g.missing ? 'bg-orange-100 text-orange-800 border border-orange-300' : (onBoard ? 'bg-white text-slate-800 border border-rose-300' : 'bg-white/60 text-slate-600 border border-slate-200')}">${g.missing ? '缺交・' : ''}${escapeHtml(g.base)}${details.length ? `<span class="text-sm font-black opacity-80"> ${escapeHtml(details.join('、'))}</span>` : ''}</span>`;
+                                }).join('')
                             }</div>
                         </div>
                     </div>`).join('')
@@ -3684,6 +3688,17 @@
 
         // 只依據單一學生摘要畫出結果（教師檢視、教室查詢、家長雲端查詢共用）
         // 全部完成：只顯示總完成度 100% 與「目前無需訂正」；有待訂正：只列出待訂正的作業
+        // 依作業名稱分組：「國習｜10/15」「國習｜10/16」→ 國習：10/15、10/16（保持原本順序）
+        function groupByBase(items) {
+            const groups = new Map();
+            items.forEach(item => {
+                const { base, detail } = splitAssignment(item.name ?? '');
+                if (!groups.has(base)) groups.set(base, { base, items: [] });
+                groups.get(base).items.push({ ...item, detail });
+            });
+            return [...groups.values()];
+        }
+
         function renderParentView(view) {
             const items = Array.isArray(view.items) ? view.items : [];
             const pending = items.filter(item => !item.finished);
@@ -3713,14 +3728,18 @@
                     : (toFix.length === 0 ? `有 ${missing.length} 項作業缺交` : `缺交 ${missing.length} 項、待訂正 ${toFix.length} 項`);
                 document.getElementById('parent-pending-title').innerText = missing.length ? '缺交與需要訂正的作業：' : '需要訂正的作業：';
                 pendingSection.classList.remove('hidden');
-                [...missing, ...toFix].forEach(item => {
+                // 同一本作業的不同次（例如國習 10/15、10/16）放在同一格，日期頁數列在下面
+                [...groupByBase(missing).map(g => ({ ...g, missing: true })), ...groupByBase(toFix)].forEach(group => {
                     const itemDiv = document.createElement('div');
+                    const hasDetail = group.items.some(i => i.detail);
                     // 名稱不截斷：空間不夠時「看板中」標籤換到下一行
-                    itemDiv.className = `flex flex-wrap items-center gap-1 px-2.5 py-2 rounded-xl border min-w-0 ${item.missing ? 'bg-orange-50 border-orange-300' : 'bg-rose-50 border-rose-200'}`;
+                    itemDiv.className = `flex flex-wrap items-center gap-1 px-2.5 py-2 rounded-xl border min-w-0 ${group.missing ? 'bg-orange-50 border-orange-300' : 'bg-rose-50 border-rose-200'} ${hasDetail ? 'col-span-2' : ''}`;
                     itemDiv.innerHTML = `
-                        ${item.missing ? `<span class="text-[13px] font-black px-1.5 py-0.5 rounded-md bg-orange-500 text-white whitespace-nowrap flex-shrink-0">缺交</span>` : `<span class="text-base flex-shrink-0">🚨</span>`}
-                        <span class="text-base font-black text-slate-800 min-w-0 break-all">${escapeHtml(item.name ?? '')}</span>
-                        ${item.onBoard ? `<span class="ml-auto text-[13px] font-bold px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 whitespace-nowrap flex-shrink-0">看板中</span>` : ''}
+                        ${group.missing ? `<span class="text-[13px] font-black px-1.5 py-0.5 rounded-md bg-orange-500 text-white whitespace-nowrap flex-shrink-0">缺交</span>` : `<span class="text-base flex-shrink-0">🚨</span>`}
+                        <span class="text-base font-black text-slate-800 min-w-0 break-all">${escapeHtml(group.base)}</span>
+                        ${group.items.some(i => i.onBoard) ? `<span class="ml-auto text-[13px] font-bold px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 whitespace-nowrap flex-shrink-0">看板中</span>` : ''}
+                        ${hasDetail ? `<div class="basis-full flex flex-wrap gap-1 mt-0.5">${group.items.map(i =>
+                            `<span class="text-sm font-black px-1.5 py-0.5 rounded-md bg-white border ${group.missing ? 'border-orange-200 text-orange-800' : 'border-rose-200 text-rose-800'}">${escapeHtml(i.detail || '（沒寫日期）')}</span>`).join('')}</div>` : ''}
                     `;
                     list.appendChild(itemDiv);
                 });
