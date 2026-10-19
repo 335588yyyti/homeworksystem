@@ -93,6 +93,7 @@ test('設定後台可以一次刪除全班已完成、不在看板上的舊日�
         syncStateToCloud(true);
     });
     await unlockTeacher(page, 'settings');
+    await expect(page.locator('#assignment-count-hint')).toContainText('最多 50 項（目前 ');
     await page.click('#clean-old-assignments');
     await expect.poll(() => cloud.board('main').assignments.includes('國習｜10/1'), { timeout: 12000 }).toBe(false);
     const list = cloud.board('main').assignments;
