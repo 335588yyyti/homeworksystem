@@ -131,3 +131,23 @@ test('家長頁和未訂正名單：同一本作業的不同次合在一起，�
     await expect(page.locator('#pending-list-body')).toContainText('國習 10/15 p.20、10/16 p.23-24');
     await expect(page.locator('#pending-list-body')).toContainText('缺交・國習 10/17');
 });
+
+test('作業框選單的「新增作業」打開同一個新增視窗（可選日期、填頁數），預設放到這一框', async ({ browser }) => {
+    const page = await openDevice(browser, createCloud());
+    await page.evaluate(() => { startTeacherSession(); applyRoleUI('teacher'); });
+    await page.locator('#view-dashboard .slot-select').nth(2).selectOption('__custom__');
+    await expect(page.locator('#modal-new-on-board')).toBeVisible();
+    expect(await page.inputValue('#new-on-board-slot')).toBe('2');
+    await expect(page.locator('#new-on-board-date')).not.toHaveValue('');
+    await page.fill('#new-on-board-name', '乙本');
+    await page.fill('#new-on-board-date', '2026-10-16');
+    await page.fill('#new-on-board-detail', '25-26');
+    await page.click('#modal-new-on-board button:has-text("新增並放上看板")');
+    expect(await page.evaluate(() => state.slots[2].assignment)).toBe('乙本｜10/16 25-26');
+    // 取消時選單回到原本的作業
+    const before = await page.evaluate(() => state.slots[0].assignment);
+    await page.locator('#view-dashboard .slot-select').nth(0).selectOption('__custom__');
+    await page.click('#modal-new-on-board button:has-text("取消")');
+    expect(await page.evaluate(() => state.slots[0].assignment)).toBe(before);
+    expect(await page.locator('#view-dashboard .slot-select').nth(0).inputValue()).toBe(before);
+});
