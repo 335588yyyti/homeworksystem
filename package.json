@@ -3,8 +3,8 @@
   "private": true,
   "description": "下課檢查站：作業與訂正追蹤看板",
   "scripts": {
-    "build:css": "tailwindcss -c tailwind.config.js -i src/tailwind.css -o assets/tailwind.css --minify",
-    "check:css": "npm run build:css && git diff --exit-code -- assets/tailwind.css",
+    "build:css": "tailwindcss -c tailwind.config.js -i src/tailwind.css -o assets/tailwind.css --minify && node scripts/stamp-css.js",
+    "check:css": "npm run build:css && git diff --exit-code -- assets/tailwind.css index.html",
     "test": "playwright test"
   },
   "devDependencies": {

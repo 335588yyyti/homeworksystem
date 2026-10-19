@@ -162,7 +162,8 @@ test('打開全新看板連結時，已經有班級的老師可以輸入班級�
     const cloud = createCloud();
     const teacher = await openDevice(browser, cloud);
     await teacher.evaluate(() => changeClassCode('lin601cs'));
-    await expect(teacher.locator('#cloud-sync-status')).toContainText('已連線');
+    // 切換班級後要建立新的看板，測試電腦忙碌時可能超過 10 秒
+    await expect(teacher.locator('#cloud-sync-status')).toContainText('已連線', { timeout: 30000 });
     await expect.poll(() => cloud.board('lin601cs')?.boardId).toBeTruthy();
     await teacher.evaluate(() => { state.sloganTitle = '林老師的班'; syncStateToCloud(true); });
     await expect.poll(() => cloud.board('lin601cs')?.sloganTitle).toBe('林老師的班');
