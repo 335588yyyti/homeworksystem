@@ -71,7 +71,8 @@ test('換下看板後還沒完成的同學排在下方小清單；只有老師�
     await page.locator('#offboard-list .offboard-seat', { hasText: '4' }).click();
     await expect(seats).toHaveCount(1);
     await expect.poll(() => cloud.board('main').statuses?.[off]?.['4'], { timeout: 12000 }).toBe(true);
-    await page.click('#undo-bar button');
+    // 復原列 5 秒後自動收起；直接觸發點擊，不等滑入動畫（測試電腦慢時才不會錯過）
+    await page.locator('#undo-bar button').dispatchEvent('click');
     await expect(seats).toHaveCount(2);
     await page.locator('#offboard-list .offboard-seat', { hasText: '4' }).click();
     await page.locator('#offboard-list .offboard-seat', { hasText: '9' }).click();

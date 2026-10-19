@@ -60,7 +60,8 @@ test('學生消單：缺交點一下變成待訂正（補交），再點一下�
     // 點錯可以復原回缺交
     await page.evaluate(() => { setStudentStatus(state.slots[0].assignment, 9, 'missing'); renderDashboard(); });
     await page.click('#btn-slot-0-student-9');
-    await page.click('#undo-bar button');
+    // 復原列 5 秒後自動收起；直接觸發點擊，不等滑入動畫（測試電腦慢時才不會錯過）
+    await page.locator('#undo-bar button').dispatchEvent('click');
     await expect(page.locator('#btn-slot-0-student-9')).toHaveClass(/seat-missing/);
 });
 

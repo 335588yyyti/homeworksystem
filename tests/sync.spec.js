@@ -154,6 +154,10 @@ test('卡片「全部完成」只在教師登記模式出現，按下後只影�
     await expect(page.locator('#slot-done-0')).toBeHidden();
     await page.evaluate(() => applyRoleUI('teacher'));
 
+    // 先等前面的點擊存到雲端、雲端回傳也處理完，避免測試電腦慢時回傳剛好落在下面的檢查中間
+    await expect.poll(() => cloud.board('main').statuses?.['國作']?.['7'], { timeout: 20000 }).toBe(false);
+    await page.waitForFunction(() => !document.getElementById('cloud-sync-status').textContent.includes('同步中'), null, { timeout: 20000 });
+    await page.waitForTimeout(500);
     // 其他作業的卡片不重畫（不會跳動）
     await page.evaluate(() => { document.getElementById('btn-slot-1-student-7').dataset.keep = '1'; });
     await page.click('#slot-done-0');
