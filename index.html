@@ -1904,6 +1904,7 @@
                         <i class="fa-solid fa-plus"></i> 新增
                     </button>
                 </div>
+                <p id="assignment-status-summary" class="flex-shrink-0 text-sm font-black text-slate-600 mb-1.5"></p>
                 <div id="settings-assignment-list" class="assign-list space-y-1.5 overflow-y-auto pr-1">
                     <!-- 動態列表 -->
                 </div>
@@ -3781,8 +3782,24 @@
             hint.textContent = `作業項目最多 ${MAX_ASSIGNMENTS} 項（目前 ${total} 項），每次新增都會多一項，建議偶爾按一下上面的按鈕清一清。`;
             hint.classList.toggle('text-rose-600', total >= MAX_ASSIGNMENTS - 5);
 
+            // 每項作業的訂正狀況：還有人沒完成（紅）、全部完成（綠）、在看板上
+            const onBoard = new Set(window.state.slots.map(s => s.assignment));
+            const statusOf = (a) => {
+                const notDone = countPending(a);
+                const missing = countMissing(a);
+                return { notDone, missing, fixing: notDone - missing };
+            };
+            const inProgress = window.state.assignments.filter(a => countPending(a) > 0).length;
+            document.getElementById('assignment-status-summary').innerHTML =
+                `<span class="inline-block whitespace-nowrap mr-3 text-rose-600">🔴 訂正中 ${inProgress} 項</span><span class="inline-block whitespace-nowrap text-emerald-700">✅ 全部完成 ${total - inProgress} 項</span>`;
+
             const last = window.state.assignments.length - 1;
             window.state.assignments.forEach((item, index) => {
+                const st = statusOf(item);
+                const statusHtml = st.notDone === 0
+                    ? '<span class="assign-status text-xs font-black px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-700 whitespace-nowrap">✅ 全部完成</span>'
+                    : `<span class="assign-status text-xs font-black px-1.5 py-0.5 rounded-md bg-rose-100 text-rose-700 whitespace-nowrap">🔴 ${[st.fixing ? `訂正 ${st.fixing} 人` : '', st.missing ? `缺交 ${st.missing} 人` : ''].filter(Boolean).join('・')}</span>`;
+                const boardHtml = onBoard.has(item) ? '<span class="text-xs font-black px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 whitespace-nowrap">看板中</span>' : '';
                 const itemDiv = document.createElement('div');
                 itemDiv.className = "assign-row flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl p-2 pl-1.5 hover:bg-slate-100 transition-all";
                 itemDiv.dataset.index = index;
@@ -3800,14 +3817,19 @@
                     <div class="flex items-center gap-1.5 min-w-0 flex-1">
                         <span draggable="true" class="drag-handle cursor-grab active:cursor-grabbing text-slate-400 hover:text-teal-600 text-base leading-none px-1 select-none flex-shrink-0" title="按住拖曳調整順序">⠿</span>
                         <span class="text-base font-bold text-slate-400 flex-shrink-0">#${index + 1}</span>
-                        <input type="text" maxlength="20" value="${escapeHtml(item)}" onchange="updateAssignment(${index}, this.value)" class="min-w-0 flex-1 bg-transparent border-b border-transparent focus:border-teal-400 focus:outline-none font-black text-slate-800 text-xl sm:text-2xl py-0.5 px-1 truncate">
-                    </div>
-                    <div class="flex items-center flex-shrink-0">
-                        <button onclick="moveAssignment(${index}, ${index - 1})" ${index === 0 ? 'disabled' : ''} class="text-slate-500 hover:bg-slate-200 disabled:opacity-25 px-1.5 py-1 rounded-lg text-xs font-black" title="往上移">▲</button>
-                        <button onclick="moveAssignment(${index}, ${index + 1})" ${index === last ? 'disabled' : ''} class="text-slate-500 hover:bg-slate-200 disabled:opacity-25 px-1.5 py-1 rounded-lg text-xs font-black" title="往下移">▼</button>
-                        <button onclick="deleteAssignment(${index})" class="text-rose-500 hover:bg-rose-50 p-1.5 rounded-lg transition-all" title="刪除">
-                            <i class="fa-solid fa-trash-can text-xs"></i>
-                        </button>
+                        <div class="min-w-0 flex-1 flex flex-col">
+                            <input type="text" maxlength="40" value="${escapeHtml(item)}" onchange="updateAssignment(${index}, this.value)" class="min-w-0 w-full bg-transparent border-b border-transparent focus:border-teal-400 focus:outline-none font-black text-slate-800 ${splitAssignment(item).detail ? 'text-lg' : 'text-xl sm:text-2xl'} py-0.5 px-1 truncate" title="${escapeHtml(item)}">
+                            <div class="flex flex-wrap items-center gap-1 px-1">
+                                ${statusHtml}${boardHtml}
+                                <span class="ml-auto flex items-center flex-shrink-0">
+                                    <button onclick="moveAssignment(${index}, ${index - 1})" ${index === 0 ? 'disabled' : ''} class="text-slate-500 hover:bg-slate-200 disabled:opacity-25 px-1.5 py-0.5 rounded-lg text-xs font-black" title="往上移">▲</button>
+                                    <button onclick="moveAssignment(${index}, ${index + 1})" ${index === last ? 'disabled' : ''} class="text-slate-500 hover:bg-slate-200 disabled:opacity-25 px-1.5 py-0.5 rounded-lg text-xs font-black" title="往下移">▼</button>
+                                    <button onclick="deleteAssignment(${index})" class="text-rose-500 hover:bg-rose-50 p-1 rounded-lg transition-all" title="刪除">
+                                        <i class="fa-solid fa-trash-can text-xs"></i>
+                                    </button>
+                                </span>
+                            </div>
+                        </div>
                     </div>
                 `;
                 itemDiv.querySelector('.drag-handle').addEventListener('dragstart', (e) => {
