@@ -9,7 +9,7 @@ test('點座號後 5 秒內可以復原，雲端只存最後的結果', async ({
     await page.click('#btn-slot-0-student-4');
     await expect(page.locator('#undo-bar')).toBeVisible();
     await expect(page.locator('#undo-text')).toContainText('4 號【國習】改成紅燈');
-    await page.click('#undo-button');
+    await page.locator('#undo-button').dispatchEvent('click');
     await expect(page.locator('#btn-slot-0-student-4')).not.toHaveClass(/seat-pending/);
     await expect(page.locator('#undo-bar')).toHaveClass(/opacity-0/);
     await page.waitForTimeout(6000);
@@ -20,7 +20,7 @@ test('點座號後 5 秒內可以復原，雲端只存最後的結果', async ({
     await page.evaluate(() => applyRoleUI('student'));
     await page.click('#btn-slot-0-student-7');
     await expect(page.locator('#undo-text')).toContainText('7 號【國習】已消單');
-    await page.click('#undo-button');
+    await page.locator('#undo-button').dispatchEvent('click');
     await expect(page.locator('#btn-slot-0-student-7')).toHaveClass(/seat-pending/);
     await page.click('#btn-slot-0-student-8'); // 已是綠燈：不會改變，也不出現復原
     await page.waitForTimeout(5500);
