@@ -51,6 +51,7 @@ test('看板「新增並放上看板」：預設換掉全班已完成的框，�
 
     const replaced = await page.evaluate(() => state.slots[1].assignment);
     await page.fill('#new-on-board-name', '國語考卷');
+    await page.fill('#new-on-board-detail', ''); // 不填日期頁數：名稱就是「國語考卷」
     await page.press('#new-on-board-name', 'Enter');
     await expect(page.locator('#modal-new-on-board')).toBeHidden();
     expect(await page.evaluate(() => state.slots[1].assignment)).toBe('國語考卷');
@@ -62,6 +63,7 @@ test('看板「新增並放上看板」：預設換掉全班已完成的框，�
     // 已經在看板上的名稱：提示，不重複放
     await page.click('#new-on-board-button');
     await page.fill('#new-on-board-name', '國語考卷');
+    await page.fill('#new-on-board-detail', '');
     await page.press('#new-on-board-name', 'Enter');
     await expect(page.locator('#toast-msg')).toContainText('已經在看板第 2 框');
     await expect(page.locator('#modal-new-on-board')).toBeVisible();
