@@ -2139,8 +2139,17 @@
             <input type="text" id="new-on-board-name" maxlength="20" autocomplete="off" list="new-on-board-names" onkeydown="if(event.key === 'Enter') confirmNewOnBoard()" placeholder="例如：國習、數卷" class="w-full bg-slate-50 border-2 border-slate-200 rounded-xl px-4 py-2.5 font-black text-slate-800 focus:outline-none focus:border-amber-400 mb-1.5 text-lg">
             <datalist id="new-on-board-names"></datalist>
             <div id="new-on-board-quick" class="flex flex-wrap gap-1.5 mb-3"></div>
-            <label for="new-on-board-detail" class="block text-base font-black text-slate-700 mb-1">日期、頁數或單元 <span class="text-sm font-bold text-slate-400">（可留白）</span></label>
-            <input type="text" id="new-on-board-detail" maxlength="20" autocomplete="off" onkeydown="if(event.key === 'Enter') confirmNewOnBoard()" placeholder="例如：10/19 p.23–24、卷三 單元2" class="w-full bg-slate-50 border-2 border-slate-200 rounded-xl px-4 py-2.5 font-black text-slate-800 focus:outline-none focus:border-amber-400 mb-3 text-lg">
+            <div class="grid grid-cols-[auto_minmax(0,1fr)] gap-2 mb-3">
+                <div>
+                    <label for="new-on-board-date" class="block text-base font-black text-slate-700 mb-1">作業日期</label>
+                    <input type="date" id="new-on-board-date" class="bg-slate-50 border-2 border-slate-200 rounded-xl px-2 py-2 font-black text-slate-800 focus:outline-none focus:border-amber-400 text-base">
+                </div>
+                <div class="min-w-0">
+                    <label for="new-on-board-detail" class="block text-base font-black text-slate-700 mb-1">頁數或單元 <span class="hidden sm:inline text-sm font-bold text-slate-400">（可留白）</span></label>
+                    <input type="text" id="new-on-board-detail" maxlength="14" autocomplete="off" onkeydown="if(event.key === 'Enter') confirmNewOnBoard()" placeholder="例如：p.23–24" class="w-full bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2 font-black text-slate-800 focus:outline-none focus:border-amber-400 text-base">
+                </div>
+            </div>
+            <p class="-mt-2 mb-3 text-sm font-bold text-slate-500">日期預設是前一個上課日（週一會預設上週五），可以改；不要日期就把日期清掉。</p>
             <label for="new-on-board-slot" class="block text-base font-black text-slate-700 mb-1">放到看板的哪一框</label>
             <select id="new-on-board-slot" onchange="renderNewOnBoardHint()" class="w-full bg-white border-2 border-slate-200 rounded-xl px-3 py-2.5 text-base font-black text-slate-800 focus:outline-none focus:border-amber-400 cursor-pointer"></select>
             <p id="new-on-board-hint" class="text-sm font-bold mt-1.5 min-h-[1.25rem]"></p>
@@ -3169,9 +3178,9 @@
             }).join('');
             select.value = String(firstDone >= 0 ? firstDone : 0);
             document.getElementById('new-on-board-name').value = '';
-            // 細節預設今天日期，後面可以自己補頁數或單元
-            const now = new Date();
-            document.getElementById('new-on-board-detail').value = `${now.getMonth() + 1}/${now.getDate()} `;
+            // 通常是改前一天的作業：日期預設前一個上課日（週一、週日預設上週五），可以自己改
+            document.getElementById('new-on-board-date').value = toDateInputValue(previousSchoolDay(new Date()));
+            document.getElementById('new-on-board-detail').value = '';
             // 常用的作業名稱：點一下就填好（同一本作業每次只要改日期、頁數）
             const bases = [...new Set(window.state.assignments.map(a => splitAssignment(a).base))];
             document.getElementById('new-on-board-names').innerHTML = bases.map(b => `<option value="${escapeHtml(b)}"></option>`).join('');
@@ -3275,14 +3284,25 @@
 
         function pickNewOnBoardName(name) {
             document.getElementById('new-on-board-name').value = name;
-            const detail = document.getElementById('new-on-board-detail');
-            detail.focus();
-            detail.setSelectionRange(detail.value.length, detail.value.length);
+            document.getElementById('new-on-board-detail').focus();
+        }
+
+        function previousSchoolDay(today) {
+            const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+            while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1);
+            return d;
+        }
+
+        function toDateInputValue(d) {
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         }
 
         function confirmNewOnBoard() {
             const base = document.getElementById('new-on-board-name').value.replaceAll(DETAIL_SEP, ' ').trim();
-            const detail = document.getElementById('new-on-board-detail').value.replaceAll(DETAIL_SEP, ' ').trim();
+            const pages = document.getElementById('new-on-board-detail').value.replaceAll(DETAIL_SEP, ' ').trim();
+            const dateValue = document.getElementById('new-on-board-date').value; // 2026-10-19
+            const date = /^\d{4}-\d{2}-\d{2}$/.test(dateValue) ? `${Number(dateValue.slice(5, 7))}/${Number(dateValue.slice(8, 10))}` : '';
+            const detail = [date, pages].filter(Boolean).join(' ');
             const name = base && detail ? `${base}${DETAIL_SEP}${detail}` : base;
             const index = parseInt(document.getElementById('new-on-board-slot').value, 10);
             if (!base) {

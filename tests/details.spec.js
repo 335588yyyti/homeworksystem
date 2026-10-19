@@ -6,10 +6,14 @@ test('新增作業時自動填今天日期、可補頁數；同一本作業不�
     const cloud = createCloud();
     const page = await openDevice(browser, cloud);
     await page.evaluate(() => { startTeacherSession(); applyRoleUI('teacher'); });
-    const today = await page.evaluate(() => { const d = new Date(); return `${d.getMonth() + 1}/${d.getDate()}`; });
+    // 預設前一個上課日（週一預設上週五）
+    expect(await page.evaluate(() => toDateInputValue(previousSchoolDay(new Date(2026, 9, 19))))).toBe('2026-10-16');
+    expect(await page.evaluate(() => toDateInputValue(previousSchoolDay(new Date(2026, 9, 21))))).toBe('2026-10-20');
+    const today = await page.evaluate(() => { const d = previousSchoolDay(new Date()); return `${d.getMonth() + 1}/${d.getDate()}`; });
 
     await page.click('#new-on-board-button');
-    await expect(page.locator('#new-on-board-detail')).toHaveValue(`${today} `);
+    await expect(page.locator('#new-on-board-date')).toHaveValue(await page.evaluate(() => toDateInputValue(previousSchoolDay(new Date()))));
+    await expect(page.locator('#new-on-board-detail')).toHaveValue('');
     // 常用名稱點一下就填好
     await page.locator('#new-on-board-quick button', { hasText: '國習' }).click();
     await expect(page.locator('#new-on-board-name')).toHaveValue('國習');
@@ -24,7 +28,8 @@ test('新增作業時自動填今天日期、可補頁數；同一本作業不�
     await page.click('#btn-slot-0-student-3'); // 3 號待訂正
     await page.click('#new-on-board-button');
     await page.fill('#new-on-board-name', '國習');
-    await page.fill('#new-on-board-detail', '10/1 p.30');
+    await page.fill('#new-on-board-date', '2026-10-01'); // 拖了幾天才改：自己選日期
+    await page.fill('#new-on-board-detail', 'p.30');
     await page.selectOption('#new-on-board-slot', '1');
     await page.click('#modal-new-on-board button:has-text("新增並放上看板")');
     expect(await page.evaluate(() => state.slots[1].assignment)).toBe('國習｜10/1 p.30');
