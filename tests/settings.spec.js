@@ -73,12 +73,12 @@ test('切換班級時新班級的教師密碼為 8888，原班級不受影響', 
     const cloud = createCloud();
     const page = await openDevice(browser, cloud);
     await page.evaluate(() => { state.teacherPin = '1234'; syncStateToCloud(true); });
-    await page.waitForTimeout(400);
+    // 等雲端存好，不用固定秒數（測試電腦忙碌時會比較慢）
+    await expect.poll(() => cloud.board('main')?.teacherPin).toBe('1234');
     await unlockTeacher(page, 'settings');
     await page.fill('#settings-class-code', 'lin601cs');
     await page.click('button:has-text("切換到此代碼")');
-    await page.waitForTimeout(800);
-    expect(cloud.board('lin601cs').teacherPin).toBe('8888');
+    await expect.poll(() => cloud.board('lin601cs')?.teacherPin).toBe('8888');
     expect(cloud.board('main').teacherPin).toBe('1234');
     expect(await page.evaluate(() => state.isTeacherUnlocked)).toBe(false);
 });
