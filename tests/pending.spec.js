@@ -10,18 +10,24 @@ test('未訂正名單列出每位同學還沒訂正的作業，並在變動停�
     await page.evaluate(() => { startTeacherSession(); applyRoleUI('teacher'); });
     await expect(page.locator('#pending-list-count')).toBeHidden();
 
-    // 計時的部分直接在頁面裡點，避免測試電腦忙碌時點擊本身就慢了好幾秒
-    const tap = (id) => page.evaluate((sel) => document.querySelector(sel).click(), id);
+    // 在頁面裡記錄每次點擊的時間和名單人數的每次變化，不受測試電腦快慢影響
+    await page.evaluate(() => {
+        window.__counts = [];
+        const badge = document.getElementById('pending-list-count');
+        new MutationObserver(() => window.__counts.push({ text: badge.classList.contains('hidden') ? '' : badge.textContent, at: performance.now() }))
+            .observe(badge, { attributes: true, childList: true, characterData: true, subtree: true });
+    });
+    const tap = (id) => page.evaluate((sel) => { document.querySelector(sel).click(); window.__lastTap = performance.now(); }, id);
     await tap('#btn-slot-0-student-3');   // 3 號 國習
     await tap('#btn-slot-2-student-3');   // 3 號 數課
     await tap('#btn-slot-1-student-12');  // 12 號 國作
-    // 連續消單時先不更新，最後一次變動後等 5 秒才一次更新
     await page.waitForTimeout(2000);
-    expect(await page.locator('#pending-list-count').isHidden()).toBe(true);
     await tap('#btn-slot-3-student-20');  // 20 號 數習（又有變動，重新等 5 秒）
-    await page.waitForTimeout(4000);      // 距離第一批點擊已超過 5 秒，但距離最後一次還不到
-    expect(await page.locator('#pending-list-count').isHidden()).toBe(true);
-    await expect(page.locator('#pending-list-count')).toHaveText('3', { timeout: 5000 });
+    await expect(page.locator('#pending-list-count')).toHaveText('3', { timeout: 15000 });
+    // 名單只更新一次（中間沒有先出現 2），而且是在最後一次點擊 5 秒後
+    const r = await page.evaluate(() => ({ counts: window.__counts.map((c) => c.text).filter(Boolean), waited: window.__counts.find((c) => c.text)?.at - window.__lastTap }));
+    expect(r.counts[0]).toBe('3');
+    expect(r.waited).toBeGreaterThanOrEqual(4900);
     // 20 號改回來（教師登記：紅燈 → 缺交 → 綠燈）
     await page.click('#btn-slot-3-student-20');
     await page.click('#btn-slot-3-student-20');
