@@ -296,6 +296,8 @@
             background: #cbd5e1;
             border-radius: 4px;
         }
+        /* 下方「已換下看板」小清單出現時，復原列和通知往上移，不要蓋住座號 */
+        #undo-bar, #toast { bottom: calc(1.25rem + var(--offboard-h, 0px)); }
         /* 抬餐感謝：畫面中間跳出大字 */
         #meal-pop { position: fixed; left: 50%; top: 42%; transform: translate(-50%, -50%) scale(.6); opacity: 0; pointer-events: none; z-index: 60; transition: opacity .25s, transform .35s cubic-bezier(.34,1.56,.64,1); }
         #meal-pop.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
@@ -1541,6 +1543,16 @@
     <main id="view-dashboard" class="dash-grid max-w-[1920px] mx-auto px-3.5 pb-2.5 pt-1 w-full flex-1 min-h-0">
         <!-- JS 動態生成卡片 -->
     </main>
+    <!-- 已換下看板、還有人沒完成的作業：老師和小幫手可以在這裡點掉，學生只能看 -->
+    <section id="offboard-strip" class="hidden max-w-[1920px] mx-auto px-3.5 pb-2.5 w-full flex-shrink-0">
+        <div class="bg-white border-2 border-rose-200 rounded-2xl px-3 py-2 board-shadow">
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1 mb-1">
+                <span class="text-base font-black text-rose-700 whitespace-nowrap">📌 已換下看板、還沒完成</span>
+                <span id="offboard-hint" class="text-sm font-bold text-slate-500"></span>
+            </div>
+            <div id="offboard-list" class="flex flex-wrap gap-x-4 gap-y-1.5"></div>
+        </div>
+    </section>
 
     <!-- 個別查詢分頁：家長輸入查詢碼，只看得到自己孩子的狀態；老師解鎖後改為教師專用（輸入座號查詢）。版面精簡，盡量一頁看完 -->
     <!-- 潔牙站：午餐後潔牙，學生點自己的牙齒打勾；每天自動歸零 -->
@@ -1896,6 +1908,10 @@
                 <div id="settings-assignment-list" class="assign-list space-y-1.5 overflow-y-auto pr-1">
                     <!-- 動態列表 -->
                 </div>
+                <button id="clean-old-assignments" onclick="cleanFinishedOldAssignments()" class="mt-2 flex-shrink-0 w-full bg-slate-50 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 text-slate-600 hover:text-rose-700 font-black py-2 rounded-xl text-sm transition-all">
+                    🧹 刪除已完成的舊日期作業
+                </button>
+                <p id="assignment-count-hint" class="mt-1.5 flex-shrink-0 text-xs font-bold text-slate-500 leading-snug"></p>
             </div>
 
             <!-- 右側學生座號管理 -->
@@ -2121,7 +2137,20 @@
                 <p class="text-sm text-slate-500 mt-0.5">新作業會換掉看板上的一框，被換下的作業紀錄仍會保留</p>
             </div>
             <label for="new-on-board-name" class="block text-base font-black text-slate-700 mb-1">作業名稱</label>
-            <input type="text" id="new-on-board-name" maxlength="20" autocomplete="off" onkeydown="if(event.key === 'Enter') confirmNewOnBoard()" placeholder="例如：國卷、數單" class="w-full bg-slate-50 border-2 border-slate-200 rounded-xl px-4 py-2.5 font-black text-slate-800 focus:outline-none focus:border-amber-400 mb-3 text-lg">
+            <input type="text" id="new-on-board-name" maxlength="20" autocomplete="off" list="new-on-board-names" onkeydown="if(event.key === 'Enter') confirmNewOnBoard()" placeholder="例如：國習、數卷" class="w-full bg-slate-50 border-2 border-slate-200 rounded-xl px-4 py-2.5 font-black text-slate-800 focus:outline-none focus:border-amber-400 mb-1.5 text-lg">
+            <datalist id="new-on-board-names"></datalist>
+            <div id="new-on-board-quick" class="flex flex-wrap gap-1.5 mb-3"></div>
+            <div class="grid grid-cols-[auto_minmax(0,1fr)] gap-2 mb-3">
+                <div>
+                    <label for="new-on-board-date" class="block text-base font-black text-slate-700 mb-1">作業日期</label>
+                    <input type="date" id="new-on-board-date" class="bg-slate-50 border-2 border-slate-200 rounded-xl px-2 py-2 font-black text-slate-800 focus:outline-none focus:border-amber-400 text-base">
+                </div>
+                <div class="min-w-0">
+                    <label for="new-on-board-detail" class="block text-base font-black text-slate-700 mb-1">頁數或單元 <span class="hidden sm:inline text-sm font-bold text-slate-400">（可留白）</span></label>
+                    <input type="text" id="new-on-board-detail" maxlength="14" autocomplete="off" onkeydown="if(event.key === 'Enter') confirmNewOnBoard()" placeholder="例如：p.23–24" class="w-full bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2 font-black text-slate-800 focus:outline-none focus:border-amber-400 text-base">
+                </div>
+            </div>
+            <p class="-mt-2 mb-3 text-sm font-bold text-slate-500">日期預設是前一個上課日（週一會預設上週五），可以改；不要日期就把日期清掉。</p>
             <label for="new-on-board-slot" class="block text-base font-black text-slate-700 mb-1">放到看板的哪一框</label>
             <select id="new-on-board-slot" onchange="renderNewOnBoardHint()" class="w-full bg-white border-2 border-slate-200 rounded-xl px-3 py-2.5 text-base font-black text-slate-800 focus:outline-none focus:border-amber-400 cursor-pointer"></select>
             <p id="new-on-board-hint" class="text-sm font-bold mt-1.5 min-h-[1.25rem]"></p>
@@ -2234,6 +2263,12 @@
         }
         const MAX_STUDENTS = 40;
         const MAX_ASSIGNMENTS = 50; // 與 firestore.rules 的上限一致
+        // 同一本作業的不同次用「名稱｜細節」區分，例如「國習｜10/19 p.23」，各自記錄紅綠燈
+        const DETAIL_SEP = '｜';
+        function splitAssignment(name) {
+            const at = String(name).indexOf(DETAIL_SEP);
+            return at < 0 ? { base: String(name), detail: '' } : { base: name.slice(0, at), detail: name.slice(at + 1) };
+        }
         const SLOT_NAME_MAX_FONT = 22;
         const SLOT_NAME_MIN_FONT = 12;
 
@@ -2455,6 +2490,7 @@
                 }
             });
             document.getElementById('tab-brush').classList.toggle('hidden', !isBrushEnabled());
+            renderOffBoard();
 
             if (tab === 'dashboard') renderDashboard();
             if (tab === 'brush') renderBrush();
@@ -2535,6 +2571,7 @@
             document.getElementById('role-lock').title = window.state.isHelperUnlocked ? '鎖定小幫手身分' : '鎖定教師身分';
             // 卡片上的「全部完成」按鈕只在登記模式顯示
             if (window.state.currentTab === 'dashboard') renderDashboard();
+            renderOffBoard();
         }
 
         function setRole(role) {
@@ -2843,8 +2880,9 @@
 
                 const pendingCount = countPending(slot.assignment);
 
+                // 選到的作業只顯示名稱，日期頁數顯示在下一行；選單裡其他作業顯示完整名稱
                 let optionsHtml = window.state.assignments.map(asgn =>
-                    `<option value="${escapeHtml(asgn)}" ${asgn === slot.assignment ? 'selected' : ''}>${escapeHtml(asgn)}</option>`
+                    `<option value="${escapeHtml(asgn)}" ${asgn === slot.assignment ? 'selected' : ''}>${escapeHtml(asgn === slot.assignment ? splitAssignment(asgn).base : asgn)}</option>`
                 ).join('');
                 optionsHtml += `<option value="__custom__">+ 自行輸入...</option>`;
 
@@ -2886,11 +2924,64 @@
                 });
                 gridHtml += `</div>`;
 
-                card.innerHTML = headerHtml + gridHtml;
+                const detail = splitAssignment(slot.assignment).detail;
+                const detailHtml = detail ? `<div class="slot-detail flex-shrink-0 truncate text-base xl:text-lg font-black text-amber-700 pt-1" title="${escapeHtml(detail)}">📅 ${escapeHtml(detail)}</div>` : '';
+                card.innerHTML = headerHtml + detailHtml + gridHtml;
                 container.appendChild(card);
             });
+            renderOffBoard();
             layoutDashboard();
             refreshPendingList();
+        }
+
+        function offBoardRows() {
+            const onBoard = new Set(window.state.slots.map(s => s.assignment));
+            return window.state.assignments.filter(a => !onBoard.has(a)).map(a => ({
+                assignment: a,
+                students: window.state.students.filter(st => !isFinished(a, st.id))
+            })).filter(row => row.students.length > 0);
+        }
+
+        function renderOffBoard() {
+            const strip = document.getElementById('offboard-strip');
+            if (!strip) return;
+            const rows = window.state.currentTab === 'dashboard' && !window.state.boardRetired ? offBoardRows() : [];
+            strip.classList.toggle('hidden', rows.length === 0);
+            if (rows.length === 0) {
+                document.body.style.setProperty('--offboard-h', '0px');
+                return;
+            }
+            const editable = canEditBoard();
+            document.getElementById('offboard-hint').textContent = editable ? '訂正完點座號消掉' : '老師或小幫手可以消掉';
+            document.getElementById('offboard-list').innerHTML = rows.map(({ assignment, students }) => `
+                <div class="flex flex-wrap items-center gap-1.5">
+                    <span class="text-base font-black text-slate-800 whitespace-nowrap">${escapeHtml(assignment)}</span>
+                    ${students.map(st => {
+                        const missing = isMissing(assignment, st.id);
+                        const seat = escapeHtml(getPureSeatNumber(st.name));
+                        return `<button data-asgn="${escapeHtml(assignment)}" onclick="clearOffBoard(this.dataset.asgn, ${st.id})" class="offboard-seat min-w-[2.25rem] px-1.5 py-0.5 rounded-lg text-lg font-black leading-tight border-2 ${missing ? 'bg-orange-100 text-orange-800 border-orange-300' : 'bg-rose-500 text-white border-rose-500'} ${editable ? 'hover:brightness-110' : 'cursor-default'}" title="${seat} 號${missing ? '缺交' : '待訂正'}">${seat}${missing ? '<span class="text-xs">缺</span>' : ''}</button>`;
+                    }).join('')}
+                </div>`).join('');
+            document.body.style.setProperty('--offboard-h', `${strip.offsetHeight}px`);
+        }
+
+        // 下方小清單：老師或小幫手點一下就算完成（5 秒內可以復原）
+        function clearOffBoard(assignment, studentId) {
+            if (!canEditBoard()) {
+                window.soundEffect.playToggle();
+                showToast('訂正完請找老師或小幫手消掉', false);
+                return;
+            }
+            if (!window.state.assignments.includes(assignment)) return;
+            const previous = getStudentStatus(assignment, studentId);
+            if (previous === true) return;
+            setStudentStatus(assignment, studentId, true);
+            window.soundEffect.playSuccess();
+            showToast(`座號 ${getSeatLabel(studentId)}【${assignment}】已完成`);
+            renderOffBoard();
+            refreshPendingList();
+            window.syncStatusChange([[assignment, studentId, true]], { delay: true });
+            showUndo({ assignment, studentId, previous, next: true });
         }
 
         const SLOT_COUNT_OPTIONS = [4, 6, 8];
@@ -3005,7 +3096,11 @@
                         <div class="min-w-0 flex-1">
                             <div class="text-lg font-black text-rose-800 mb-1">還有 ${pending.length} 項</div>
                             <div class="flex flex-wrap gap-1.5">${
-                                pending.map(item => `<span class="px-2 py-0.5 rounded-lg text-base font-bold ${item.missing ? 'bg-orange-100 text-orange-800 border border-orange-300' : (item.onBoard ? 'bg-white text-slate-800 border border-rose-300' : 'bg-white/60 text-slate-600 border border-slate-200')}">${item.missing ? '缺交・' : ''}${escapeHtml(item.name)}</span>`).join('')
+                                [...groupByBase(pending.filter(i => i.missing)).map(g => ({ ...g, missing: true })), ...groupByBase(pending.filter(i => !i.missing))].map(g => {
+                                    const onBoard = g.items.some(i => i.onBoard);
+                                    const details = g.items.map(i => i.detail).filter(Boolean);
+                                    return `<span class="px-2 py-0.5 rounded-lg text-base font-bold ${g.missing ? 'bg-orange-100 text-orange-800 border border-orange-300' : (onBoard ? 'bg-white text-slate-800 border border-rose-300' : 'bg-white/60 text-slate-600 border border-slate-200')}">${g.missing ? '缺交・' : ''}${escapeHtml(g.base)}${details.length ? `<span class="text-sm font-black opacity-80"> ${escapeHtml(details.join('、'))}</span>` : ''}</span>`;
+                                }).join('')
                             }</div>
                         </div>
                     </div>`).join('')
@@ -3088,6 +3183,14 @@
             }).join('');
             select.value = String(firstDone >= 0 ? firstDone : 0);
             document.getElementById('new-on-board-name').value = '';
+            // 通常是改前一天的作業：日期預設前一個上課日（週一、週日預設上週五），可以自己改
+            document.getElementById('new-on-board-date').value = toDateInputValue(previousSchoolDay(new Date()));
+            document.getElementById('new-on-board-detail').value = '';
+            // 常用的作業名稱：點一下就填好（同一本作業每次只要改日期、頁數）
+            const bases = [...new Set(window.state.assignments.map(a => splitAssignment(a).base))];
+            document.getElementById('new-on-board-names').innerHTML = bases.map(b => `<option value="${escapeHtml(b)}"></option>`).join('');
+            document.getElementById('new-on-board-quick').innerHTML = bases.slice(0, 12).map(b =>
+                `<button type="button" onclick="pickNewOnBoardName(this.textContent)" class="text-sm font-black px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100">${escapeHtml(b)}</button>`).join('');
             renderNewOnBoardHint();
             document.getElementById('modal-new-on-board').classList.remove('hidden');
             setTimeout(() => document.getElementById('new-on-board-name').focus(), 100);
@@ -3184,10 +3287,30 @@
                 : `【${slot.assignment}】全班已完成，可以放心換掉`;
         }
 
+        function pickNewOnBoardName(name) {
+            document.getElementById('new-on-board-name').value = name;
+            document.getElementById('new-on-board-detail').focus();
+        }
+
+        function previousSchoolDay(today) {
+            const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+            while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1);
+            return d;
+        }
+
+        function toDateInputValue(d) {
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+
         function confirmNewOnBoard() {
-            const name = document.getElementById('new-on-board-name').value.trim();
+            const base = document.getElementById('new-on-board-name').value.replaceAll(DETAIL_SEP, ' ').trim();
+            const pages = document.getElementById('new-on-board-detail').value.replaceAll(DETAIL_SEP, ' ').trim();
+            const dateValue = document.getElementById('new-on-board-date').value; // 2026-10-19
+            const date = /^\d{4}-\d{2}-\d{2}$/.test(dateValue) ? `${Number(dateValue.slice(5, 7))}/${Number(dateValue.slice(8, 10))}` : '';
+            const detail = [date, pages].filter(Boolean).join(' ');
+            const name = base && detail ? `${base}${DETAIL_SEP}${detail}` : base;
             const index = parseInt(document.getElementById('new-on-board-slot').value, 10);
-            if (!name) {
+            if (!base) {
                 window.soundEffect.playAlert();
                 showToast('請輸入作業名稱', false);
                 return;
@@ -3329,6 +3452,7 @@
 
         // 只更新看板上這項作業的座號顏色與標籤，不重畫整個看板（其他作業的卡片不會跳動）
         function refreshAssignmentCards(assignment, studentIds) {
+            renderOffBoard();
             const pCount = countPending(assignment);
             window.state.slots.forEach((s, idx) => {
                 if (s.assignment !== assignment) return;
@@ -3564,6 +3688,17 @@
 
         // 只依據單一學生摘要畫出結果（教師檢視、教室查詢、家長雲端查詢共用）
         // 全部完成：只顯示總完成度 100% 與「目前無需訂正」；有待訂正：只列出待訂正的作業
+        // 依作業名稱分組：「國習｜10/15」「國習｜10/16」→ 國習：10/15、10/16（保持原本順序）
+        function groupByBase(items) {
+            const groups = new Map();
+            items.forEach(item => {
+                const { base, detail } = splitAssignment(item.name ?? '');
+                if (!groups.has(base)) groups.set(base, { base, items: [] });
+                groups.get(base).items.push({ ...item, detail });
+            });
+            return [...groups.values()];
+        }
+
         function renderParentView(view) {
             const items = Array.isArray(view.items) ? view.items : [];
             const pending = items.filter(item => !item.finished);
@@ -3593,14 +3728,18 @@
                     : (toFix.length === 0 ? `有 ${missing.length} 項作業缺交` : `缺交 ${missing.length} 項、待訂正 ${toFix.length} 項`);
                 document.getElementById('parent-pending-title').innerText = missing.length ? '缺交與需要訂正的作業：' : '需要訂正的作業：';
                 pendingSection.classList.remove('hidden');
-                [...missing, ...toFix].forEach(item => {
+                // 同一本作業的不同次（例如國習 10/15、10/16）放在同一格，日期頁數列在下面
+                [...groupByBase(missing).map(g => ({ ...g, missing: true })), ...groupByBase(toFix)].forEach(group => {
                     const itemDiv = document.createElement('div');
+                    const hasDetail = group.items.some(i => i.detail);
                     // 名稱不截斷：空間不夠時「看板中」標籤換到下一行
-                    itemDiv.className = `flex flex-wrap items-center gap-1 px-2.5 py-2 rounded-xl border min-w-0 ${item.missing ? 'bg-orange-50 border-orange-300' : 'bg-rose-50 border-rose-200'}`;
+                    itemDiv.className = `flex flex-wrap items-center gap-1 px-2.5 py-2 rounded-xl border min-w-0 ${group.missing ? 'bg-orange-50 border-orange-300' : 'bg-rose-50 border-rose-200'} ${hasDetail ? 'col-span-2' : ''}`;
                     itemDiv.innerHTML = `
-                        ${item.missing ? `<span class="text-[13px] font-black px-1.5 py-0.5 rounded-md bg-orange-500 text-white whitespace-nowrap flex-shrink-0">缺交</span>` : `<span class="text-base flex-shrink-0">🚨</span>`}
-                        <span class="text-base font-black text-slate-800 min-w-0 break-all">${escapeHtml(item.name ?? '')}</span>
-                        ${item.onBoard ? `<span class="ml-auto text-[13px] font-bold px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 whitespace-nowrap flex-shrink-0">看板中</span>` : ''}
+                        ${group.missing ? `<span class="text-[13px] font-black px-1.5 py-0.5 rounded-md bg-orange-500 text-white whitespace-nowrap flex-shrink-0">缺交</span>` : `<span class="text-base flex-shrink-0">🚨</span>`}
+                        <span class="text-base font-black text-slate-800 min-w-0 break-all">${escapeHtml(group.base)}</span>
+                        ${group.items.some(i => i.onBoard) ? `<span class="ml-auto text-[13px] font-bold px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 whitespace-nowrap flex-shrink-0">看板中</span>` : ''}
+                        ${hasDetail ? `<div class="basis-full flex flex-wrap gap-1 mt-0.5">${group.items.map(i =>
+                            `<span class="text-sm font-black px-1.5 py-0.5 rounded-md bg-white border ${group.missing ? 'border-orange-200 text-orange-800' : 'border-rose-200 text-rose-800'}">${escapeHtml(i.detail || '（沒寫日期）')}</span>`).join('')}</div>` : ''}
                     `;
                     list.appendChild(itemDiv);
                 });
@@ -3689,6 +3828,10 @@
         function renderSettingsAssignments() {
             const list = document.getElementById('settings-assignment-list');
             list.innerHTML = '';
+            const total = window.state.assignments.length;
+            const hint = document.getElementById('assignment-count-hint');
+            hint.textContent = `作業項目最多 ${MAX_ASSIGNMENTS} 項（目前 ${total} 項），每次新增都會多一項，建議偶爾按一下上面的按鈕清一清。`;
+            hint.classList.toggle('text-rose-600', total >= MAX_ASSIGNMENTS - 5);
 
             const last = window.state.assignments.length - 1;
             window.state.assignments.forEach((item, index) => {
@@ -3797,6 +3940,26 @@
             window.syncStateToCloud();
             showToast(`名稱已更新為【${newVal}】`);
             renderSettingsAssignments();
+        }
+
+        // 有日期、頁數的作業（例如「國習｜10/15」）全班完成、又不在看板上，就可以一次刪掉
+        function cleanFinishedOldAssignments() {
+            const onBoard = new Set(window.state.slots.map(s => s.assignment));
+            const old = window.state.assignments.filter(a => splitAssignment(a).detail && !onBoard.has(a) && countPending(a) === 0);
+            if (old.length === 0) {
+                window.soundEffect.playToggle();
+                showToast('沒有可以刪除的舊作業（全班完成、不在看板上的才會刪除）');
+                return;
+            }
+            const list = old.length > 8 ? `${old.slice(0, 8).join('、')}…等 ${old.length} 項` : old.join('、');
+            window.soundEffect.playAlert();
+            if (!confirm(`要刪除這 ${old.length} 項全班已完成的舊作業嗎？\n\n${list}\n\n刪除後家長查詢也不會再顯示這幾項。`)) return;
+            window.state.assignments = window.state.assignments.filter(a => !old.includes(a));
+            old.forEach(a => { delete window.state.assignmentStatuses[a]; });
+            window.soundEffect.playSuccess();
+            renderSettingsAssignments();
+            window.syncStateToCloud();
+            showToast(`已刪除 ${old.length} 項舊作業`);
         }
 
         function deleteAssignment(index) {
@@ -4581,21 +4744,28 @@
                 page('🔴', '老師登記需要訂正的同學', [
                     '按右上角「<b>教師登記</b>」，輸入教師密碼。',
                     '點座號會依序切換：<b class="text-rose-600">紅燈</b>＝要訂正 → <b class="text-orange-600">橘燈（缺）</b>＝缺交 → <b class="text-emerald-600">綠燈</b>＝完成。',
-                    '作業框的名稱可以點開換作業；新作業發下去時，按標語列的「<b>➕ 新增並放上看板</b>」。',
                     '請假的同學缺好幾項作業：按標語列的「<b>🟠 登記缺交</b>」，輸入座號、勾選沒交的作業，一次登記。',
-                    '一段時間沒有操作會自動上鎖，回到學生消單模式。'
+                    '卡片上的「<b>✓ 全部完成</b>」可以把整項作業一次變綠燈（只有老師能用）；全班完成後會出現「<b>換下一項</b>」，換上還有人沒訂正的作業。',
+                    '一段時間沒有操作會自動上鎖，回到學生消單模式；上鎖時間可在設定後台選 1.5／3／5／10 分鐘。'
+                ]),
+                page('📝', '出新作業、追蹤舊作業', [
+                    '按標語列的「<b>➕ 新增並放上看板</b>」，點作業名稱（例如國習）；<b>作業日期</b>預設前一個上課日，可以改；<b>頁數或單元</b>可留白。',
+                    '同一本作業的每一次分開記錄，例如「國習｜10/16 p.23」和「國習｜10/17」。點作業框的名稱可以換作業，換下來的紀錄都會保留。',
+                                        '換下看板後還有人沒完成，會排在看板最下面的「<b>📌 已換下看板、還沒完成</b>」，訂正完由<b>老師或小幫手</b>點掉（點錯 5 秒內可以復原）。',
+                    '作業項目最多 50 項：偶爾到設定後台按「<b>🧹 刪除已完成的舊日期作業</b>」，把全班完成、不在看板上的舊日期作業一次清掉。'
                 ]),
                 page('🟢', '學生自己消單', [
                     '學生訂正完，到教室電腦點自己的<b class="text-rose-600">紅燈</b>座號，就會變成<b class="text-emerald-600">綠燈</b>。',
                     '點錯了可以按左下角的「<b>↩ 復原</b>」。',
                     '學生模式只能把紅燈改成綠燈，不能亂點紅燈。<b class="text-orange-600">缺交</b>的同學補交後點一下會變紅燈，訂正完再點一次才變綠燈。',
-                    '按「<b>📋 未訂正名單</b>」可以看全班還有誰沒訂正。'
+                    '看板最下面「已換下看板」的作業，學生只能看，訂正完請老師或小幫手點掉。',
+                    '按「<b>📋 未訂正名單</b>」可以看全班還有誰沒訂正，同一本作業的不同次會合在一起列出日期頁數。'
                 ]),
                 page('👪', '家長查詢', [
                     '「設定後台 → 班級座號名冊」裡，每位學生都有一組<b>家長查詢碼</b>。',
-                    '按「<b>複製查詢連結</b>」可以把同一個連結公布給全班家長，家長打開後輸入自己孩子的查詢碼就好。',
-                    '也可以按「<b>列印家長查詢碼</b>」印出 QR Code 紙條，或用每位學生旁的「複製連結」個別傳。',
-                    '家長只看得到自己孩子的作業狀況，看不到其他同學。',
+                    '按「<b>複製查詢連結</b>」可以把同一個連結公布給全班家長，家長打開後輸入自己孩子的查詢碼就好；也可以「<b>列印家長查詢碼</b>」印出 QR Code 紙條，或用每位學生旁的「複製連結」個別傳。',
+                    '家長只看得到自己孩子的作業：缺交和待訂正分開列，同一本作業的不同次合成一格，下面列出日期頁數；有開潔牙站時也會顯示「今日潔牙」。',
+                    '老師解鎖後，「<b>個別查詢</b>」分頁可以直接輸入座號查詢。',
                     '<b class="text-rose-600">班級代碼不要給家長</b>，家長只需要查詢碼。'
                 ]),
                 page('🦷', '潔牙站（可選用）', [
@@ -4603,13 +4773,14 @@
                     '學生潔完牙，點自己座號的牙齒就會打勾 ✨，點錯再點一次取消。',
                     '<b>抬餐任務</b>：抬完點一下變色。今天的項目不一樣（例如多了豆奶、水果），按「<b>✏️ 修改項目</b>」增減格數。',
                     '<b>小天使提醒區</b>的文字可以按「<b>✏️ 修改提醒</b>」更改；倒數計時可選 1～5 分鐘。',
-                    '潔牙和抬餐的紀錄<b>每天自動歸零</b>；家長查詢也會顯示孩子「今日潔牙」是否完成。'
+                    '潔牙和抬餐的紀錄<b>每天自動歸零</b>（過了午夜自動換新的一天）。'
                 ]),
                 page('⚙️', '其他小技巧', [
-                    '<b>🙋 小幫手模式</b>：在設定後台開啟，讓小老師幫忙點紅燈、換作業，但不能進設定後台。',
+                    '<b>🙋 小幫手模式</b>：在設定後台開啟，讓小老師幫忙點紅燈、換作業、消掉下方清單，但不能進設定後台、不能按「全部完成」。',
+                    '<b>看板設定</b>：看板可以放 4／6／8 框；作業項目可以拖曳或用 ▲▼ 調整順序。上方「🔊」可以開關音效。',
                     '<b>🔄 立即同步</b>：教室電腦和手機都按一下，就能確認兩邊是同一份進度。',
-                    '<b>🎁 複製分享全新看板</b>：分享給其他老師。打開時會先問：<b>已經有班級</b>就輸入班級代碼接回（例如換了新電腦）；<b>還沒有班級</b>才會建立新的空白班級，看不到你的資料，也不會連到別人的班級。',
-                    '不小心建立了新班級也別擔心，原本的資料還在，到「設定後台 → 班級共用代碼」輸入原本的代碼就能切回。',
+                    '<b>🎁 複製分享全新看板</b>：分享給其他老師，對方會建立自己的空白班級，看不到你的資料；換新電腦時選「已經有班級」，輸入班級代碼接回。',
+                    '不小心建立了新班級，原本的資料還在：到「設定後台 → 班級共用代碼」輸入原本的代碼就能切回。',
                     '之後想再看這份說明，到「設定後台」按右上角的「<b>📖 使用說明</b>」。'
                 ])
             ];
