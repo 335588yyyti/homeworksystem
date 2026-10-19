@@ -1545,11 +1545,11 @@
     <!-- 已換下看板、還有人沒完成的作業：老師和小幫手可以在這裡點掉，學生只能看 -->
     <section id="offboard-strip" class="hidden max-w-[1920px] mx-auto px-3.5 pb-2.5 w-full flex-shrink-0">
         <div class="bg-white border-2 border-rose-200 rounded-2xl px-3 py-2 board-shadow">
-            <div class="flex flex-wrap items-center gap-x-2 gap-y-1 mb-1">
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <span class="text-base font-black text-rose-700 whitespace-nowrap">📌 已換下看板、還沒完成</span>
                 <span id="offboard-hint" class="text-sm font-bold text-slate-500"></span>
             </div>
-            <div id="offboard-list" class="flex flex-wrap gap-x-4 gap-y-1.5"></div>
+            <div id="offboard-list" class="flex flex-wrap gap-x-4 gap-y-1.5 mt-1"></div>
         </div>
     </section>
 
@@ -2923,12 +2923,28 @@
         function renderOffBoard() {
             const strip = document.getElementById('offboard-strip');
             if (!strip) return;
-            const rows = window.state.currentTab === 'dashboard' && !window.state.boardRetired ? offBoardRows() : [];
-            strip.classList.toggle('hidden', rows.length === 0);
-            if (rows.length === 0) {
+            // 看板頁一直顯示；沒有人欠的時候只顯示一行「都完成了」
+            const show = window.state.currentTab === 'dashboard' && !window.state.boardRetired;
+            strip.classList.toggle('hidden', !show);
+            if (!show) {
                 document.body.style.setProperty('--offboard-h', '0px');
                 return;
             }
+            const rows = offBoardRows();
+            const box = strip.firstElementChild;
+            box.classList.toggle('border-rose-200', rows.length > 0);
+            box.classList.toggle('border-emerald-200', rows.length === 0);
+            const list = document.getElementById('offboard-list');
+            list.classList.toggle('hidden', rows.length === 0);
+            if (rows.length === 0) {
+                const hint = document.getElementById('offboard-hint');
+                hint.textContent = '✅ 換下看板的作業都完成了';
+                hint.className = 'text-base font-black text-emerald-700';
+                list.innerHTML = '';
+                document.body.style.setProperty('--offboard-h', `${strip.offsetHeight}px`);
+                return;
+            }
+            document.getElementById('offboard-hint').className = 'text-sm font-bold text-slate-500';
             const editable = canEditBoard();
             document.getElementById('offboard-hint').textContent = editable ? '訂正完點座號消掉' : '老師或小幫手可以消掉';
             document.getElementById('offboard-list').innerHTML = rows.map(({ assignment, students }) => `

@@ -44,7 +44,9 @@ test('新增作業時自動填今天日期、可補頁數；同一本作業不�
 test('換下看板後還沒完成的同學排在下方小清單；只有老師和小幫手能點掉', async ({ browser }) => {
     const cloud = createCloud();
     const page = await openDevice(browser, cloud);
-    await expect(page.locator('#offboard-strip')).toBeHidden();
+    // 一直顯示；沒有人欠的時候顯示「都完成了」
+    await expect(page.locator('#offboard-strip')).toBeVisible();
+    await expect(page.locator('#offboard-hint')).toHaveText('✅ 換下看板的作業都完成了');
     const off = await page.evaluate(() => {
         const onBoard = new Set(state.slots.map((s) => s.assignment));
         const a = state.assignments.find((x) => !onBoard.has(x));
@@ -73,11 +75,10 @@ test('換下看板後還沒完成的同學排在下方小清單；只有老師�
     await expect(seats).toHaveCount(2);
     await page.locator('#offboard-list .offboard-seat', { hasText: '4' }).click();
     await page.locator('#offboard-list .offboard-seat', { hasText: '9' }).click();
-    await expect(page.locator('#offboard-strip')).toBeHidden();
+    await expect(page.locator('#offboard-hint')).toHaveText('✅ 換下看板的作業都完成了');
+    await expect(seats).toHaveCount(0);
 
     // 其他分頁不顯示
-    await page.evaluate(() => { setStudentStatus(state.assignments.find((x) => !state.slots.some((s) => s.assignment === x)), 5, false); renderDashboard(); });
-    await expect(page.locator('#offboard-strip')).toBeVisible();
     await page.click('#tab-parent');
     await expect(page.locator('#offboard-strip')).toBeHidden();
 });
