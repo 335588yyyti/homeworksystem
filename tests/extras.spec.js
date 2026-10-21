@@ -149,3 +149,23 @@ test('看板頁會請瀏覽器保持螢幕亮著，家長頁不會', async ({ br
     await parent.click('#parent-code-input');
     expect(await parent.evaluate(() => window.__wakeRequests)).toBe(0);
 });
+
+test('看板不會被觸控縮放或 Ctrl＋滾輪放大；家長頁不限制', async ({ browser }) => {
+    const page = await openDevice(browser, createCloud());
+    const r = await page.evaluate(() => {
+        const ev = new WheelEvent('wheel', { ctrlKey: true, deltaY: -100, bubbles: true, cancelable: true });
+        document.body.dispatchEvent(ev);
+        return { blocked: ev.defaultPrevented, touch: getComputedStyle(document.documentElement).touchAction };
+    });
+    expect(r.blocked).toBe(true);
+    expect(r.touch).toBe('pan-x pan-y');
+    // 一般捲動不受影響
+    expect(await page.evaluate(() => {
+        const ev = new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true });
+        document.body.dispatchEvent(ev);
+        return ev.defaultPrevented;
+    })).toBe(false);
+
+    const parent = await openDevice(browser, createCloud(), { query: '?p' });
+    expect(await parent.evaluate(() => document.documentElement.classList.contains('no-zoom'))).toBe(false);
+});
