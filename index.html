@@ -1781,18 +1781,18 @@
 
             <div id="parent-result-box" class="space-y-3 hidden">
                 <!-- 摘要：座號、總完成度、目前狀態 -->
-                <div id="parent-summary" class="rounded-2xl p-4 text-white">
+                <!-- 座號和訂正狀態排在左邊、完成度在右邊，一個格子兩行就好 -->
+                <div id="parent-summary" class="rounded-2xl px-4 py-2.5 text-white">
                     <div class="flex justify-between items-center gap-3">
                         <div class="min-w-0">
-                            <span class="text-[14px] font-bold opacity-80 block">當前學生</span>
-                            <h4 id="parent-child-name" class="text-2xl font-black">1 號 同學</h4>
+                            <h4 id="parent-child-name" class="text-2xl font-black leading-tight">1 號 同學</h4>
+                            <div id="parent-status-title" class="text-base font-black leading-snug">目前無需訂正 🎉</div>
                         </div>
-                        <div class="text-right flex-shrink-0">
-                            <span class="text-[14px] font-bold opacity-80 block">總完成度</span>
+                        <div class="text-right flex-shrink-0 leading-tight">
+                            <span class="text-[13px] font-bold opacity-80 block">總完成度</span>
                             <span id="parent-progress-percent" class="text-3xl font-black">100%</span>
                         </div>
                     </div>
-                    <div id="parent-status-title" class="mt-2 text-base font-black">目前無需訂正 🎉</div>
                 </div>
                 <div id="parent-arrive" class="rounded-2xl px-4 py-2.5 text-base font-black flex items-center gap-2 border-2 hidden"></div>
                 <div id="parent-brush" class="rounded-2xl px-4 py-2.5 text-base font-black flex items-center gap-2 border-2"></div>
@@ -3883,11 +3883,11 @@
             const missing = pending.filter(item => item.missing);
             const toFix = pending.filter(item => !item.missing);
             if (pending.length === 0) {
-                summary.className = 'rounded-2xl p-4 text-white bg-emerald-600';
+                summary.className = 'rounded-2xl px-4 py-2.5 text-white bg-emerald-600';
                 statusTitle.innerText = '目前無需訂正 🎉';
                 pendingSection.classList.add('hidden');
             } else {
-                summary.className = `rounded-2xl p-4 text-white ${toFix.length === 0 ? 'bg-orange-600' : 'bg-rose-600'}`;
+                summary.className = `rounded-2xl px-4 py-2.5 text-white ${toFix.length === 0 ? 'bg-orange-600' : 'bg-rose-600'}`;
                 statusTitle.innerText = missing.length === 0 ? `還有 ${toFix.length} 項作業需要訂正`
                     : (toFix.length === 0 ? `有 ${missing.length} 項作業缺交` : `缺交 ${missing.length} 項、待訂正 ${toFix.length} 項`);
                 document.getElementById('parent-pending-title').innerText = missing.length ? '缺交與需要訂正的作業：' : '需要訂正的作業：';
