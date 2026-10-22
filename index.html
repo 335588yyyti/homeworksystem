@@ -477,7 +477,7 @@
         // 早自習：到校打卡（每天歸零）＋聯絡簿（老師更新才換）
         window.DAILY_ITEMS_MAX = 10;
         function defaultDaily() {
-            return { enabled: false, date: '', arrive: {}, leave: [], deadline: '08:00', contact: { date: '', items: [], tasks: [], layout: 'v' } };
+            return { enabled: false, date: '', arrive: {}, leave: [], deadline: '08:00', contact: { date: '', items: [], tasks: [], layout: 'v' }, prev: null };
         }
         window.defaultDaily = defaultDaily;
 
@@ -801,6 +801,7 @@
                 publishParentViews().catch(err => console.warn("家長查詢資料更新失敗:", err));
             }, 2000);
         }
+        window.scheduleParentPublish = scheduleParentPublish;
 
         // 只更新變動的那幾格（例如點一個座號），兩台裝置同時操作不同座號時不會互相覆蓋。
         // updates：[[作業名稱, 學生ID, true/false], ...]；學生ID 為 null 時代表整項作業（值為該作業的全部狀態）
@@ -1108,11 +1109,19 @@
                 Object.entries(dd.arrive).forEach(([id, t]) => { if (/^\d{2}:\d{2}$/.test(String(t))) arrive[id] = String(t); });
             }
             const cc = dd.contact && typeof dd.contact === 'object' ? dd.contact : {};
+            const readArrive = (src) => {
+                const out = {};
+                if (src && typeof src === 'object') Object.entries(src).forEach(([id, t]) => { if (/^\d{2}:\d{2}$/.test(String(t))) out[id] = String(t); });
+                return out;
+            };
+            const pp = dd.prev && typeof dd.prev === 'object' && typeof dd.prev.date === 'string' ? dd.prev : null;
             window.state.daily = {
                 enabled: dd.enabled === true,
                 date: typeof dd.date === 'string' ? dd.date : '',
                 arrive,
                 leave: Array.isArray(dd.leave) ? dd.leave.map(Number).filter(Number.isFinite) : [],
+                // 前一天的打卡（遲到時間以前，家長頁還是顯示這一份）
+                prev: pp ? { date: pp.date, arrive: readArrive(pp.arrive), leave: Array.isArray(pp.leave) ? pp.leave.map(Number).filter(Number.isFinite) : [] } : null,
                 deadline: /^\d{2}:\d{2}$/.test(String(dd.deadline)) ? dd.deadline : '08:00',
                 contact: {
                     date: typeof cc.date === 'string' ? cc.date : '',
@@ -3908,16 +3917,19 @@
 
             // 到教室時間：日期是今天才顯示，前一天的紀錄當作還沒打卡
             const arriveEl = document.getElementById('parent-arrive');
-            const [arriveDate, arriveTime, arriveNote] = typeof view.arrived === 'string' ? view.arrived.split(' ') : [];
+            // 格式「日期 遲到時間 狀態」；老師每天到了遲到時間才統一更新，之前顯示「幾點後更新」
+            const [arriveDate, arriveDeadline = '', arriveStatus] = typeof view.arrived === 'string' ? view.arrived.split(' ') : [];
             const arrivedToday = arriveDate === todayKey();
-            const arriveLate = arrivedToday && arriveNote === '遲到';
+            const arriveTimeOk = arrivedToday && /^\d{2}:\d{2}$/.test(arriveStatus || '');
+            const arriveLate = arriveTimeOk && arriveStatus > arriveDeadline;
             arriveEl.classList.toggle('hidden', typeof view.arrived !== 'string');
             arriveEl.classList.toggle('flex', typeof view.arrived === 'string');
             arriveEl.className = arriveEl.className.replace(/ (bg|border|text)-(emerald|orange|slate)-\d+/g, '')
-                + (!arrivedToday || arriveTime === '請假' ? ' bg-slate-50 border-slate-200 text-slate-500' : arriveLate ? ' bg-orange-50 border-orange-200 text-orange-700' : ' bg-emerald-50 border-emerald-200 text-emerald-700');
-            arriveEl.innerHTML = !arrivedToday ? '🏫 今日到教室：還沒打卡'
-                : arriveTime === '請假' ? '🏫 今日：請假'
-                : `🏫 今日到教室：${escapeHtml(arriveTime)}${arriveLate ? '（遲到）' : ' ✨'}`;
+                + (!arriveTimeOk ? ' bg-slate-50 border-slate-200 text-slate-500' : arriveLate ? ' bg-orange-50 border-orange-200 text-orange-700' : ' bg-emerald-50 border-emerald-200 text-emerald-700');
+            arriveEl.innerHTML = !arrivedToday ? `🏫 今日到教室：${/^\d{2}:\d{2}$/.test(arriveDeadline) ? `${Number(arriveDeadline.slice(0, 2))}:${arriveDeadline.slice(3)} 後更新` : '老師還沒更新'}`
+                : arriveStatus === '請假' ? '🏫 今日：請假'
+                : !arriveTimeOk ? '🏫 今日到教室：沒有打卡'
+                : `🏫 今日到教室：${escapeHtml(arriveStatus)}${arriveLate ? '（遲到）' : ' ✨'}`;
 
             const updatedEl = document.getElementById('parent-updated-at');
             updatedEl.textContent = view.updatedAt ? `最後更新：${new Date(view.updatedAt).toLocaleString('zh-TW')}（資料會自動更新）` : '';
@@ -4446,6 +4458,7 @@
         function applyMorningVisibility() {
             const on = isMorningEnabled();
             document.getElementById('tab-morning')?.classList.toggle('hidden', !on);
+            scheduleArriveDeadline();
             if (!on && window.state.currentTab === 'morning') switchTab('dashboard', true);
         }
 
@@ -4464,16 +4477,38 @@
             return { arrive: today ? { ...d.arrive } : {}, leave: today ? [...d.leave] : [] };
         }
 
-        // 給家長頁：「日期 時間」，遲到多加「遲到」；請假寫「日期 請假」；還沒打卡是空字串
+        // 給家長頁：「日期 遲到時間 狀態」，狀態是打卡時間、請假或未到。
+        // 每天到了遲到時間才統一換成今天的紀錄；之前一直是前一天的內容（家長頁顯示「幾點後更新」），不會多寫雲端
         function arrivedText(studentId) {
-            const { arrive, leave } = todayArrivals();
-            const time = arrive[studentId];
-            if (time) return `${todayKey()} ${time}${time > (window.state.daily || defaultDaily()).deadline ? ' 遲到' : ''}`;
-            return leave.includes(studentId) ? `${todayKey()} 請假` : '';
+            const d = window.state.daily || defaultDaily();
+            const today = todayKey();
+            const src = nowHHMM() >= d.deadline ? (d.date === today ? d : null)
+                : (d.date && d.date !== today ? d : d.prev);
+            if (!src) return `- ${d.deadline} -`;
+            const status = src.arrive[studentId] || (src.leave.includes(studentId) ? '請假' : '未到');
+            return `${src.date} ${d.deadline} ${status}`;
+        }
+
+        // 到了遲到時間：把全班今天的打卡一次更新到家長頁，之後每天同一時間再更新
+        let arriveDeadlineTimer = null;
+        function scheduleArriveDeadline() {
+            clearTimeout(arriveDeadlineTimer);
+            if (!isMorningEnabled() || window.IS_PARENT_MODE) return;
+            const [h, m] = (window.state.daily || defaultDaily()).deadline.split(':').map(Number);
+            const now = new Date();
+            let at = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 5);
+            if (at <= now) at = new Date(at.getTime() + 24 * 60 * 60 * 1000);
+            arriveDeadlineTimer = setTimeout(() => {
+                window.scheduleParentPublish?.();
+                scheduleArriveDeadline();
+            }, at - now);
         }
 
         function saveArrivals(arrive, leave, immediate = false) {
-            window.state.daily = { ...(window.state.daily || defaultDaily()), date: todayKey(), arrive, leave };
+            const d = window.state.daily || defaultDaily();
+            // 換新的一天：前一天的紀錄留著，遲到時間以前家長頁還是顯示它
+            const prev = d.date && d.date !== todayKey() ? { date: d.date, arrive: d.arrive, leave: d.leave } : d.prev;
+            window.state.daily = { ...d, date: todayKey(), arrive, leave, prev: prev || null };
             window.syncDaily(immediate);
         }
 
@@ -4563,6 +4598,7 @@
             }
             window.state.daily = { ...window.state.daily, deadline: `${m[1].padStart(2, '0')}:${m[2]}` };
             window.syncDaily(true);
+            scheduleArriveDeadline();
             renderArrivals();
             showToast(`已改成 ${window.state.daily.deadline} 以後算遲到`);
         }

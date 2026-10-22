@@ -89,25 +89,58 @@ test('聯絡簿：老師編輯後直式一項一欄、可切換橫式，另一�
     expect(phone.errors).toEqual([]);
 });
 
-test('家長頁看得到孩子今天幾點到教室；遲到也會標出來', async ({ browser }) => {
+test('家長頁的到教室時間：遲到時間以前顯示「幾點後更新」，到了才統一更新；遲到、請假也會顯示', async ({ browser }) => {
     test.setTimeout(120000);
     const cloud = createCloud();
     const room = await openDevice(browser, cloud);
-    const code = await room.evaluate(() => state.students.find((s) => s.id === 1).parentCode);
-    const parent = await openDevice(browser, cloud, { query: '?p=' + code, viewport: { width: 390, height: 844 } });
+    const [code1, code2] = await room.evaluate(() => [1, 2].map(id => state.students.find((s) => s.id === id).parentCode));
+    const parent = await openDevice(browser, cloud, { query: '?p=' + code1, viewport: { width: 390, height: 844 } });
     await expect(parent.locator('#parent-result-box')).toBeVisible();
     await expect(parent.locator('#parent-arrive')).toBeHidden();
     expect(await room.evaluate(() => state.daily.deadline)).toBe('08:00');
 
-    await room.evaluate(() => setMorningEnabled(true));
-    await expect(parent.locator('#parent-arrive')).toContainText('還沒打卡', { timeout: 20000 });
-    await room.evaluate(() => { switchTab('morning', true); tapArrival(1); });
-    await expect(parent.locator('#parent-arrive')).toContainText(/今日到教室：\d\d:\d\d/, { timeout: 20000 });
+    // 還沒到遲到時間：打卡不會馬上寫到家長頁
+    await room.evaluate(() => { state.daily.deadline = '23:59'; setMorningEnabled(true); switchTab('morning', true); });
+    await expect(parent.locator('#parent-arrive')).toContainText('23:59 後更新', { timeout: 20000 });
+    const viewWrites = () => room.writes.filter((p) => p.includes('parent_views')).length;
+    await room.evaluate(() => { tapArrival(1); tapArrival(2); syncDaily(true); });
+    await expect.poll(() => cloud.board('main').daily?.arrive?.['1'], { timeout: 15000 }).toMatch(/^\d\d:\d\d$/);
+    // 先等開啟早自習時的那一次上傳結束（電腦較慢時會晚一點）
+    let previous = -1;
+    await expect.poll(() => { const now = viewWrites(); const settled = now === previous; previous = now; return settled; }, { intervals: [3000], timeout: 30000 }).toBe(true);
+    const before = viewWrites();
+    await room.waitForTimeout(3500);
+    expect(viewWrites()).toBe(before);
+    await expect(parent.locator('#parent-arrive')).toContainText('23:59 後更新');
 
-    // 老師把遲到時間改早：之後的打卡算遲到
-    await room.evaluate(() => { state.daily.deadline = '00:00'; state.daily.arrive = {}; tapArrival(1); });
-    await expect(parent.locator('#parent-arrive')).toContainText('（遲到）', { timeout: 20000 });
-    expect(Object.keys(cloud.view(code)).length).toBeLessThanOrEqual(6);
+    // 到了遲到時間（這裡把時間改成 00:00 來模擬）：全班一起更新
+    await room.evaluate(() => {
+        state.daily.deadline = '00:00';
+        state.daily.arrive = { 1: '00:00', 2: '07:30' };
+        state.daily.leave = [3];
+        scheduleParentPublish();
+    });
+    await expect(parent.locator('#parent-arrive')).toContainText('今日到教室：00:00 ✨', { timeout: 20000 });
+    await expect.poll(() => cloud.view(code2)?.arrived, { timeout: 15000 }).toMatch(/ 00:00 07:30$/);
+    const parent2 = await openDevice(browser, cloud, { query: '?p=' + code2, viewport: { width: 390, height: 844 } });
+    await expect(parent2.locator('#parent-arrive')).toContainText('07:30（遲到）');
+    expect(Object.keys(cloud.view(code1)).length).toBeLessThanOrEqual(6);
     expect(room.errors).toEqual([]);
     expect(parent.errors).toEqual([]);
+});
+
+test('隔天遲到時間以前，家長頁的內容和前一天一樣（不會多寫雲端），學生打卡也不會改到', async ({ browser }) => {
+    const cloud = createCloud();
+    const room = await openDevice(browser, cloud);
+    const result = await room.evaluate(() => {
+        state.daily = { ...defaultDaily(), enabled: true, deadline: '23:59', date: '2000-01-01', arrive: { 1: '07:50' }, leave: [2] };
+        const before = [1, 2, 3].map(arrivedText);
+        tapArrival(1);
+        const after = [1, 2, 3].map(arrivedText);
+        return { before, after, prev: state.daily.prev, today: state.daily.date === todayKey() };
+    });
+    expect(result.before).toEqual(['2000-01-01 23:59 07:50', '2000-01-01 23:59 請假', '2000-01-01 23:59 未到']);
+    expect(result.after).toEqual(result.before);
+    expect(result.prev).toEqual({ date: '2000-01-01', arrive: { 1: '07:50' }, leave: [2] });
+    expect(result.today).toBe(true);
 });
