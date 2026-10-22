@@ -3914,7 +3914,7 @@
             arriveEl.classList.toggle('hidden', typeof view.arrived !== 'string');
             arriveEl.classList.toggle('flex', typeof view.arrived === 'string');
             arriveEl.className = arriveEl.className.replace(/ (bg|border|text)-(emerald|orange|slate)-\d+/g, '')
-                + (!arrivedToday ? ' bg-slate-50 border-slate-200 text-slate-500' : arriveLate ? ' bg-orange-50 border-orange-200 text-orange-700' : ' bg-emerald-50 border-emerald-200 text-emerald-700');
+                + (!arrivedToday || arriveTime === '請假' ? ' bg-slate-50 border-slate-200 text-slate-500' : arriveLate ? ' bg-orange-50 border-orange-200 text-orange-700' : ' bg-emerald-50 border-emerald-200 text-emerald-700');
             arriveEl.innerHTML = !arrivedToday ? '🏫 今日到教室：還沒打卡'
                 : arriveTime === '請假' ? '🏫 今日：請假'
                 : `🏫 今日到教室：${escapeHtml(arriveTime)}${arriveLate ? '（遲到）' : ' ✨'}`;
