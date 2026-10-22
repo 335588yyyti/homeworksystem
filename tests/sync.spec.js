@@ -43,10 +43,13 @@ test('連續點座號：最後一次點擊後 5 秒才一次存到雲端（教�
     await expect.poll(() => { const now = boardWrites(); const settled = now === previous; previous = now; return settled; }, { intervals: [800], timeout: 15000 }).toBe(true);
     const start = boardWrites();
 
-    await page.click('#btn-slot-0-student-3');
-    await page.waitForTimeout(1500);
-    await page.click('#btn-slot-0-student-5');
-    await page.click('#btn-slot-1-student-7');
+    // 在網頁裡直接連點（間隔 1.5 秒），測試電腦很慢時點擊間隔也不會被拉長
+    await page.evaluate(async () => {
+        document.getElementById('btn-slot-0-student-3').click();
+        await new Promise((r) => setTimeout(r, 1500));
+        document.getElementById('btn-slot-0-student-5').click();
+        document.getElementById('btn-slot-1-student-7').click();
+    });
     // 最後一次點擊後 2.5 秒（距離存檔還有 2.5 秒，電腦較慢時也有餘裕）
     await page.waitForTimeout(2500);
     // 最後一次點擊後還不到 5 秒：還沒上傳，狀態燈顯示同步中
@@ -64,9 +67,11 @@ test('連續點座號：最後一次點擊後 5 秒才一次存到雲端（教�
     // 學生消單：也是等最後一次點擊後 5 秒才存
     await page.evaluate(() => applyRoleUI('student'));
     const beforeStudent = boardWrites();
-    await page.click('#btn-slot-0-student-3');
-    await page.waitForTimeout(1500);
-    await page.click('#btn-slot-0-student-5');
+    await page.evaluate(async () => {
+        document.getElementById('btn-slot-0-student-3').click();
+        await new Promise((r) => setTimeout(r, 1500));
+        document.getElementById('btn-slot-0-student-5').click();
+    });
     await page.waitForTimeout(2500);
     expect(cloud.board('main').statuses['國習']['3']).toBe(false);
     await expect.poll(boardWrites, { timeout: 6000 }).toBe(beforeStudent + 1);
