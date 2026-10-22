@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=c16adfc6" rel="stylesheet">
+    <link href="assets/tailwind.css?v=c1e6a140" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -48,7 +48,7 @@
             font-size: 1.375rem;
             font-weight: 900;
         }
-        /* ---- 早安站：聯絡簿（黑板＋格線） ---- */
+        /* ---- 早自習：聯絡簿（黑板＋格線） ---- */
         .contact-board { background: #2f4a3a; border: 6px solid #8b5e34; }
         .contact-paper { background: #fffdf5; border-radius: 0.75rem; }
         /* 直式：由右往左一欄一項，欄寬跟著字數長，超過寬度可以左右捲動 */
@@ -474,10 +474,10 @@
             return Array.from(bytes, b => 'abcdefghijklmnopqrstuvwxyz0123456789'[b % 36]).join('');
         };
 
-        // 早安站：到校打卡（每天歸零）＋聯絡簿（老師更新才換）
+        // 早自習：到校打卡（每天歸零）＋聯絡簿（老師更新才換）
         window.DAILY_ITEMS_MAX = 10;
         function defaultDaily() {
-            return { enabled: false, date: '', arrive: {}, leave: [], deadline: '07:40', contact: { date: '', items: [], layout: 'v' } };
+            return { enabled: false, date: '', arrive: {}, leave: [], deadline: '08:00', contact: { date: '', items: [], tasks: [], layout: 'v' } };
         }
         window.defaultDaily = defaultDaily;
 
@@ -942,16 +942,17 @@
             return syncDebounceTimer !== null || statusFlushTimer !== null || brushFlushTimer !== null || dailyFlushTimer !== null;
         }
 
-        // 早安站：只更新 daily 這一欄；打卡時等最後一次點擊後 5 秒才送
+        // 早自習：只更新 daily 這一欄；打卡時等最後一次點擊後 5 秒才送
         let dailyFlushTimer = null;
         function flushDaily() {
             clearTimeout(dailyFlushTimer);
             dailyFlushTimer = null;
             if (!window.isCloudConnected()) return;
             trackWrite(updateDoc(cloudDocRef, 'daily', window.state.daily, 'lastUpdated', Date.now())).catch(err => {
-                console.warn("早安站更新失敗，改為整份存檔:", err);
+                console.warn("早自習更新失敗，改為整份存檔:", err);
                 window.syncStateToCloud(true);
             });
+            scheduleParentPublish();
             refreshSyncBadge();
         }
         window.syncDaily = function(immediate = false) {
@@ -1100,7 +1101,7 @@
                 meal: items.map((_, i) => !!(Array.isArray(b.meal) && b.meal[i])),
                 tips: Array.isArray(b.tips) ? b.tips.map(String).filter(t => t.trim()).slice(0, BRUSH_TIPS_MAX).map(t => t.slice(0, 20)) : [...DEFAULT_BRUSH_TIPS]
             };
-            // 早安站：到校打卡時間（HH:MM）、請假的座號、聯絡簿內容與直式／橫式
+            // 早自習：到校打卡時間（HH:MM）、請假的座號、聯絡簿內容與直式／橫式
             const dd = d.daily && typeof d.daily === 'object' ? d.daily : {};
             const arrive = {};
             if (dd.arrive && typeof dd.arrive === 'object') {
@@ -1112,10 +1113,11 @@
                 date: typeof dd.date === 'string' ? dd.date : '',
                 arrive,
                 leave: Array.isArray(dd.leave) ? dd.leave.map(Number).filter(Number.isFinite) : [],
-                deadline: /^\d{2}:\d{2}$/.test(String(dd.deadline)) ? dd.deadline : '07:40',
+                deadline: /^\d{2}:\d{2}$/.test(String(dd.deadline)) ? dd.deadline : '08:00',
                 contact: {
                     date: typeof cc.date === 'string' ? cc.date : '',
                     items: Array.isArray(cc.items) ? cc.items.map(String).map(t => t.slice(0, 40)).filter(t => t.trim()).slice(0, DAILY_ITEMS_MAX) : [],
+                    tasks: Array.isArray(cc.tasks) ? cc.tasks.map(String).map(t => t.slice(0, 40)).filter(t => t.trim()).slice(0, DAILY_ITEMS_MAX) : [],
                     layout: cc.layout === 'h' ? 'h' : 'v'
                 }
             };
@@ -1549,7 +1551,7 @@
                     <i class="fa-solid fa-chalkboard-user text-amber-500 hidden 2xl:inline"></i> 班級看板
                 </button>
                 <button onclick="switchTab('morning')" id="tab-morning" class="hidden px-2 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900">
-                    <span class="leading-none hidden 2xl:inline">🌅</span>早安
+                    <span class="leading-none hidden 2xl:inline">📖</span>早自習
                 </button>
                 <button onclick="switchTab('brush')" id="tab-brush" class="hidden px-2 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900">
                     <span class="leading-none hidden 2xl:inline">🦷</span>潔牙
@@ -1630,12 +1632,12 @@
 
     <!-- 個別查詢分頁：家長輸入查詢碼，只看得到自己孩子的狀態；老師解鎖後改為教師專用（輸入座號查詢）。版面精簡，盡量一頁看完 -->
     <!-- 潔牙站：午餐後潔牙，學生點自己的牙齒打勾；每天自動歸零 -->
-    <!-- 早安站：到校打卡＋聯絡簿 -->
+    <!-- 早自習：到校打卡＋聯絡簿 -->
     <main id="view-morning" class="w-full flex-1 min-h-0 overflow-y-auto hidden bg-amber-50/40">
         <div class="max-w-[1700px] mx-auto px-3.5 py-2 lg:h-full flex flex-col gap-2">
             <div class="flex flex-wrap items-center justify-between gap-2">
                 <div class="flex items-center gap-3">
-                    <h2 class="text-2xl sm:text-3xl font-black text-amber-700">🌅 早安！</h2>
+                    <h2 class="text-2xl sm:text-3xl font-black text-amber-700">📖 早自習</h2>
                     <span id="morning-date" class="text-lg sm:text-xl font-black text-sky-800 bg-sky-100 rounded-full px-4 py-1"></span>
                 </div>
                 <div id="morning-clock" class="font-mono text-4xl sm:text-5xl font-black text-indigo-800 tracking-wider">--:--:--</div>
@@ -1648,7 +1650,7 @@
                         <span class="text-lg font-black text-emerald-700 whitespace-nowrap">已到 <span id="arrive-count">0/0</span></span>
                     </div>
                     <div class="flex flex-wrap items-center gap-2 mb-2 text-sm font-bold text-slate-500">
-                        <span><span id="arrive-deadline-text">07:40</span> 以後打卡算遲到・到校後點自己的座號</span>
+                        <span><span id="arrive-deadline-text">08:00</span> 以後打卡算遲到・到校後點自己的座號</span>
                         <button onclick="editArriveDeadline()" class="teacher-ui text-amber-700 underline underline-offset-2">✏️ 改時間</button>
                     </div>
                     <div id="arrive-grid" class="grid gap-1.5 lg:overflow-y-auto lg:min-h-0 pr-1" style="grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));"></div>
@@ -1657,7 +1659,7 @@
                 <!-- 聯絡簿 -->
                 <section class="contact-board rounded-3xl p-3 sm:p-4 shadow-md flex flex-col lg:min-h-0 min-h-[420px]">
                     <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-                        <h3 class="text-xl sm:text-2xl font-black text-amber-200 whitespace-nowrap">📒 聯絡簿 <span id="contact-date" class="text-base sm:text-lg text-white/80"></span></h3>
+                        <h3 class="text-xl sm:text-2xl font-black text-amber-200 whitespace-nowrap">📒 早修任務・聯絡簿 <span id="contact-date" class="text-base sm:text-lg text-white/80"></span></h3>
                         <div class="flex items-center gap-1.5">
                             <div class="flex bg-black/25 rounded-xl p-1">
                                 <button id="contact-layout-v" onclick="setContactLayout('v')" class="px-3 py-1 rounded-lg text-sm font-black">直式</button>
@@ -1783,6 +1785,7 @@
                     </div>
                     <div id="parent-status-title" class="mt-2 text-base font-black">目前無需訂正 🎉</div>
                 </div>
+                <div id="parent-arrive" class="rounded-2xl px-4 py-2.5 text-base font-black flex items-center gap-2 border-2 hidden"></div>
                 <div id="parent-brush" class="rounded-2xl px-4 py-2.5 text-base font-black flex items-center gap-2 border-2"></div>
 
                 <!-- 只列出需要訂正的作業；全部完成時整段隱藏 -->
@@ -1909,13 +1912,13 @@
                         <p class="text-[14px] text-slate-500 mt-1">開啟後上方多一個「潔牙」分頁（潔牙打勾、抬餐、倒數計時），家長查詢也會顯示「今日潔牙」。關閉時都不會出現。</p>
                     </div>
 
-                    <!-- 早安站開關 -->
+                    <!-- 早自習開關 -->
                     <div class="mt-4 pt-3 border-t border-slate-100">
                         <label class="flex items-center gap-2 cursor-pointer">
                             <input type="checkbox" id="morning-enabled" onchange="setMorningEnabled(this.checked)" class="w-5 h-5 accent-amber-500">
-                            <span class="text-sm font-black text-slate-800">🌅 開啟早安站（到校打卡＋聯絡簿）</span>
+                            <span class="text-sm font-black text-slate-800">📖 開啟早自習（到校打卡＋早修任務＋聯絡簿）</span>
                         </label>
-                        <p class="text-[14px] text-slate-500 mt-1">開啟後上方多一個「早安」分頁：學生到校點自己的座號打卡，旁邊顯示今天的聯絡簿（可選直式或橫式）。</p>
+                        <p class="text-[14px] text-slate-500 mt-1">開啟後上方多一個「早自習」分頁：學生到校點自己的座號打卡，旁邊顯示早修任務和今天的聯絡簿（可選直式或橫式）。家長查詢頁會顯示孩子幾點到教室。</p>
                     </div>
                 </div>
 
@@ -2291,10 +2294,15 @@
         <div class="bg-white border-2 border-slate-200 rounded-3xl p-5 w-full max-w-md board-shadow flex flex-col max-h-full">
             <div class="text-center mb-3">
                 <div class="text-3xl mb-1">📒</div>
-                <h4 class="text-xl font-black text-slate-800">編輯今天的聯絡簿</h4>
-                <p class="text-sm text-slate-500 mt-0.5">一行一項（最多 10 項，每項最多 40 字），例如「國習 P.48」「帶水彩」</p>
+                <h4 class="text-xl font-black text-slate-800">編輯早修任務和聯絡簿</h4>
+                <p class="text-sm text-slate-500 mt-0.5">一行一項（各最多 10 項，每項最多 40 字）</p>
             </div>
-            <textarea id="contact-input" rows="8" class="w-full bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2 text-lg font-black text-slate-800 focus:outline-none focus:border-amber-400 leading-relaxed"></textarea>
+            <div class="overflow-y-auto min-h-0 flex flex-col gap-1">
+                <label for="task-input" class="text-base font-black text-amber-700">⭐ 早修任務 <span class="text-sm font-bold text-slate-400">例如「訂正國卷 L.3」，不用可以空白</span></label>
+                <textarea id="task-input" rows="3" class="w-full bg-amber-50 border-2 border-amber-200 rounded-xl px-3 py-2 text-lg font-black text-slate-800 focus:outline-none focus:border-amber-400 leading-relaxed"></textarea>
+                <label for="contact-input" class="text-base font-black text-emerald-800 mt-2">📒 聯絡簿 <span class="text-sm font-bold text-slate-400">例如「國習 P.48」「帶水彩」</span></label>
+                <textarea id="contact-input" rows="6" class="w-full bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2 text-lg font-black text-slate-800 focus:outline-none focus:border-amber-400 leading-relaxed"></textarea>
+            </div>
             <div class="grid grid-cols-2 gap-2.5 mt-3">
                 <button onclick="closeContactEditor()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-base transition-all">取消</button>
                 <button onclick="saveContact()" class="bg-amber-400 hover:bg-amber-500 text-slate-900 font-black py-2.5 rounded-xl text-base transition-all">儲存</button>
@@ -2557,7 +2565,9 @@
                     onBoard: onBoard.has(a)
                 })),
                 // 今天完成潔牙時記下日期；家長頁和自己手機的日期相同才顯示「已完成」
-                ...(isBrushEnabled() ? { brushed: isBrushedToday(student.id) ? todayKey() : '' } : {})
+                ...(isBrushEnabled() ? { brushed: isBrushedToday(student.id) ? todayKey() : '' } : {}),
+                // 今天幾點到教室（例如「2026-10-22 07:45」、遲到加「遲到」、請假寫「請假」）
+                ...(isMorningEnabled() ? { arrived: arrivedText(student.id) } : {})
             };
         }
 
@@ -3896,6 +3906,19 @@
             brushEl.classList.toggle('hidden', typeof view.brushed !== 'string');
             brushEl.innerHTML = brushed ? '🦷 今日潔牙：已完成 ✨' : '🦷 今日潔牙：還沒登記';
 
+            // 到教室時間：日期是今天才顯示，前一天的紀錄當作還沒打卡
+            const arriveEl = document.getElementById('parent-arrive');
+            const [arriveDate, arriveTime, arriveNote] = typeof view.arrived === 'string' ? view.arrived.split(' ') : [];
+            const arrivedToday = arriveDate === todayKey();
+            const arriveLate = arrivedToday && arriveNote === '遲到';
+            arriveEl.classList.toggle('hidden', typeof view.arrived !== 'string');
+            arriveEl.classList.toggle('flex', typeof view.arrived === 'string');
+            arriveEl.className = arriveEl.className.replace(/ (bg|border|text)-(emerald|orange|slate)-\d+/g, '')
+                + (!arrivedToday ? ' bg-slate-50 border-slate-200 text-slate-500' : arriveLate ? ' bg-orange-50 border-orange-200 text-orange-700' : ' bg-emerald-50 border-emerald-200 text-emerald-700');
+            arriveEl.innerHTML = !arrivedToday ? '🏫 今日到教室：還沒打卡'
+                : arriveTime === '請假' ? '🏫 今日：請假'
+                : `🏫 今日到教室：${escapeHtml(arriveTime)}${arriveLate ? '（遲到）' : ' ✨'}`;
+
             const updatedEl = document.getElementById('parent-updated-at');
             updatedEl.textContent = view.updatedAt ? `最後更新：${new Date(view.updatedAt).toLocaleString('zh-TW')}（資料會自動更新）` : '';
         }
@@ -4415,7 +4438,7 @@
             return loadBrush().done.includes(studentId);
         }
 
-        // ---- 早安站：到校打卡＋聯絡簿 ----
+        // ---- 早自習：到校打卡＋聯絡簿 ----
         function isMorningEnabled() {
             return window.state.daily?.enabled === true;
         }
@@ -4431,7 +4454,7 @@
             window.syncDaily(true);
             applyMorningVisibility();
             window.soundEffect.playToggle();
-            showToast(on ? '已開啟早安站，上方多了「早安」分頁' : '已關閉早安站');
+            showToast(on ? '已開啟早自習，上方多了「早自習」分頁' : '已關閉早自習');
         }
 
         // 今天的打卡紀錄（換一天自動清空，聯絡簿保留）
@@ -4439,6 +4462,14 @@
             const d = window.state.daily || defaultDaily();
             const today = d.date === todayKey();
             return { arrive: today ? { ...d.arrive } : {}, leave: today ? [...d.leave] : [] };
+        }
+
+        // 給家長頁：「日期 時間」，遲到多加「遲到」；請假寫「日期 請假」；還沒打卡是空字串
+        function arrivedText(studentId) {
+            const { arrive, leave } = todayArrivals();
+            const time = arrive[studentId];
+            if (time) return `${todayKey()} ${time}${time > (window.state.daily || defaultDaily()).deadline ? ' 遲到' : ''}`;
+            return leave.includes(studentId) ? `${todayKey()} 請假` : '';
         }
 
         function saveArrivals(arrive, leave, immediate = false) {
@@ -4523,11 +4554,11 @@
                 return;
             }
             const current = (window.state.daily || defaultDaily()).deadline;
-            const value = prompt('幾點以後打卡算遲到？（例如 07:40）', current);
+            const value = prompt('幾點以後打卡算遲到？（例如 08:00）', current);
             if (value === null) return;
             const m = value.trim().replace('：', ':').match(/^(\d{1,2}):(\d{2})$/);
             if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) {
-                showToast('時間格式請寫成 07:40', false);
+                showToast('時間格式請寫成 08:00', false);
                 return;
             }
             window.state.daily = { ...window.state.daily, deadline: `${m[1].padStart(2, '0')}:${m[2]}` };
@@ -4553,25 +4584,38 @@
                 document.getElementById(`contact-layout-${k}`).className = `px-3 py-1 rounded-lg text-sm font-black ${c.layout === k ? 'bg-amber-300 text-amber-900' : 'text-white/80 hover:text-white'}`;
             });
             const body = document.getElementById('contact-body');
-            if (items.length === 0) {
-                body.innerHTML = `<div class="h-full flex items-center justify-center text-center text-white/70 text-xl font-black py-10">還沒有寫今天的聯絡簿<br>按右上角「✏️ 編輯」</div>`;
+            const tasks = c.tasks || [];
+            if (items.length === 0 && tasks.length === 0) {
+                body.innerHTML = `<div class="h-full flex items-center justify-center text-center text-white/70 text-xl font-black py-10">還沒有寫早修任務和聯絡簿<br>按右上角「✏️ 編輯」</div>`;
                 return;
             }
-            if (c.layout === 'h') {
-                body.innerHTML = `<ol class="contact-paper h-full p-4 sm:p-6 space-y-2">${items.map((t, i) => `
+            const vertical = c.layout !== 'h';
+            // 早修任務：黃色便利貼，放在聯絡簿左邊；直式時自動補滿聯絡簿旁邊的空白
+            const note = tasks.length === 0 ? '' : `
+                <div id="morning-task" class="relative bg-amber-200 rounded-2xl p-4 sm:p-5 shadow-lg flex flex-col gap-3 min-w-0 ${vertical || items.length === 0 ? 'lg:flex-1' : 'lg:w-2/5 lg:flex-shrink-0'}">
+                    <div class="text-center text-2xl sm:text-3xl font-black text-slate-800 tracking-widest">早修任務</div>
+                    <ol class="flex flex-col gap-2.5">${tasks.map((t, i) => `
+                        <li class="self-start bg-white/90 rounded-xl px-3 py-1.5 text-2xl sm:text-3xl xl:text-4xl font-black text-rose-700 break-all shadow-sm">${i + 1}.${escapeHtml(t)}</li>`).join('')}</ol>
+                    <div class="mt-auto text-4xl sm:text-5xl select-none pointer-events-none leading-none pt-2" aria-hidden="true">⭐<span class="text-2xl sm:text-3xl">✨</span></div>
+                </div>`;
+            let paper = '';
+            if (items.length > 0 && !vertical) {
+                paper = `<ol class="contact-paper flex-1 min-w-0 p-4 sm:p-6 space-y-2">${items.map((t, i) => `
                     <li class="flex gap-3 items-baseline border-b-2 border-dashed border-amber-200 pb-2">
                         <span class="text-2xl sm:text-3xl font-black text-amber-600 w-10 flex-shrink-0 text-right" style="font-family: Nunito, sans-serif">${i + 1}.</span>
                         <span class="text-2xl sm:text-4xl font-black text-slate-800 break-all">${escapeHtml(t)}</span>
                     </li>`).join('')}</ol>`;
-                return;
-            }
-            // 直式：欄寬依項目數平分，字級依高度自動調整
-            body.innerHTML = `<div class="contact-paper h-full p-2 overflow-x-auto"><div class="contact-cols">${items.map((t, i) => `
+            } else if (items.length > 0) {
+                // 直式：由右往左一項一欄；有早修任務時聯絡簿只佔需要的寬度，便利貼靠過來
+                paper = `<div class="contact-paper p-2 overflow-x-auto max-w-full ${tasks.length ? 'lg:flex-shrink-0' : 'flex-1'}"><div class="contact-cols">${items.map((t, i) => `
                 <div class="contact-col">
                     <div class="num text-xl sm:text-2xl" style="font-family: Nunito, sans-serif">${i + 1}</div>
                     <div class="txt">${contactTextHtml(t)}</div>
                 </div>`).join('')}</div></div>`;
-            fitContactVertical();
+            }
+            // 電腦：聯絡簿在右、便利貼在左；手機：便利貼在上
+            body.innerHTML = `<div class="h-full flex flex-col-reverse lg:flex-row-reverse gap-3">${paper}${note}</div>`;
+            if (vertical) fitContactVertical();
         }
 
         // 直式：一項一欄、不換行；依最長的一項自動決定字的大小，整欄放得下
@@ -4585,6 +4629,8 @@
             const avail = cols.clientHeight - (num ? num.offsetHeight : 40) - 24;
             const size = Math.max(16, Math.min(48, Math.floor(avail / (units * 1.12))));
             cols.querySelectorAll('.txt').forEach(el => { el.style.fontSize = `${size}px`; });
+            // 直式由右往左讀：放不下時先顯示最右邊（第 1 項）
+            cols.parentElement.scrollLeft = cols.parentElement.scrollWidth;
         }
 
         function setContactLayout(layout) {
@@ -4603,9 +4649,11 @@
                 openTeacherAuthModal(openContactEditor, { allowHelper: true });
                 return;
             }
-            document.getElementById('contact-input').value = (window.state.daily || defaultDaily()).contact.items.join('\n');
+            const c = (window.state.daily || defaultDaily()).contact;
+            document.getElementById('task-input').value = c.tasks.join('\n');
+            document.getElementById('contact-input').value = c.items.join('\n');
             document.getElementById('modal-contact').classList.remove('hidden');
-            setTimeout(() => document.getElementById('contact-input').focus(), 100);
+            setTimeout(() => document.getElementById('task-input').focus(), 100);
         }
 
         function closeContactEditor() {
@@ -4613,17 +4661,17 @@
         }
 
         function saveContact() {
-            const items = document.getElementById('contact-input').value.split('\n').map(t => t.trim().slice(0, 40)).filter(Boolean).slice(0, DAILY_ITEMS_MAX);
+            const lines = id => document.getElementById(id).value.split('\n').map(t => t.trim().slice(0, 40)).filter(Boolean).slice(0, DAILY_ITEMS_MAX);
             const d = window.state.daily || defaultDaily();
-            window.state.daily = { ...d, contact: { ...d.contact, items, date: todayKey() } };
+            window.state.daily = { ...d, contact: { ...d.contact, items: lines('contact-input'), tasks: lines('task-input'), date: todayKey() } };
             window.syncDaily(true);
             closeContactEditor();
             renderContact();
             window.soundEffect.playSuccess();
-            showToast('聯絡簿已更新');
+            showToast('早修任務和聯絡簿已更新');
         }
 
-        // 時鐘只在早安頁開著時每秒更新
+        // 時鐘只在早自習頁開著時每秒更新
         let morningClockTimer = null;
         function tickMorningClock() {
             const d = new Date();
