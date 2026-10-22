@@ -59,9 +59,11 @@ test('學生消單：缺交點一下變成待訂正（補交），再點一下�
     await expect(seat).not.toHaveClass(/seat-missing|seat-pending/);
     // 點錯可以復原回缺交
     await page.evaluate(() => { setStudentStatus(state.slots[0].assignment, 9, 'missing'); renderDashboard(); });
-    await page.click('#btn-slot-0-student-9');
-    // 復原列 5 秒後自動收起；直接觸發點擊，不等滑入動畫（測試電腦慢時才不會錯過）
-    await page.locator('#undo-bar button').dispatchEvent('click');
+    // 復原列 5 秒後自動收起：點座號和按復原在同一步做完（測試電腦很慢時才不會超過 5 秒）
+    await page.evaluate(() => {
+        document.getElementById('btn-slot-0-student-9').click();
+        document.querySelector('#undo-bar button').click();
+    });
     await expect(page.locator('#btn-slot-0-student-9')).toHaveClass(/seat-missing/);
 });
 
