@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=c1e6a140" rel="stylesheet">
+    <link href="assets/tailwind.css?v=76efa564" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -144,7 +144,7 @@
         }
         @media (min-width: 1024px) {
             .dash-grid:not(.hidden) {
-                /* 欄數依作業框數量決定（4 框 2 欄、6 框 3 欄、8 框 4 欄），固定排成兩列 */
+                /* 欄數依作業框數量決定（4 框 2 欄、6 框 3 欄、8 框 4 欄、10 框 5 欄），固定排成兩列 */
                 grid-template-columns: repeat(var(--slot-cols, 3), minmax(0, 1fr));
                 grid-auto-rows: minmax(220px, 1fr);
             }
@@ -1840,10 +1840,11 @@
                     <div class="space-y-2.5">
                         <div>
                             <label class="block text-[14px] font-bold text-slate-500 mb-1">看板作業框數量（作業少時選 4 框，座號會更大）</label>
-                            <div id="slot-count-buttons" class="grid grid-cols-3 gap-2">
+                            <div id="slot-count-buttons" class="grid grid-cols-4 gap-2">
                                 <button onclick="setSlotCount(4)" data-count="4" class="py-2 rounded-xl text-sm font-black border-2 transition-all">4 框</button>
                                 <button onclick="setSlotCount(6)" data-count="6" class="py-2 rounded-xl text-sm font-black border-2 transition-all">6 框</button>
                                 <button onclick="setSlotCount(8)" data-count="8" class="py-2 rounded-xl text-sm font-black border-2 transition-all">8 框</button>
+                                <button onclick="setSlotCount(10)" data-count="10" class="py-2 rounded-xl text-sm font-black border-2 transition-all">10 框</button>
                             </div>
                         </div>
                         <div>
@@ -3048,7 +3049,7 @@
             }
 
             const initialLayout = bestSeatLayout(window.state.students.length);
-            // 大螢幕固定兩列：4 框 2 欄、6 框 3 欄、8 框 4 欄
+            // 大螢幕固定兩列：4 框 2 欄、6 框 3 欄、8 框 4 欄、10 框 5 欄
             container.style.setProperty('--slot-cols', Math.max(1, Math.ceil(window.state.slots.length / 2)));
 
             window.state.slots.forEach((slot, index) => {
@@ -3177,7 +3178,7 @@
             showUndo({ assignment, studentId, previous, next: true });
         }
 
-        const SLOT_COUNT_OPTIONS = [4, 6, 8];
+        const SLOT_COUNT_OPTIONS = [4, 6, 8, 10];
 
         function renderSlotCountButtons() {
             const current = window.state.slots.length;
@@ -5258,7 +5259,7 @@
                 ]),
                 page('⚙️', '其他小技巧', [
                     '<b>🙋 小幫手模式</b>：在設定後台開啟，讓小老師幫忙點紅燈、換作業、消掉下方清單，但不能進設定後台、不能按「全部完成」。',
-                    '<b>看板設定</b>：看板可以放 4／6／8 框；作業項目可以拖曳或用 ▲▼ 調整順序。上方「🔊」可以開關音效。',
+                    '<b>看板設定</b>：看板可以放 4／6／8／10 框；作業項目可以拖曳或用 ▲▼ 調整順序。上方「🔊」可以開關音效。',
                     '<b>🔄 立即同步</b>：教室電腦和手機都按一下，就能確認兩邊是同一份進度。',
                     '<b>🎁 複製分享全新看板</b>：分享給其他老師，對方會建立自己的空白班級，看不到你的資料；換新電腦時選「已經有班級」，輸入班級代碼接回。',
                     '不小心建立了新班級，原本的資料還在：到「設定後台 → 班級共用代碼」輸入原本的代碼就能切回。',

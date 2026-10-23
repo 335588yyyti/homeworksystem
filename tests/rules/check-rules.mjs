@@ -28,7 +28,7 @@ await check('逐格更新紅綠燈', assertSucceeds(updateDoc(doc(db, A + 'check
 await check('整項作業全部完成', assertSucceeds(updateDoc(doc(db, A + 'checkpoint_boards/lin601cs'), new FieldPath('statuses', '作業1'), { '1': true, '2': true })));
 await check('舊格式看板（轉換前）可寫入', assertSucceeds(setDoc(doc(db, A + 'checkpoint_boards/oldfmt1'), (({ statuses, ...rest }) => ({ ...rest, serializedStatuses: { '作業0': '{"3":false}' } }))(board()))));
 await check('清空舊代碼（停用標記）', assertSucceeds(setDoc(doc(db, A + 'checkpoint_boards/max40ab'), { retired: true, retiredAt: Date.now() })));
-await check('8 個作業框', assertSucceeds(setDoc(doc(db, A + 'checkpoint_boards/eight8x'), { ...board(), slots: Array.from({ length: 8 }, (_, i) => ({ id: i + 1, assignment: 'x' })) })));
+await check('10 個作業框', assertSucceeds(setDoc(doc(db, A + 'checkpoint_boards/ten10xx'), { ...board(), slots: Array.from({ length: 10 }, (_, i) => ({ id: i + 1, assignment: 'x' })) })));
 await check('寫入家長查詢摘要', assertSucceeds(setDoc(doc(db, A + 'parent_views/K7P2QX'), { seat: '5', items: [{ name: '國習', finished: false, onBoard: true }], updatedAt: Date.now() })));
 await check('舊版含標語的摘要仍可覆寫', assertSucceeds(setDoc(doc(db, A + 'parent_views/K7P2QX9A'), { seat: '5', sloganTitle: 'x', sloganSub: 'y', items: [], updatedAt: 1 })));
 await check('家長讀取自己的摘要', assertSucceeds(getDoc(doc(db, A + 'parent_views/K7P2QX'))));
@@ -42,7 +42,7 @@ await check('不能列出所有班級', assertFails(getDocs(collection(db, A + '
 await check('不能列出所有查詢碼', assertFails(getDocs(collection(db, A + 'parent_views'))));
 await check('41 人被擋', assertFails(setDoc(doc(db, A + 'checkpoint_boards/big41xx'), board(41))));
 await check('51 項作業被擋', assertFails(setDoc(doc(db, A + 'checkpoint_boards/big51xx'), { ...board(), assignments: Array.from({ length: 51 }, (_, i) => 'a' + i) })));
-await check('9 個作業框被擋', assertFails(setDoc(doc(db, A + 'checkpoint_boards/nine9xx'), { ...board(), slots: Array.from({ length: 9 }, () => ({ id: 1, assignment: 'x' })) })));
+await check('11 個作業框被擋', assertFails(setDoc(doc(db, A + 'checkpoint_boards/elev11x'), { ...board(), slots: Array.from({ length: 11 }, () => ({ id: 1, assignment: 'x' })) })));
 await check('超長標語被擋', assertFails(setDoc(doc(db, A + 'checkpoint_boards/long1xx'), { ...board(), sloganSub: 'x'.repeat(201) })));
 await check('塞入大量額外欄位被擋', assertFails(setDoc(doc(db, A + 'checkpoint_boards/junk1xx'), Object.fromEntries(Array.from({ length: 20 }, (_, i) => ['f' + i, 'x'])))));
 await check('逐格更新也不能把學生塞到 41 人', assertFails(updateDoc(doc(db, A + 'checkpoint_boards/lin601cs'), 'students', students(41))));
