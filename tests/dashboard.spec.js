@@ -20,11 +20,11 @@ test('28、35、40 人在各種螢幕大小，座號都不會超出卡片', asyn
     expect(page.errors).toEqual([]);
 });
 
-test('作業框數量可切換 4、6、8 框，並同步到雲端', async ({ browser }) => {
+test('作業框數量可切換 4、6、8、10 框，並同步到雲端', async ({ browser }) => {
     const cloud = createCloud();
     const page = await openDevice(browser, cloud);
     await unlockTeacher(page, 'settings');
-    for (const count of [4, 8, 6]) {
+    for (const count of [4, 10, 8, 6]) {
         await page.click(`#slot-count-buttons button[data-count="${count}"]`);
         await page.evaluate(() => switchTab('dashboard', true));
         await expect(page.locator('#view-dashboard > div')).toHaveCount(count);

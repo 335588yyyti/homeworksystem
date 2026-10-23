@@ -19,12 +19,12 @@ service cloud.firestore {
       return !(field in data) || (data[field] is string && data[field].size() <= max);
     }
 
-    // 班級看板：最多 40 位學生、50 項作業、8 個作業框
+    // 班級看板：最多 40 位學生、50 項作業、10 個作業框
     function validBoard(d) {
       return d.size() <= 15
         && listMax(d, 'students', 40)
         && listMax(d, 'assignments', 50)
-        && listMax(d, 'slots', 8)
+        && listMax(d, 'slots', 10)
         && mapMax(d, 'statuses', 60)
         && mapMax(d, 'serializedStatuses', 60)
         && textMax(d, 'teacherPin', 30)

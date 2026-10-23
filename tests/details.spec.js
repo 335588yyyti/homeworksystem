@@ -80,7 +80,7 @@ test('換下看板後還沒完成的同學排在下方小清單；只有老師�
     await expect(seats).toHaveCount(0);
 
     // 其他分頁不顯示
-    await page.click('#tab-parent');
+    await page.evaluate(() => switchTab('parent', true));
     await expect(page.locator('#offboard-strip')).toBeHidden();
 });
 

@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=c1e6a140" rel="stylesheet">
+    <link href="assets/tailwind.css?v=c7e4436d" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -144,7 +144,7 @@
         }
         @media (min-width: 1024px) {
             .dash-grid:not(.hidden) {
-                /* 欄數依作業框數量決定（4 框 2 欄、6 框 3 欄、8 框 4 欄），固定排成兩列 */
+                /* 欄數依作業框數量決定（4 框 2 欄、6 框 3 欄、8 框 4 欄、10 框 5 欄），固定排成兩列 */
                 grid-template-columns: repeat(var(--slot-cols, 3), minmax(0, 1fr));
                 grid-auto-rows: minmax(220px, 1fr);
             }
@@ -1565,7 +1565,7 @@
                 <button onclick="switchTab('brush')" id="tab-brush" class="hidden px-2 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900">
                     <span class="leading-none hidden 2xl:inline">🦷</span>潔牙
                 </button>
-                <button onclick="switchTab('parent')" id="tab-parent" class="px-2 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900">
+                <button onclick="switchTab('parent')" id="tab-parent" class="hidden px-2 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900">
                     <i class="fa-solid fa-id-card text-indigo-500 hidden 2xl:inline"></i> 個別查詢
                 </button>
                 <button onclick="switchTab('settings')" id="tab-settings" class="px-2 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900">
@@ -1749,6 +1749,7 @@
                     <i class="fa-solid fa-magnifying-glass-chart text-indigo-500"></i> 個別查詢
                 </h3>
                 <p id="parent-intro" class="text-xs text-slate-500">掃描紙條上的 QR Code，或輸入老師提供的查詢碼</p>
+                <button id="parent-back-settings" onclick="switchTab('settings')" class="hidden mt-2 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-xl transition-all">← 回設定後台</button>
             </div>
 
             <!-- 家長用：輸入查詢碼（老師解鎖教師權限時隱藏） -->
@@ -1821,7 +1822,11 @@
         <div class="settings-grid grid grid-cols-1 gap-4 pb-6">
 
             <!-- 使用說明：隨時可以再看一次導覽 -->
-            <div class="settings-bar flex items-center justify-end">
+            <div class="settings-bar flex flex-wrap items-center justify-end gap-2">
+                <!-- 個別查詢放在後台裡：老師輸入座號查看該生還沒訂正的作業 -->
+                <button id="open-individual" onclick="switchTab('parent')" class="flex items-center gap-1.5 bg-white hover:bg-indigo-50 text-slate-800 border-2 border-indigo-300 font-black px-4 py-1.5 rounded-xl text-base shadow-sm transition-colors">
+                    🔍 個別查詢
+                </button>
                 <button id="open-guide" onclick="openGuide()" class="flex items-center gap-1.5 bg-white hover:bg-amber-50 text-slate-800 border-2 border-amber-300 font-black px-4 py-1.5 rounded-xl text-base shadow-sm transition-colors">
                     📖 使用說明
                 </button>
@@ -1840,10 +1845,11 @@
                     <div class="space-y-2.5">
                         <div>
                             <label class="block text-[14px] font-bold text-slate-500 mb-1">看板作業框數量（作業少時選 4 框，座號會更大）</label>
-                            <div id="slot-count-buttons" class="grid grid-cols-3 gap-2">
+                            <div id="slot-count-buttons" class="grid grid-cols-4 gap-2">
                                 <button onclick="setSlotCount(4)" data-count="4" class="py-2 rounded-xl text-sm font-black border-2 transition-all">4 框</button>
                                 <button onclick="setSlotCount(6)" data-count="6" class="py-2 rounded-xl text-sm font-black border-2 transition-all">6 框</button>
                                 <button onclick="setSlotCount(8)" data-count="8" class="py-2 rounded-xl text-sm font-black border-2 transition-all">8 框</button>
+                                <button onclick="setSlotCount(10)" data-count="10" class="py-2 rounded-xl text-sm font-black border-2 transition-all">10 框</button>
                             </div>
                         </div>
                         <div>
@@ -2642,6 +2648,8 @@
             });
             document.getElementById('tab-brush').classList.toggle('hidden', !isBrushEnabled());
             document.getElementById('tab-morning').classList.toggle('hidden', !isMorningEnabled());
+            // 個別查詢不放在上方分頁，從設定後台進入
+            document.getElementById('tab-parent').classList.add('hidden');
             renderOffBoard();
             toggleMorningClock(tab === 'morning');
 
@@ -2830,7 +2838,8 @@
                 window.state.parentSearch.mode = null;
                 hideParentResult();
             }
-            if (window.state.currentTab === 'parent') initParentView();
+            // 個別查詢在設定後台裡：鎖定後回到看板（家長頁不受影響）
+            if (window.state.currentTab === 'parent' && !window.IS_PARENT_MODE) switchTab('dashboard', true);
             showToast(message || (byTimeout ? `${window.state.lockMinutes} 分鐘沒有操作，已自動鎖定並返回學生消單模式`
                 : wasHelper ? "已鎖定並退出小幫手模式" : "已安全鎖定並退出教師模式"));
         }
@@ -3048,7 +3057,7 @@
             }
 
             const initialLayout = bestSeatLayout(window.state.students.length);
-            // 大螢幕固定兩列：4 框 2 欄、6 框 3 欄、8 框 4 欄
+            // 大螢幕固定兩列：4 框 2 欄、6 框 3 欄、8 框 4 欄、10 框 5 欄
             container.style.setProperty('--slot-cols', Math.max(1, Math.ceil(window.state.slots.length / 2)));
 
             window.state.slots.forEach((slot, index) => {
@@ -3177,7 +3186,7 @@
             showUndo({ assignment, studentId, previous, next: true });
         }
 
-        const SLOT_COUNT_OPTIONS = [4, 6, 8];
+        const SLOT_COUNT_OPTIONS = [4, 6, 8, 10];
 
         function renderSlotCountButtons() {
             const current = window.state.slots.length;
@@ -3715,6 +3724,7 @@
                 ? '教師專用：輸入座號，查看該生還沒訂正的作業'
                 : '掃描紙條上的 QR Code，或輸入老師提供的查詢碼';
             document.getElementById('view-parent').classList.toggle('teacher-wide', teacherView);
+            document.getElementById('parent-back-settings').classList.toggle('hidden', !window.state.isTeacherUnlocked || window.IS_PARENT_MODE);
 
             if (teacherView) {
                 const select = document.getElementById('parent-student-select');
@@ -5239,7 +5249,7 @@
                     '「設定後台 → 班級座號名冊」裡，每位學生都有一組<b>家長查詢碼</b>。',
                     '按「<b>複製查詢連結</b>」可以把同一個連結公布給全班家長，家長打開後輸入自己孩子的查詢碼就好；也可以「<b>列印家長查詢碼</b>」印出 QR Code 紙條，或用每位學生旁的「複製連結」個別傳。',
                     '家長只看得到自己孩子的作業：缺交和待訂正分開列，同一本作業的不同次合成一格，下面列出日期頁數；有開潔牙站、早自習時，也會顯示「今日潔牙」和「今日到教室」。',
-                    '老師解鎖後，「<b>個別查詢</b>」分頁可以直接輸入座號查詢。',
+                    '老師到「<b>設定後台</b>」按右上角的「<b>🔍 個別查詢</b>」，可以直接輸入座號查詢。',
                     '<b class="text-rose-600">班級代碼不要給家長</b>，家長只需要查詢碼。'
                 ]),
                 page('🦷', '潔牙站（可選用）', [
@@ -5258,7 +5268,7 @@
                 ]),
                 page('⚙️', '其他小技巧', [
                     '<b>🙋 小幫手模式</b>：在設定後台開啟，讓小老師幫忙點紅燈、換作業、消掉下方清單，但不能進設定後台、不能按「全部完成」。',
-                    '<b>看板設定</b>：看板可以放 4／6／8 框；作業項目可以拖曳或用 ▲▼ 調整順序。上方「🔊」可以開關音效。',
+                    '<b>看板設定</b>：看板可以放 4／6／8／10 框；作業項目可以拖曳或用 ▲▼ 調整順序。上方「🔊」可以開關音效。',
                     '<b>🔄 立即同步</b>：教室電腦和手機都按一下，就能確認兩邊是同一份進度。',
                     '<b>🎁 複製分享全新看板</b>：分享給其他老師，對方會建立自己的空白班級，看不到你的資料；換新電腦時選「已經有班級」，輸入班級代碼接回。',
                     '不小心建立了新班級，原本的資料還在：到「設定後台 → 班級共用代碼」輸入原本的代碼就能切回。',
