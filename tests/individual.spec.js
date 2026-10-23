@@ -1,14 +1,30 @@
 // 個別查詢：老師輸入座號查詢、教師專用畫面（不顯示家長查詢碼輸入區）、電腦版一頁看完；看板框數優先放未完成的作業
 const { test, expect } = require('@playwright/test');
-const { createCloud, openDevice } = require('./helpers');
+const { createCloud, openDevice, unlockTeacher } = require('./helpers');
 
-test('分頁名稱為「個別查詢」，家長頁仍可用查詢碼', async ({ browser }) => {
+test('個別查詢不在上方分頁，從設定後台進入、可以回設定後台；鎖定後回到看板', async ({ browser }) => {
     const page = await openDevice(browser, createCloud());
-    await expect(page.locator('nav')).toContainText('個別查詢');
-    await expect(page.locator('nav')).not.toContainText('家長查詢');
+    await expect(page.locator('#tab-parent')).toBeHidden();
+    await unlockTeacher(page, 'settings');
+    await expect(page.locator('#tab-parent')).toBeHidden();
+    await page.click('#open-individual');
+    await expect(page.locator('#view-parent')).toBeVisible();
+    await expect(page.locator('#parent-teacher-picker')).toBeVisible();
+    await expect(page.locator('#tab-parent')).toBeHidden();
+    await page.click('#parent-back-settings');
+    await expect(page.locator('#view-settings')).toBeVisible();
+    await page.click('#open-individual');
+    await page.click('#role-lock');
+    await expect(page.locator('#view-dashboard')).toBeVisible();
+    await expect(page.locator('#view-parent')).toBeHidden();
+});
+
+test('家長頁仍可用查詢碼，沒有「回設定後台」', async ({ browser }) => {
+    const page = await openDevice(browser, createCloud());
     await page.evaluate(() => switchTab('parent', true));
     await expect(page.locator('#parent-code-section')).toBeVisible(); // 沒解鎖：維持查詢碼輸入
     await expect(page.locator('#parent-teacher-picker')).toBeHidden();
+    await expect(page.locator('#parent-back-settings')).toBeHidden();
 });
 
 test('老師輸入座號查詢，找不到時提示；教師專用畫面不顯示查詢碼輸入區', async ({ browser }) => {

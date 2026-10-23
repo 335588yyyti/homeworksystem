@@ -53,10 +53,8 @@ test('小幫手（有密碼）：能登記紅燈、換作業，不能進設定�
     await expect(room.locator('#view-settings')).toBeHidden();
     await room.click('#modal-teacher-auth button:has-text("取消")');
 
-    // 個別查詢：小幫手看到的是家長用的查詢碼輸入，不是教師專用畫面
-    await room.click('#tab-parent');
-    await expect(room.locator('#parent-teacher-picker')).toBeHidden();
-    await expect(room.locator('#parent-code-section')).toBeVisible();
+    // 個別查詢放在設定後台裡：上方沒有分頁，小幫手進不去
+    await expect(room.locator('#tab-parent')).toBeHidden();
 
     // 鎖定後回到學生消單
     await room.click('#tab-dashboard');
