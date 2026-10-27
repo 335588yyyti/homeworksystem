@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=c7e4436d" rel="stylesheet">
+    <link href="assets/tailwind.css?v=a7ba2bfe" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -58,6 +58,13 @@
         .contact-col .num { border-bottom: 2px solid #c9b88f; text-align: center; font-weight: 900; color: #b45309; padding: 0.25rem 0.5rem; }
         .contact-col .txt { display: flex; flex-direction: column; align-items: center; padding: 0.5rem 0.4rem; font-weight: 900; color: #1e293b; line-height: 1.1; margin: 0 auto; }
         .contact-col .txt > span { display: block; text-align: center; white-space: nowrap; }
+        /* 早修任務和聯絡簿中間的分隔線：電腦上可以左右拖曳調整寬度（記在這台電腦） */
+        @media (min-width: 1024px) {
+            #morning-task.split { flex: 0 0 var(--note-w, 40%); }
+        }
+        .contact-split { touch-action: none; }
+        /* 太長的一項接到左邊下一行繼續寫（像手寫聯絡簿） */
+        .contact-col .txt-wrap { display: flex; flex-direction: row-reverse; justify-content: center; }
         .contact-col .txt .hz { font-family: Nunito, sans-serif; font-size: 0.8em; padding: 0.1em 0; }
         /* ---- 潔牙站 ---- */
         body.brush-mode #slogan-section { display: none; }
@@ -1651,7 +1658,7 @@
                 </div>
                 <div id="morning-clock" class="font-mono text-4xl sm:text-5xl font-black text-indigo-800 tracking-wider">--:--:--</div>
             </div>
-            <div class="grid gap-3 grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(300px,0.9fr)_minmax(0,2fr)] flex-1 min-h-0">
+            <div class="grid gap-3 grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(250px,0.62fr)_minmax(0,2fr)] flex-1 min-h-0">
                 <!-- 到校打卡 -->
                 <section class="bg-white border-4 border-emerald-200 rounded-3xl p-3 shadow-md flex flex-col lg:min-h-0">
                     <div class="flex flex-wrap items-center justify-between gap-2 mb-1">
@@ -1662,7 +1669,7 @@
                         <span><span id="arrive-deadline-text">08:00</span> 以後打卡算遲到・到校後點自己的座號</span>
                         <button onclick="editArriveDeadline()" class="teacher-ui text-amber-700 underline underline-offset-2">✏️ 改時間</button>
                     </div>
-                    <div id="arrive-grid" class="grid gap-1.5 lg:overflow-y-auto lg:min-h-0 pr-1" style="grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));"></div>
+                    <div id="arrive-grid" class="grid gap-1.5 lg:flex-1 lg:min-h-0" style="grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));"></div>
                     <p class="text-xs font-bold text-slate-400 mt-2">點錯了請找老師或小幫手；老師登記模式點座號可切換：未到 → 已到 → 請假</p>
                 </section>
                 <!-- 聯絡簿 -->
@@ -3027,7 +3034,7 @@
         document.fonts?.ready.then(fitHeader);
 
         window.addEventListener('resize', () => {
-            if (window.state.currentTab === 'morning') fitContactVertical();
+            if (window.state.currentTab === 'morning') { fitContact(); fitArriveGrid(); }
             if (window.state.currentTab === 'brush') {
                 renderMeal();
                 fitBrushGrid();
@@ -4554,10 +4561,42 @@
                     : 'bg-white border-slate-200 text-slate-700';
                 const sub = onLeave ? '請假' : time ? (late ? `遲到 ${time}` : time) : '未到';
                 return `<button id="arrive-${st.id}" onclick="tapArrival(${st.id})" class="arrive-seat rounded-xl border-2 ${cls} flex flex-col items-center justify-center py-1 transition-colors">
-                    <span class="text-2xl font-black leading-none" style="font-family: Nunito, sans-serif">${seat}</span>
-                    <span class="text-[11px] font-black leading-tight whitespace-nowrap mt-0.5">${sub}</span>
+                    <span class="arrive-num text-2xl font-black leading-none" style="font-family: Nunito, sans-serif">${seat}</span>
+                    <span class="arrive-sub text-[11px] font-black leading-tight whitespace-nowrap mt-0.5">${sub}</span>
                 </button>`;
             }).join('');
+            fitArriveGrid();
+        }
+
+        // 電腦：座號格子依全班人數自動排成剛好填滿整塊的欄列，字跟著格子放大；手機維持原本的小格子
+        function fitArriveGrid() {
+            const grid = document.getElementById('arrive-grid');
+            const n = window.state.students.length;
+            const wide = window.matchMedia('(min-width: 1024px)').matches;
+            grid.style.gridTemplateRows = '';
+            grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(70px, 1fr))';
+            grid.querySelectorAll('.arrive-num, .arrive-sub').forEach(el => { el.style.fontSize = ''; });
+            if (!wide || n === 0 || grid.offsetParent === null) return;
+            const W = grid.clientWidth;
+            const H = grid.clientHeight;
+            const gap = 6;
+            if (W < 50 || H < 50) return;
+            // 試每一種欄數，挑格子最大（以座號字能放多大來比）的排法
+            let best = null;
+            for (let cols = 1; cols <= n; cols++) {
+                const rows = Math.ceil(n / cols);
+                const w = (W - gap * (cols - 1)) / cols;
+                const h = (H - gap * (rows - 1)) / rows;
+                const size = Math.min(w * 0.42, h * 0.5);
+                if (!best || size > best.size) best = { cols, rows, size, w };
+            }
+            const font = Math.max(18, Math.min(96, Math.floor(best.size)));
+            grid.style.gridTemplateColumns = `repeat(${best.cols}, minmax(0, 1fr))`;
+            grid.style.gridTemplateRows = `repeat(${best.rows}, minmax(0, 1fr))`;
+            grid.querySelectorAll('.arrive-num').forEach(el => { el.style.fontSize = `${font}px`; });
+            // 「遲到 07:45」要放得進格子寬度
+            const sub = Math.max(11, Math.min(26, Math.floor(font * 0.32), Math.floor(best.w / 6)));
+            grid.querySelectorAll('.arrive-sub').forEach(el => { el.style.fontSize = `${sub}px`; });
         }
 
         // 學生：點自己的座號打卡（打過不能自己取消）；老師／小幫手登記模式：未到 → 已到 → 請假 → 未到
@@ -4636,45 +4675,129 @@
                 return;
             }
             const vertical = c.layout !== 'h';
-            // 早修任務：黃色便利貼，放在聯絡簿左邊；直式時自動補滿聯絡簿旁邊的空白
+            const split = loadContactSplit();
+            // 老師自己打的「1.」「2、」編號拿掉，避免變成「1. 1.國卷」
+            const clean = t => t.replace(/^\s*\d+\s*[.、．)）]\s*/, '') || t;
+            // 早修任務：黃色便利貼，放在聯絡簿左邊；沒拖曳過分隔線時，直式自動補滿聯絡簿旁邊的空白
+            const noteSize = items.length === 0 ? 'lg:flex-1' : (split ? 'split' : (vertical ? 'lg:flex-1' : 'split'));
             const note = tasks.length === 0 ? '' : `
-                <div id="morning-task" class="relative bg-amber-200 rounded-2xl p-4 sm:p-5 shadow-lg flex flex-col gap-3 min-w-0 ${vertical || items.length === 0 ? 'lg:flex-1' : 'lg:w-2/5 lg:flex-shrink-0'}">
+                <div id="morning-task" class="relative bg-amber-200 rounded-2xl p-4 sm:p-5 shadow-lg flex flex-col gap-3 min-w-0 lg:overflow-hidden ${noteSize}">
                     <div class="text-center text-2xl sm:text-3xl font-black text-slate-800 tracking-widest">早修任務</div>
-                    <ol class="flex flex-col gap-2.5">${tasks.map((t, i) => `
-                        <li class="self-start bg-white/90 rounded-xl px-3 py-1.5 text-2xl sm:text-3xl xl:text-4xl font-black text-rose-700 break-all shadow-sm">${i + 1}.${escapeHtml(t)}</li>`).join('')}</ol>
+                    <ol class="task-list flex flex-col gap-[0.3em] text-2xl sm:text-3xl">${tasks.map((t, i) => `
+                        <li class="self-start bg-white/90 rounded-xl px-[0.4em] py-[0.15em] font-black text-rose-700 break-all shadow-sm leading-snug">${i + 1}.${escapeHtml(clean(t))}</li>`).join('')}</ol>
                     <div class="mt-auto text-4xl sm:text-5xl select-none pointer-events-none leading-none pt-2" aria-hidden="true">⭐<span class="text-2xl sm:text-3xl">✨</span></div>
                 </div>`;
             let paper = '';
             if (items.length > 0 && !vertical) {
-                paper = `<ol class="contact-paper flex-1 min-w-0 p-4 sm:p-6 space-y-2">${items.map((t, i) => `
-                    <li class="flex gap-3 items-baseline border-b-2 border-dashed border-amber-200 pb-2">
-                        <span class="text-2xl sm:text-3xl font-black text-amber-600 w-10 flex-shrink-0 text-right" style="font-family: Nunito, sans-serif">${i + 1}.</span>
-                        <span class="text-2xl sm:text-4xl font-black text-slate-800 break-all">${escapeHtml(t)}</span>
+                paper = `<ol class="contact-paper contact-list flex-1 min-w-0 lg:overflow-hidden p-4 sm:p-6 flex flex-col gap-[0.25em] text-2xl sm:text-4xl">${items.map((t, i) => `
+                    <li class="flex gap-[0.4em] items-baseline border-b-2 border-dashed border-amber-200 pb-[0.2em] leading-snug">
+                        <span class="text-[0.8em] font-black text-amber-600 w-[1.8em] flex-shrink-0 text-right" style="font-family: Nunito, sans-serif">${i + 1}.</span>
+                        <span class="font-black text-slate-800 break-all">${escapeHtml(clean(t))}</span>
                     </li>`).join('')}</ol>`;
             } else if (items.length > 0) {
-                // 直式：由右往左一項一欄；有早修任務時聯絡簿只佔需要的寬度，便利貼靠過來
-                paper = `<div class="contact-paper p-2 overflow-x-auto max-w-full ${tasks.length ? 'lg:flex-shrink-0' : 'flex-1'}"><div class="contact-cols">${items.map((t, i) => `
+                // 直式：由右往左一項一欄
+                paper = `<div class="contact-paper p-2 overflow-x-auto max-w-full ${tasks.length && !split ? 'lg:flex-shrink-0' : 'flex-1 min-w-0'}"><div class="contact-cols">${items.map((t, i) => `
                 <div class="contact-col">
                     <div class="num text-xl sm:text-2xl" style="font-family: Nunito, sans-serif">${i + 1}</div>
-                    <div class="txt">${contactTextHtml(t)}</div>
+                    <div class="txt-wrap"><div class="txt">${contactTextHtml(clean(t))}</div></div>
                 </div>`).join('')}</div></div>`;
             }
-            // 電腦：聯絡簿在右、便利貼在左；手機：便利貼在上
-            body.innerHTML = `<div class="h-full flex flex-col-reverse lg:flex-row-reverse gap-3">${paper}${note}</div>`;
-            if (vertical) fitContactVertical();
+            const divider = paper && note ? `
+                <div class="contact-split hidden lg:flex flex-shrink-0 w-3 -mx-1.5 items-center justify-center cursor-col-resize group" onpointerdown="startContactSplit(event)" title="左右拖曳調整早修任務和聯絡簿的寬度">
+                    <span class="w-1.5 h-16 rounded-full bg-white/40 group-hover:bg-amber-300"></span>
+                </div>` : '';
+            // 電腦：聯絡簿在右、便利貼在左，中間可以拖曳；手機：便利貼在上
+            body.innerHTML = `<div id="contact-wrap" class="h-full flex flex-col-reverse lg:flex-row-reverse gap-3" style="--note-w: ${Math.round((split || 0.4) * 100)}%">${paper}${divider}${note}</div>`;
+            fitContact();
         }
 
-        // 直式：一項一欄、不換行；依最長的一項自動決定字的大小，整欄放得下
+        // 分隔線位置（早修任務佔的比例），記在這台電腦
+        const CONTACT_SPLIT_KEY = 'checkpoint_morning_split';
+        function loadContactSplit() {
+            try {
+                const v = Number(localStorage.getItem(CONTACT_SPLIT_KEY));
+                return v >= 0.15 && v <= 0.75 ? v : null;
+            } catch (e) { return null; }
+        }
+
+        function startContactSplit(event) {
+            const wrap = document.getElementById('contact-wrap');
+            const note = document.getElementById('morning-task');
+            if (!wrap || !note) return;
+            event.preventDefault();
+            const bar = event.currentTarget;
+            bar.setPointerCapture?.(event.pointerId);
+            note.classList.remove('lg:flex-1');
+            note.classList.add('split');
+            const paper = wrap.querySelector('.contact-paper');
+            paper?.classList.remove('lg:flex-shrink-0');
+            paper?.classList.add('flex-1', 'min-w-0');
+            let ratio = note.getBoundingClientRect().width / wrap.getBoundingClientRect().width;
+            const move = (e) => {
+                const r = wrap.getBoundingClientRect();
+                ratio = Math.max(0.15, Math.min(0.75, (e.clientX - r.left) / r.width));
+                wrap.style.setProperty('--note-w', `${Math.round(ratio * 100)}%`);
+                fitContact();
+            };
+            const up = () => {
+                bar.removeEventListener('pointermove', move);
+                bar.removeEventListener('pointerup', up);
+                bar.removeEventListener('pointercancel', up);
+                try { localStorage.setItem(CONTACT_SPLIT_KEY, String(Math.round(ratio * 100) / 100)); } catch (e) {}
+                fitContact();
+            };
+            bar.addEventListener('pointermove', move);
+            bar.addEventListener('pointerup', up);
+            bar.addEventListener('pointercancel', up);
+        }
+
+        // 字的大小自動調整到剛好放滿（電腦）；手機維持原本大小
+        function fitTextToBox(box, target, min, max) {
+            if (!box || !target) return;
+            target.style.fontSize = '';
+            if (!window.matchMedia('(min-width: 1024px)').matches || box.clientHeight < 40) return;
+            // 內容（含最後一個東西，例如便利貼下面的星星）都要在框內
+            const last = box.lastElementChild;
+            const pad = parseFloat(getComputedStyle(box).paddingBottom) || 0;
+            const fits = () => box.scrollHeight <= box.clientHeight + 1 && box.scrollWidth <= box.clientWidth + 1
+                && (!last || last.getBoundingClientRect().bottom <= box.getBoundingClientRect().bottom - pad + 1);
+            let lo = min, hi = max;
+            while (hi - lo > 1) {
+                const mid = Math.floor((lo + hi) / 2);
+                target.style.fontSize = `${mid}px`;
+                if (fits()) lo = mid; else hi = mid;
+            }
+            target.style.fontSize = `${lo}px`;
+        }
+
+        function fitContact() {
+            // 先排聯絡簿（直式時寬度會跟著字變），再把便利貼的字放到剛好
+            if (document.querySelector('#contact-body .contact-cols')) fitContactVertical();
+            const list = document.querySelector('#contact-body .contact-list');
+            if (list) fitTextToBox(list, list, 18, 80);
+            const note = document.getElementById('morning-task');
+            fitTextToBox(note, note?.querySelector('.task-list'), 16, 64);
+        }
+
+        // 直式：一項一欄；字的大小以大約 9 個字一行來算，更長的項目接到左邊下一行，不會讓全部的字都變小
         function fitContactVertical() {
             const cols = document.querySelector('#contact-body .contact-cols');
             if (!cols) return;
-            const items = (window.state.daily || defaultDaily()).contact.items;
+            const items = (window.state.daily || defaultDaily()).contact.items.map(t => t.replace(/^\s*\d+\s*[.、．)）]\s*/, '') || t);
             // 一個中文字一格；一串英文數字（例如 P.48）也算一格
-            const units = Math.max(...items.map(t => (t.match(/[A-Za-z0-9.\-~,]+|./gu) || []).length), 1);
+            const tokens = items.map(t => t.match(/[A-Za-z0-9.\-~,]+|./gu) || []);
             const num = cols.querySelector('.num');
             const avail = cols.clientHeight - (num ? num.offsetHeight : 40) - 24;
-            const size = Math.max(16, Math.min(48, Math.floor(avail / (units * 1.12))));
-            cols.querySelectorAll('.txt').forEach(el => { el.style.fontSize = `${size}px`; });
+            const longest = Math.max(...tokens.map(tk => tk.length), 1);
+            const size = Math.max(16, Math.min(56, Math.floor(avail / (Math.min(longest, 9) * 1.12))));
+            const perLine = Math.max(1, Math.floor(avail / (size * 1.12)));
+            const tokenHtml = m => (m.length > 1 || /[A-Za-z0-9]/.test(m)) ? `<span class="hz">${escapeHtml(m)}</span>` : `<span>${escapeHtml(m)}</span>`;
+            cols.querySelectorAll('.contact-col .txt-wrap').forEach((wrap, i) => {
+                const tk = tokens[i] || [];
+                const lines = [];
+                for (let k = 0; k < tk.length; k += perLine) lines.push(tk.slice(k, k + perLine));
+                wrap.innerHTML = lines.map(line => `<div class="txt" style="font-size: ${size}px">${line.map(tokenHtml).join('')}</div>`).join('');
+            });
             // 直式由右往左讀：放不下時先顯示最右邊（第 1 項）
             cols.parentElement.scrollLeft = cols.parentElement.scrollWidth;
         }
