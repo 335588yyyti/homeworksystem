@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=c7e4436d" rel="stylesheet">
+    <link href="assets/tailwind.css?v=a0e863e4" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -1662,7 +1662,7 @@
                         <span><span id="arrive-deadline-text">08:00</span> 以後打卡算遲到・到校後點自己的座號</span>
                         <button onclick="editArriveDeadline()" class="teacher-ui text-amber-700 underline underline-offset-2">✏️ 改時間</button>
                     </div>
-                    <div id="arrive-grid" class="grid gap-1.5 lg:overflow-y-auto lg:min-h-0 pr-1" style="grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));"></div>
+                    <div id="arrive-grid" class="grid gap-1.5 lg:flex-1 lg:min-h-0" style="grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));"></div>
                     <p class="text-xs font-bold text-slate-400 mt-2">點錯了請找老師或小幫手；老師登記模式點座號可切換：未到 → 已到 → 請假</p>
                 </section>
                 <!-- 聯絡簿 -->
@@ -3027,7 +3027,7 @@
         document.fonts?.ready.then(fitHeader);
 
         window.addEventListener('resize', () => {
-            if (window.state.currentTab === 'morning') fitContactVertical();
+            if (window.state.currentTab === 'morning') { fitContactVertical(); fitArriveGrid(); }
             if (window.state.currentTab === 'brush') {
                 renderMeal();
                 fitBrushGrid();
@@ -4554,10 +4554,42 @@
                     : 'bg-white border-slate-200 text-slate-700';
                 const sub = onLeave ? '請假' : time ? (late ? `遲到 ${time}` : time) : '未到';
                 return `<button id="arrive-${st.id}" onclick="tapArrival(${st.id})" class="arrive-seat rounded-xl border-2 ${cls} flex flex-col items-center justify-center py-1 transition-colors">
-                    <span class="text-2xl font-black leading-none" style="font-family: Nunito, sans-serif">${seat}</span>
-                    <span class="text-[11px] font-black leading-tight whitespace-nowrap mt-0.5">${sub}</span>
+                    <span class="arrive-num text-2xl font-black leading-none" style="font-family: Nunito, sans-serif">${seat}</span>
+                    <span class="arrive-sub text-[11px] font-black leading-tight whitespace-nowrap mt-0.5">${sub}</span>
                 </button>`;
             }).join('');
+            fitArriveGrid();
+        }
+
+        // 電腦：座號格子依全班人數自動排成剛好填滿整塊的欄列，字跟著格子放大；手機維持原本的小格子
+        function fitArriveGrid() {
+            const grid = document.getElementById('arrive-grid');
+            const n = window.state.students.length;
+            const wide = window.matchMedia('(min-width: 1024px)').matches;
+            grid.style.gridTemplateRows = '';
+            grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(70px, 1fr))';
+            grid.querySelectorAll('.arrive-num, .arrive-sub').forEach(el => { el.style.fontSize = ''; });
+            if (!wide || n === 0 || grid.offsetParent === null) return;
+            const W = grid.clientWidth;
+            const H = grid.clientHeight;
+            const gap = 6;
+            if (W < 50 || H < 50) return;
+            // 試每一種欄數，挑格子最大（以座號字能放多大來比）的排法
+            let best = null;
+            for (let cols = 1; cols <= n; cols++) {
+                const rows = Math.ceil(n / cols);
+                const w = (W - gap * (cols - 1)) / cols;
+                const h = (H - gap * (rows - 1)) / rows;
+                const size = Math.min(w * 0.42, h * 0.5);
+                if (!best || size > best.size) best = { cols, rows, size, w };
+            }
+            const font = Math.max(18, Math.min(96, Math.floor(best.size)));
+            grid.style.gridTemplateColumns = `repeat(${best.cols}, minmax(0, 1fr))`;
+            grid.style.gridTemplateRows = `repeat(${best.rows}, minmax(0, 1fr))`;
+            grid.querySelectorAll('.arrive-num').forEach(el => { el.style.fontSize = `${font}px`; });
+            // 「遲到 07:45」要放得進格子寬度
+            const sub = Math.max(11, Math.min(26, Math.floor(font * 0.32), Math.floor(best.w / 6)));
+            grid.querySelectorAll('.arrive-sub').forEach(el => { el.style.fontSize = `${sub}px`; });
         }
 
         // 學生：點自己的座號打卡（打過不能自己取消）；老師／小幫手登記模式：未到 → 已到 → 請假 → 未到
