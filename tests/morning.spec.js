@@ -53,22 +53,24 @@ test('聯絡簿：老師編輯後直式一項一欄、可切換橫式，另一�
     await expect(room.locator('#contact-body .contact-col')).toHaveCount(3);
     await expect(room.locator('#contact-body .contact-col').first()).toContainText('國習');
     await expect(room.locator('#morning-task li')).toHaveText(['1.訂正國卷 L.3', '2.英習 P.13']);
-    // 早修任務緊靠在聯絡簿左邊，中間沒有大片空白
+    // 早修任務緊靠在聯絡簿左邊，中間只有可以拖曳的分隔線
     const gap = await room.evaluate(() => document.querySelector('#contact-body .contact-paper').getBoundingClientRect().left
         - document.getElementById('morning-task').getBoundingClientRect().right);
     expect(gap).toBeGreaterThanOrEqual(0);
-    expect(gap).toBeLessThan(20);
+    expect(gap).toBeLessThan(40);
 
     // 直式每個字都在自己那一欄裡，不會超出也不會疊在一起
     const problems = await room.evaluate(() => {
         let bad = 0;
         document.querySelectorAll('#contact-body .contact-col').forEach(col => {
             const c = col.getBoundingClientRect();
-            let prevBottom = -Infinity;
-            col.querySelectorAll('.txt > span').forEach(s => {
-                const r = s.getBoundingClientRect();
-                if (r.left < c.left - 1 || r.right > c.right + 1 || r.bottom > c.bottom + 1 || r.top < prevBottom - 1) bad++;
-                prevBottom = r.bottom;
+            col.querySelectorAll('.txt').forEach(line => {
+                let prevBottom = -Infinity;
+                line.querySelectorAll(':scope > span').forEach(s => {
+                    const r = s.getBoundingClientRect();
+                    if (r.left < c.left - 1 || r.right > c.right + 1 || r.bottom > c.bottom + 1 || r.top < prevBottom - 1) bad++;
+                    prevBottom = r.bottom;
+                });
             });
         });
         return bad;
@@ -143,4 +145,37 @@ test('隔天遲到時間以前，家長頁的內容和前一天一樣（不會�
     expect(result.after).toEqual(result.before);
     expect(result.prev).toEqual({ date: '2000-01-01', arrive: { 1: '07:50' }, leave: [2] });
     expect(result.today).toBe(true);
+});
+
+test('早修任務和聯絡簿中間的線可以拖曳，這台電腦會記住；自己打的編號不會重複；字會放大填滿', async ({ browser }) => {
+    const cloud = createCloud();
+    const room = await openDevice(browser, cloud, { viewport: { width: 1536, height: 730 } });
+    await room.evaluate(() => setMorningEnabled(true));
+    await unlockTeacher(room, 'morning');
+    await room.click('text=✏️ 編輯');
+    await room.fill('#task-input', '完成訂正');
+    await room.fill('#contact-input', '1.國卷L5\n2、字詞單L6\n數練p.28');
+    await room.click('#modal-contact >> text=儲存');
+    await room.click('#contact-layout-h');
+    await expect(room.locator('#contact-body .contact-paper li').first()).toHaveText(/^\s*1\.\s*國卷L5\s*$/);
+    await expect(room.locator('#contact-body .contact-paper li').nth(1)).toHaveText(/^\s*2\.\s*字詞單L6\s*$/);
+    // 橫式的字比原本的固定大小（36px）大
+    expect(parseFloat(await room.locator('#contact-body .contact-list').evaluate((el) => getComputedStyle(el).fontSize))).toBeGreaterThan(36);
+
+    const noteWidth = () => room.locator('#morning-task').evaluate((el) => el.getBoundingClientRect().width);
+    const before = await noteWidth();
+    const bar = await room.locator('.contact-split').boundingBox();
+    const wrap = await room.locator('#contact-wrap').boundingBox();
+    await room.mouse.move(bar.x + bar.width / 2, bar.y + bar.height / 2);
+    await room.mouse.down();
+    await room.mouse.move(wrap.x + wrap.width * 0.25, bar.y + bar.height / 2, { steps: 5 });
+    await room.mouse.up();
+    const after = await noteWidth();
+    expect(after).toBeLessThan(before - 50);
+    expect(await room.evaluate(() => localStorage.getItem('checkpoint_morning_split'))).toBe('0.25');
+
+    // 重新畫一次（例如換頁回來）還是同樣的寬度
+    await room.evaluate(() => { switchTab('dashboard', true); switchTab('morning', true); });
+    expect(Math.abs(await noteWidth() - after)).toBeLessThan(5);
+    expect(room.errors).toEqual([]);
 });
