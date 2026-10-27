@@ -179,3 +179,29 @@ test('早修任務和聯絡簿中間的線可以拖曳，這台電腦會記住�
     expect(Math.abs(await noteWidth() - after)).toBeLessThan(5);
     expect(room.errors).toEqual([]);
 });
+
+test('早修任務也可以切換直式，另一台跟著變，格子不會超出便利貼', async ({ browser }) => {
+    const cloud = createCloud();
+    const room = await openDevice(browser, cloud, { viewport: { width: 1920, height: 1080 } });
+    const other = await openDevice(browser, cloud);
+    await room.evaluate(() => setMorningEnabled(true));
+    await unlockTeacher(room, 'morning');
+    await room.click('text=✏️ 編輯');
+    await room.fill('#task-input', '打卡，8：00換成訂正頁面\n完成訂正\n完成訂正的人，整理考卷\n都好了請複習國L5第一節要考');
+    await room.fill('#contact-input', '國卷L5\n字詞單L6');
+    await room.click('#modal-contact >> text=儲存');
+    await expect(room.locator('#morning-task .task-list li')).toHaveCount(4);
+    await room.click('#task-layout-v');
+    await expect(room.locator('#morning-task .contact-col')).toHaveCount(4);
+    await expect(room.locator('#morning-task .task-list')).toHaveCount(0);
+    const box = await room.locator('.task-cols-box').evaluate((el) => [el.scrollWidth, el.clientWidth]);
+    expect(box[0]).toBeLessThanOrEqual(box[1] + 1);
+    await expect.poll(() => cloud.board('main').daily?.contact?.taskLayout, { timeout: 15000 }).toBe('v');
+    await other.click('#tab-morning');
+    await expect(other.locator('#morning-task .contact-col')).toHaveCount(4, { timeout: 15000 });
+    // 換回橫式
+    await room.click('#task-layout-h');
+    await expect(room.locator('#morning-task .task-list li')).toHaveCount(4);
+    expect(room.errors).toEqual([]);
+    expect(other.errors).toEqual([]);
+});

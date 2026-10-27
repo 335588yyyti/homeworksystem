@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=a7ba2bfe" rel="stylesheet">
+    <link href="assets/tailwind.css?v=44d79884" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -63,6 +63,11 @@
             #morning-task.split { flex: 0 0 var(--note-w, 40%); }
         }
         .contact-split { touch-action: none; }
+        /* 早修任務直式：黃色便利貼上的格子 */
+        .task-cols .contact-col { border-color: #e2b84a; }
+        .task-cols .contact-col .num { border-color: #e2b84a; color: #9a3412; }
+        .task-cols .contact-col .txt { color: #be123c; }
+        .task-cols { min-height: 200px; }
         /* 太長的一項接到左邊下一行繼續寫（像手寫聯絡簿） */
         .contact-col .txt-wrap { display: flex; flex-direction: row-reverse; justify-content: center; }
         .contact-col .txt .hz { font-family: Nunito, sans-serif; font-size: 0.8em; padding: 0.1em 0; }
@@ -484,7 +489,7 @@
         // 早自習：到校打卡（每天歸零）＋聯絡簿（老師更新才換）
         window.DAILY_ITEMS_MAX = 10;
         function defaultDaily() {
-            return { enabled: false, date: '', arrive: {}, leave: [], deadline: '08:00', contact: { date: '', items: [], tasks: [], layout: 'v' }, prev: null };
+            return { enabled: false, date: '', arrive: {}, leave: [], deadline: '08:00', contact: { date: '', items: [], tasks: [], layout: 'v', taskLayout: 'h' }, prev: null };
         }
         window.defaultDaily = defaultDaily;
 
@@ -1134,7 +1139,9 @@
                     date: typeof cc.date === 'string' ? cc.date : '',
                     items: Array.isArray(cc.items) ? cc.items.map(String).map(t => t.slice(0, 40)).filter(t => t.trim()).slice(0, DAILY_ITEMS_MAX) : [],
                     tasks: Array.isArray(cc.tasks) ? cc.tasks.map(String).map(t => t.slice(0, 40)).filter(t => t.trim()).slice(0, DAILY_ITEMS_MAX) : [],
-                    layout: cc.layout === 'h' ? 'h' : 'v'
+                    layout: cc.layout === 'h' ? 'h' : 'v',
+                    // 早修任務也可以直式或橫式（預設橫式）
+                    taskLayout: cc.taskLayout === 'v' ? 'v' : 'h'
                 }
             };
 
@@ -4680,12 +4687,23 @@
             const clean = t => t.replace(/^\s*\d+\s*[.、．)）]\s*/, '') || t;
             // 早修任務：黃色便利貼，放在聯絡簿左邊；沒拖曳過分隔線時，直式自動補滿聯絡簿旁邊的空白
             const noteSize = items.length === 0 ? 'lg:flex-1' : (split ? 'split' : (vertical ? 'lg:flex-1' : 'split'));
+            const taskVertical = c.taskLayout === 'v';
+            const taskBtn = (k, label) => `<button id="task-layout-${k}" onclick="setTaskLayout('${k}')" class="px-2 py-0.5 rounded-md text-xs font-black ${(c.taskLayout || 'h') === k ? 'bg-white text-amber-900 shadow-sm' : 'text-amber-900/70 hover:text-amber-900'}">${label}</button>`;
+            const taskBody = taskVertical
+                ? `<div class="task-cols-box flex-1 min-h-0 overflow-x-auto bg-white/60 rounded-xl p-1.5"><div class="contact-cols task-cols">${tasks.map((t, i) => `
+                    <div class="contact-col">
+                        <div class="num text-xl sm:text-2xl" style="font-family: Nunito, sans-serif">${i + 1}</div>
+                        <div class="txt-wrap"><div class="txt">${contactTextHtml(clean(t))}</div></div>
+                    </div>`).join('')}</div></div>`
+                : `<ol class="task-list flex flex-col gap-[0.3em] text-2xl sm:text-3xl">${tasks.map((t, i) => `
+                        <li class="self-start bg-white/90 rounded-xl px-[0.4em] py-[0.15em] font-black text-rose-700 break-all shadow-sm leading-snug">${i + 1}.${escapeHtml(clean(t))}</li>`).join('')}</ol>
+                    <div class="mt-auto text-4xl sm:text-5xl select-none pointer-events-none leading-none pt-2" aria-hidden="true">⭐<span class="text-2xl sm:text-3xl">✨</span></div>`;
             const note = tasks.length === 0 ? '' : `
                 <div id="morning-task" class="relative bg-amber-200 rounded-2xl p-4 sm:p-5 shadow-lg flex flex-col gap-3 min-w-0 lg:overflow-hidden ${noteSize}">
-                    <div class="text-center text-2xl sm:text-3xl font-black text-slate-800 tracking-widest">早修任務</div>
-                    <ol class="task-list flex flex-col gap-[0.3em] text-2xl sm:text-3xl">${tasks.map((t, i) => `
-                        <li class="self-start bg-white/90 rounded-xl px-[0.4em] py-[0.15em] font-black text-rose-700 break-all shadow-sm leading-snug">${i + 1}.${escapeHtml(clean(t))}</li>`).join('')}</ol>
-                    <div class="mt-auto text-4xl sm:text-5xl select-none pointer-events-none leading-none pt-2" aria-hidden="true">⭐<span class="text-2xl sm:text-3xl">✨</span></div>
+                    <div class="relative text-center text-2xl sm:text-3xl font-black text-slate-800 tracking-widest">早修任務
+                        <div class="absolute right-0 top-1/2 -translate-y-1/2 flex bg-amber-900/10 rounded-lg p-0.5 tracking-normal">${taskBtn('v', '直式')}${taskBtn('h', '橫式')}</div>
+                    </div>
+                    ${taskBody}
                 </div>`;
             let paper = '';
             if (items.length > 0 && !vertical) {
@@ -4772,34 +4790,59 @@
 
         function fitContact() {
             // 先排聯絡簿（直式時寬度會跟著字變），再把便利貼的字放到剛好
-            if (document.querySelector('#contact-body .contact-cols')) fitContactVertical();
+            fitContactVertical();
             const list = document.querySelector('#contact-body .contact-list');
             if (list) fitTextToBox(list, list, 18, 80);
             const note = document.getElementById('morning-task');
-            fitTextToBox(note, note?.querySelector('.task-list'), 16, 64);
+            if (note?.querySelector('.task-list')) fitTextToBox(note, note.querySelector('.task-list'), 16, 64);
         }
 
         // 直式：一項一欄；字的大小以大約 9 個字一行來算，更長的項目接到左邊下一行，不會讓全部的字都變小
-        function fitContactVertical() {
-            const cols = document.querySelector('#contact-body .contact-cols');
+        function fitVerticalCols(cols, rawItems) {
             if (!cols) return;
-            const items = (window.state.daily || defaultDaily()).contact.items.map(t => t.replace(/^\s*\d+\s*[.、．)）]\s*/, '') || t);
+            const items = rawItems.map(t => t.replace(/^\s*\d+\s*[.、．)）]\s*/, '') || t);
             // 一個中文字一格；一串英文數字（例如 P.48）也算一格
             const tokens = items.map(t => t.match(/[A-Za-z0-9.\-~,]+|./gu) || []);
             const num = cols.querySelector('.num');
             const avail = cols.clientHeight - (num ? num.offsetHeight : 40) - 24;
             const longest = Math.max(...tokens.map(tk => tk.length), 1);
-            const size = Math.max(16, Math.min(56, Math.floor(avail / (Math.min(longest, 9) * 1.12))));
-            const perLine = Math.max(1, Math.floor(avail / (size * 1.12)));
+            let size = Math.max(16, Math.min(56, Math.floor(avail / (Math.min(longest, 9) * 1.12))));
             const tokenHtml = m => (m.length > 1 || /[A-Za-z0-9]/.test(m)) ? `<span class="hz">${escapeHtml(m)}</span>` : `<span>${escapeHtml(m)}</span>`;
-            cols.querySelectorAll('.contact-col .txt-wrap').forEach((wrap, i) => {
-                const tk = tokens[i] || [];
-                const lines = [];
-                for (let k = 0; k < tk.length; k += perLine) lines.push(tk.slice(k, k + perLine));
-                wrap.innerHTML = lines.map(line => `<div class="txt" style="font-size: ${size}px">${line.map(tokenHtml).join('')}</div>`).join('');
-            });
+            const build = () => {
+                const perLine = Math.max(1, Math.floor(avail / (size * 1.12)));
+                cols.querySelectorAll('.contact-col .txt-wrap').forEach((wrap, i) => {
+                    const tk = tokens[i] || [];
+                    const lines = [];
+                    for (let k = 0; k < tk.length; k += perLine) lines.push(tk.slice(k, k + perLine));
+                    wrap.innerHTML = lines.map(line => `<div class="txt" style="font-size: ${size}px">${line.map(tokenHtml).join('')}</div>`).join('');
+                });
+            };
+            build();
+            // 寬度也要放得下：太寬就把字縮小一點（例如早修任務的便利貼比較窄）
+            const box = cols.parentElement;
+            while (box.scrollWidth > box.clientWidth + 1 && size > 16) {
+                size -= 2;
+                build();
+            }
             // 直式由右往左讀：放不下時先顯示最右邊（第 1 項）
-            cols.parentElement.scrollLeft = cols.parentElement.scrollWidth;
+            box.scrollLeft = box.scrollWidth;
+        }
+
+        function fitContactVertical() {
+            const c = (window.state.daily || defaultDaily()).contact;
+            fitVerticalCols(document.querySelector('#contact-body .contact-paper .contact-cols'), c.items);
+            fitVerticalCols(document.querySelector('#morning-task .task-cols'), c.tasks || []);
+        }
+
+        function setTaskLayout(layout) {
+            if (!canEditBoard()) {
+                openTeacherAuthModal(() => setTaskLayout(layout), { allowHelper: true });
+                return;
+            }
+            const d = window.state.daily || defaultDaily();
+            window.state.daily = { ...d, contact: { ...d.contact, taskLayout: layout } };
+            window.syncDaily(true);
+            renderContact();
         }
 
         function setContactLayout(layout) {
