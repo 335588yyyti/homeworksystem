@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=44d79884" rel="stylesheet">
+    <link href="assets/tailwind.css?v=a3130dac" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -4700,8 +4700,10 @@
                     <div class="mt-auto text-4xl sm:text-5xl select-none pointer-events-none leading-none pt-2" aria-hidden="true">⭐<span class="text-2xl sm:text-3xl">✨</span></div>`;
             const note = tasks.length === 0 ? '' : `
                 <div id="morning-task" class="relative bg-amber-200 rounded-2xl p-4 sm:p-5 shadow-lg flex flex-col gap-3 min-w-0 lg:overflow-hidden ${noteSize}">
-                    <div class="relative text-center text-2xl sm:text-3xl font-black text-slate-800 tracking-widest">早修任務
-                        <div class="absolute right-0 top-1/2 -translate-y-1/2 flex bg-amber-900/10 rounded-lg p-0.5 tracking-normal">${taskBtn('v', '直式')}${taskBtn('h', '橫式')}</div>
+                    <!-- 標題和直式／橫式按鈕排同一行，便利貼太窄時按鈕自動換到下一行，不會蓋到字 -->
+                    <div class="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+                        <span class="text-2xl sm:text-3xl font-black text-slate-800 tracking-widest whitespace-nowrap">早修任務</span>
+                        <div class="flex flex-shrink-0 bg-amber-900/10 rounded-lg p-0.5">${taskBtn('v', '直式')}${taskBtn('h', '橫式')}</div>
                     </div>
                     ${taskBody}
                 </div>`;
