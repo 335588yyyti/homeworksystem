@@ -86,6 +86,11 @@ test('按「立即同步」：馬上存出這台的修改，並載入另一台�
     await expect(classroom.locator('#sync-now-button')).toBeVisible();
     await expect(phone.locator('#sync-now-button')).toBeVisible();
 
+    // 先等手機開網頁時的雲端寫入（建立看板、家長查詢資料）都結束，電腦較慢時才不會被算成「雲端回應較慢」
+    await expect(phone.locator('#cloud-sync-status')).toContainText('已連線存檔');
+    let previous = -1;
+    await expect.poll(() => { const now = phone.writes.length; const settled = now === previous; previous = now; return settled; }, { intervals: [1000], timeout: 30000 }).toBe(true);
+
     // 教室電腦暫時收不到自動更新，模擬兩台進度不一樣
     await classroom.evaluate(() => { window.__pauseSnapshots = true; });
     await phone.click('#btn-slot-0-student-11');
