@@ -87,7 +87,7 @@ test('按「立即同步」：馬上存出這台的修改，並載入另一台�
     await expect(phone.locator('#sync-now-button')).toBeVisible();
 
     // 先等手機開網頁時的雲端寫入（建立看板、家長查詢資料）都結束，電腦較慢時才不會被算成「雲端回應較慢」
-    await expect(phone.locator('#cloud-sync-status')).toContainText('已連線存檔');
+    await expect(phone.locator('#cloud-sync-status')).toContainText('已連線存檔', { timeout: 60000 });
     let previous = -1;
     await expect.poll(() => { const now = phone.writes.length; const settled = now === previous; previous = now; return settled; }, { intervals: [1000], timeout: 30000 }).toBe(true);
 
