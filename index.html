@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=28b17b4a" rel="stylesheet">
+    <link href="assets/tailwind.css?v=35bdc247" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -185,6 +185,7 @@
         .seat-pending, .seat-missing {
             position: relative;
         }
+        .seat-sign::after { content: '簽' !important; color: #7c3aed !important; }
         .seat-missing::after {
             content: '缺';
             position: absolute;
@@ -1139,6 +1140,9 @@
                     date: typeof cc.date === 'string' ? cc.date : '',
                     items: Array.isArray(cc.items) ? cc.items.map(String).map(t => t.slice(0, 40)).filter(t => t.trim()).slice(0, DAILY_ITEMS_MAX) : [],
                     tasks: Array.isArray(cc.tasks) ? cc.tasks.map(String).map(t => t.slice(0, 40)).filter(t => t.trim()).slice(0, DAILY_ITEMS_MAX) : [],
+                    // 前一次（前一天）寫的聯絡簿：早上「收作業」照這份先列好項目
+                    prevItems: Array.isArray(cc.prevItems) ? cc.prevItems.map(String).map(t => t.slice(0, 40)).filter(t => t.trim()).slice(0, DAILY_ITEMS_MAX) : [],
+                    prevDate: typeof cc.prevDate === 'string' ? cc.prevDate : '',
                     layout: cc.layout === 'h' ? 'h' : 'v',
                     // 早修任務也可以直式或橫式（預設橫式）
                     taskLayout: cc.taskLayout === 'v' ? 'v' : 'h'
@@ -1623,6 +1627,10 @@
                     </p>
                 </div>
             </div>
+            <!-- 早上收作業：照前一天的聯絡簿一次放上今天要收的作業 -->
+            <button id="collect-button" onclick="openCollect()" class="teacher-ui flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white text-sky-700 hover:bg-sky-50 border-2 border-white/80 text-sm sm:text-base font-black whitespace-nowrap shadow-sm transition-colors" title="早上收作業：照前一天的聯絡簿，一次放上今天要收的作業">
+                <span class="text-lg leading-none">📥</span><span>收作業</span>
+            </button>
             <!-- 新作業發下去時：一次完成「新增作業」和「放上看板」 -->
             <button id="new-on-board-button" onclick="openNewOnBoard()" class="teacher-ui flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white text-rose-600 hover:bg-amber-50 border-2 border-white/80 text-sm sm:text-base font-black whitespace-nowrap shadow-sm transition-colors" title="新增一項作業，並換掉看板上一框全班已完成的作業">
                 <span class="text-lg leading-none">➕</span><span class="hidden sm:inline">新增並放上看板</span><span class="sm:hidden">新作業</span>
@@ -1631,6 +1639,11 @@
             <button id="bulk-missing-button" onclick="openBulkMissing()" class="teacher-ui flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white text-orange-600 hover:bg-orange-50 border-2 border-white/80 text-sm sm:text-base font-black whitespace-nowrap shadow-sm transition-colors" title="請假或缺交好幾項作業的同學：選座號、勾選作業，一次登記缺交">
                 <span class="text-lg leading-none">🟠</span><span class="hidden sm:inline">登記缺交</span><span class="sm:hidden">缺交</span>
             </button>
+            <!-- 教師登記分兩種：早上清點缺交、改完作業登記訂正 -->
+            <div id="mark-mode" class="hidden flex-shrink-0 items-center bg-black/25 rounded-xl p-0.5 border border-white/20">
+                <button id="mark-mode-missing" onclick="setMarkMode('missing')" class="px-2 py-1 rounded-lg text-xs sm:text-sm font-black whitespace-nowrap">📥 清點缺交</button>
+                <button id="mark-mode-fix" onclick="setMarkMode('fix')" class="px-2 py-1 rounded-lg text-xs sm:text-sm font-black whitespace-nowrap">✏️ 改作業</button>
+            </div>
             <div id="role-status-indicator" class="teacher-ui hidden sm:flex text-xs font-black px-3 py-1 rounded-xl bg-black/25 text-white/95 border border-white/20 flex-shrink-0 items-center gap-1.5 whitespace-nowrap">
                 <i class="fa-solid fa-shield-halved text-amber-300"></i>
                 <span id="role-status-text">學生自主消單模式</span>
@@ -2368,6 +2381,31 @@
         </div>
     </div>
 
+    <!-- 早上收作業：照前一天的聯絡簿列好項目，勾一勾一次放上看板 -->
+    <div id="modal-collect" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden" onclick="if (event.target === this) closeCollect()">
+        <div class="bg-white border-2 border-slate-200 rounded-3xl p-5 w-full max-w-xl board-shadow flex flex-col max-h-full">
+            <div class="text-center mb-2">
+                <div class="text-3xl mb-1">📥</div>
+                <h4 class="text-xl font-black text-slate-800">今天收作業</h4>
+                <p id="collect-source" class="text-sm text-slate-500 mt-0.5"></p>
+            </div>
+            <div class="flex items-center gap-2 mb-2">
+                <label for="collect-date" class="text-base font-black text-slate-700 whitespace-nowrap">作業日期</label>
+                <input type="date" id="collect-date" class="flex-1 min-w-0 bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-1.5 font-black text-slate-800 focus:outline-none focus:border-sky-400">
+            </div>
+            <div class="grid grid-cols-[auto_minmax(0,1.1fr)_minmax(0,1fr)_auto] gap-x-2 gap-y-1 items-center text-xs font-black text-slate-400 px-1">
+                <span>收</span><span>作業名稱</span><span>頁數／單元</span><span>✍️簽名</span>
+            </div>
+            <div id="collect-rows" class="flex flex-col gap-1.5 overflow-y-auto min-h-0 flex-1 py-1 pr-1"></div>
+            <button onclick="addCollectRow()" class="self-start mt-1 text-sm font-black text-sky-700 hover:text-sky-900">＋ 再加一項</button>
+            <p class="text-xs font-bold text-slate-400 mt-1">勾「收」的會放上看板（先換掉全班已完成的框）；勾「✍️簽名」會另外多一個簽名項目。放好後自動切到「清點缺交」，點沒交的座號就好。</p>
+            <div class="grid grid-cols-2 gap-2.5 mt-3">
+                <button onclick="closeCollect()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-base transition-all">取消</button>
+                <button id="collect-confirm" onclick="confirmCollect()" class="bg-sky-500 hover:bg-sky-600 text-white font-black py-2.5 rounded-xl text-base transition-all">放上看板</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 一次登記缺交（例如請假的同學）：選座號、勾選作業 -->
     <div id="modal-bulk-missing" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden" onclick="if (event.target === this) closeBulkMissing()">
         <div class="bg-white border-2 border-slate-200 rounded-3xl p-5 w-full max-w-md board-shadow flex flex-col max-h-full">
@@ -2457,13 +2495,21 @@
         // 每格狀態：true＝完成（綠燈）、false＝待訂正（紅燈）、'missing'＝缺交（橘燈）
         const STATUS_MISSING = 'missing';
 
-        function seatButtonClass(status, name) {
-            const base = status === STATUS_MISSING ? SEAT_MISSING_CLASS : (status ? SEAT_DONE_CLASS : SEAT_PENDING_CLASS);
+        // 考卷簽名：獨立的作業項目「簽名｜國卷 10/28 L5」，沒簽是紫色「簽」
+        const SIGN_BASE = '簽名';
+        function isSignItem(assignment) {
+            return splitAssignment(assignment || '').base === SIGN_BASE;
+        }
+
+        function seatButtonClass(status, name, assignment) {
+            const missing = status === STATUS_MISSING ? (isSignItem(assignment) ? SEAT_SIGN_CLASS : SEAT_MISSING_CLASS) : null;
+            const base = missing || (status ? SEAT_DONE_CLASS : SEAT_PENDING_CLASS);
             return getPureSeatNumber(name).length > 2 ? `${base} seat-long` : base;
         }
 
         const SEAT_DONE_CLASS = 'seat-btn bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm w-full h-full min-h-0 min-w-0 rounded-xl font-black flex items-center justify-center p-0';
         const SEAT_MISSING_CLASS = 'seat-btn seat-missing bg-orange-500 hover:bg-orange-600 text-white shadow-sm ring-2 ring-orange-300/80 ring-offset-1 w-full h-full min-h-0 min-w-0 rounded-xl font-black flex items-center justify-center p-0';
+        const SEAT_SIGN_CLASS = 'seat-btn seat-missing seat-sign bg-violet-500 hover:bg-violet-600 text-white shadow-sm ring-2 ring-violet-300/80 ring-offset-1 w-full h-full min-h-0 min-w-0 rounded-xl font-black flex items-center justify-center p-0';
         const SEAT_PENDING_CLASS = 'seat-btn seat-pending bg-rose-500 hover:bg-rose-600 text-white shadow-sm ring-2 ring-rose-300/80 ring-offset-1 w-full h-full min-h-0 min-w-0 rounded-xl font-black flex items-center justify-center p-0';
 
         // 使用者輸入的文字放進 innerHTML 前一律跳脫，避免破版或被注入腳本
@@ -2745,14 +2791,30 @@
             btnTeacher.className = role === 'teacher' && !helperActive ? `${ROLE_ON} bg-amber-400 text-slate-900` : ROLE_OFF;
             btnHelper.className = helperActive ? `${ROLE_ON} bg-sky-400 text-slate-900` : ROLE_OFF;
             btnHelper.classList.toggle('hidden', !window.state.helperEnabled);
+            const counting = window.state.markMode === 'missing';
             if (indicatorText) {
                 indicatorText.textContent = role === 'student' ? "學生自主消單模式"
-                    : helperActive ? "小幫手登記中 (點擊標記紅燈)" : "教師登記中 (點擊標記紅燈)";
+                    : `${helperActive ? '小幫手' : '教師'}登記中・${counting ? '清點缺交 (點一下＝缺交)' : '改作業 (點擊標記紅燈)'}`;
             }
+            // 登記模式時旁邊已經有「清點缺交／改作業」按鈕，不用再顯示文字說明（騰出標語列的空間）
+            document.getElementById('role-status-indicator').classList.toggle('sm:flex', role !== 'teacher');
+            const markMode = document.getElementById('mark-mode');
+            markMode.classList.toggle('hidden', role !== 'teacher');
+            markMode.classList.toggle('flex', role === 'teacher');
+            document.getElementById('mark-mode-missing').className = `px-2 py-1 rounded-lg text-xs sm:text-sm font-black whitespace-nowrap ${counting ? 'bg-orange-400 text-white shadow-sm' : 'text-white/80 hover:text-white'}`;
+            document.getElementById('mark-mode-fix').className = `px-2 py-1 rounded-lg text-xs sm:text-sm font-black whitespace-nowrap ${!counting ? 'bg-rose-400 text-white shadow-sm' : 'text-white/80 hover:text-white'}`;
             document.getElementById('role-lock').title = window.state.isHelperUnlocked ? '鎖定小幫手身分' : '鎖定教師身分';
             // 卡片上的「全部完成」按鈕只在登記模式顯示
             if (window.state.currentTab === 'dashboard') renderDashboard();
             renderOffBoard();
+        }
+
+        // 清點缺交 ⇄ 改作業（只記在這台電腦，不用存雲端）
+        function setMarkMode(mode) {
+            window.state.markMode = mode === 'missing' ? 'missing' : 'fix';
+            window.soundEffect.playToggle();
+            applyRoleUI(window.state.userRole);
+            showToast(mode === 'missing' ? '清點缺交：點沒交作業的座號（變橘色），再點一次取消' : '改作業：點座號 綠 → 紅（訂正）→ 橘（缺交）→ 綠');
         }
 
         function setRole(role) {
@@ -3124,7 +3186,7 @@
                     const isDone = getStudentStatus(slot.assignment, st.id);
                     const pureNum = escapeHtml(getPureSeatNumber(st.name));
 
-                    gridHtml += `<button id="btn-slot-${index}-student-${st.id}" onclick="toggleStudentStatus(${index}, ${st.id})" class="${seatButtonClass(isDone, st.name)}" title="座號 ${pureNum}">${pureNum}</button>`;
+                    gridHtml += `<button id="btn-slot-${index}-student-${st.id}" onclick="toggleStudentStatus(${index}, ${st.id})" class="${seatButtonClass(isDone, st.name, slot.assignment)}" title="座號 ${pureNum}">${pureNum}</button>`;
                 });
                 gridHtml += `</div>`;
 
@@ -3438,6 +3500,119 @@
         }
 
         // ---- 一次登記缺交（例如請假的同學）----
+        // ---- 早上收作業：照前一天的聯絡簿先列好項目 ----
+        // 今天已經寫了新的聯絡簿，就用前一份；還沒寫就用目前這份
+        function collectSourceItems() {
+            const c = (window.state.daily || defaultDaily()).contact;
+            if (c.date === todayKey()) return { items: c.prevItems || [], date: c.prevDate || '' };
+            return { items: c.items || [], date: c.date || '' };
+        }
+
+        // 「數練p.28-p.30」→ 名稱「數練」、頁數「p.28-p.30」；認得以前用過的作業名稱
+        function parseContactLine(text, bases) {
+            const t = String(text).replace(/^\s*\d+\s*[.、．)）]\s*/, '').trim();
+            if (!t || /^[*＊※]/.test(t)) return null; // 星號開頭是公告，不是作業
+            const known = bases.find(b => b && t.startsWith(b));
+            let base, detail;
+            if (known) {
+                base = known;
+                detail = t.slice(known.length).trim();
+            } else {
+                const m = t.match(/^([^A-Za-z0-9]+?)\s*([A-Za-z0-9].*)?$/);
+                base = (m ? m[1] : t).trim();
+                detail = (m && m[2] ? m[2] : '').trim();
+            }
+            return {
+                base: base.slice(0, 20),
+                detail: detail.replaceAll(DETAIL_SEP, ' ').slice(0, 14),
+                // 「考國L6」是考試預告，預設不收；考卷預設要簽名
+                checked: !/^考/.test(t),
+                sign: base.includes('卷')
+            };
+        }
+
+        function collectRowHtml(row) {
+            return `<div class="collect-row grid grid-cols-[auto_minmax(0,1.1fr)_minmax(0,1fr)_auto] gap-x-2 items-center">
+                <input type="checkbox" class="collect-on w-5 h-5 accent-sky-500" ${row.checked ? 'checked' : ''} aria-label="收這項">
+                <input type="text" class="collect-base min-w-0 bg-slate-50 border-2 border-slate-200 rounded-lg px-2 py-1 font-black text-slate-800 focus:outline-none focus:border-sky-400" maxlength="20" value="${escapeHtml(row.base)}" placeholder="例如：國習">
+                <input type="text" class="collect-detail min-w-0 bg-slate-50 border-2 border-slate-200 rounded-lg px-2 py-1 font-black text-slate-800 focus:outline-none focus:border-sky-400" maxlength="14" value="${escapeHtml(row.detail)}" placeholder="可留白">
+                <input type="checkbox" class="collect-sign w-5 h-5 accent-violet-500 justify-self-center" ${row.sign ? 'checked' : ''} aria-label="要簽名">
+            </div>`;
+        }
+
+        function openCollect() {
+            if (!canEditBoard()) {
+                openTeacherAuthModal(openCollect, { allowHelper: true });
+                return;
+            }
+            const bases = [...new Set(window.state.assignments.map(a => splitAssignment(a).base))]
+                .filter(b => b !== SIGN_BASE).sort((a, b) => b.length - a.length);
+            const src = collectSourceItems();
+            const rows = src.items.map(t => parseContactLine(t, bases)).filter(Boolean);
+            document.getElementById('collect-source').textContent = rows.length
+                ? `照 ${Number(src.date.slice(5, 7))}/${Number(src.date.slice(8, 10))} 的聯絡簿先列好了，不收的取消勾選、名稱頁數可以改`
+                : '早自習的聯絡簿還沒有內容，請自己填要收的作業';
+            if (rows.length === 0) rows.push({ base: '', detail: '', checked: true, sign: false });
+            document.getElementById('collect-rows').innerHTML = rows.map(collectRowHtml).join('');
+            document.getElementById('collect-date').value = toDateInputValue(src.date && src.date !== todayKey()
+                ? new Date(Number(src.date.slice(0, 4)), Number(src.date.slice(5, 7)) - 1, Number(src.date.slice(8, 10)))
+                : previousSchoolDay(new Date()));
+            document.getElementById('modal-collect').classList.remove('hidden');
+        }
+
+        function addCollectRow() {
+            document.getElementById('collect-rows').insertAdjacentHTML('beforeend', collectRowHtml({ base: '', detail: '', checked: true, sign: false }));
+            document.querySelector('#collect-rows .collect-row:last-child .collect-base').focus();
+        }
+
+        function closeCollect() {
+            document.getElementById('modal-collect').classList.add('hidden');
+        }
+
+        function confirmCollect() {
+            const dateValue = document.getElementById('collect-date').value;
+            const date = /^\d{4}-\d{2}-\d{2}$/.test(dateValue) ? `${Number(dateValue.slice(5, 7))}/${Number(dateValue.slice(8, 10))}` : '';
+            const names = [];
+            document.querySelectorAll('#collect-rows .collect-row').forEach(row => {
+                const base = row.querySelector('.collect-base').value.replaceAll(DETAIL_SEP, ' ').trim();
+                if (!row.querySelector('.collect-on').checked || !base || base === SIGN_BASE) return;
+                const pages = row.querySelector('.collect-detail').value.replaceAll(DETAIL_SEP, ' ').trim();
+                const detail = [date, pages].filter(Boolean).join(' ');
+                names.push(detail ? `${base}${DETAIL_SEP}${detail}` : base);
+                if (row.querySelector('.collect-sign').checked) names.push(`${SIGN_BASE}${DETAIL_SEP}${[base, detail].filter(Boolean).join(' ')}`);
+            });
+            const fresh = [...new Set(names)].filter(n => !window.state.slots.some(s => s.assignment === n));
+            if (fresh.length === 0) {
+                window.soundEffect.playAlert();
+                showToast(names.length ? '這些作業已經都在看板上了' : '請勾選要收的作業', false);
+                return;
+            }
+            const toAdd = fresh.filter(n => !window.state.assignments.includes(n));
+            if (window.state.assignments.length + toAdd.length > MAX_ASSIGNMENTS) {
+                window.soundEffect.playAlert();
+                showToast(`作業項目最多 ${MAX_ASSIGNMENTS} 項，請先到設定後台按「🧹 刪除已完成的舊日期作業」`, false);
+                return;
+            }
+            toAdd.forEach(n => {
+                window.state.assignments.push(n);
+                delete window.state.assignmentStatuses[n];
+            });
+            // 先換掉全班已完成的框（從後面的框開始），換不下的留在作業清單
+            const free = window.state.slots.map((s, i) => i).filter(i => countPending(window.state.slots[i].assignment) === 0);
+            const placed = fresh.slice(0, free.length);
+            placed.forEach((n, k) => { window.state.slots[free[k]].assignment = n; });
+            closeCollect();
+            if (isTeacherMode()) window.state.markMode = 'missing';
+            applyRoleUI(window.state.userRole);
+            renderDashboard();
+            window.syncStateToCloud();
+            window.soundEffect.playSuccess();
+            const left = fresh.length - placed.length;
+            showToast(left > 0
+                ? `已放上 ${placed.length} 項；看板沒有空框了，另外 ${left} 項先放在作業清單（可以到設定後台調成更多框）`
+                : `已放上 ${placed.length} 項作業${isTeacherMode() ? '，現在點沒交的座號就好' : ''}`);
+        }
+
         function openBulkMissing() {
             if (!canEditBoard()) {
                 openTeacherAuthModal(openBulkMissing, { allowHelper: true });
@@ -3590,23 +3765,29 @@
             const seat = getSeatLabel(studentId);
             let nextStatus = currentStatus;
 
+            const sign = isSignItem(assignment);
             if (isTeacherMode()) {
-                // 教師登記：綠燈（完成）→ 紅燈（待訂正）→ 橘燈（缺交）→ 綠燈
-                if (currentStatus === true) {
-                    nextStatus = false;
-                    window.soundEffect.playAlert();
-                    showToast(`座號 ${seat} 已登記需訂正【${assignment}】`);
-                } else if (currentStatus === STATUS_MISSING) {
-                    nextStatus = true;
-                    window.soundEffect.playSuccess();
-                    showToast(`座號 ${seat} 已更正為綠燈 (完成)`);
+                // 清點缺交（早上收作業）：綠 ⇄ 橘（缺交）；簽名項目一律 綠 ⇄ 紫（沒簽）
+                // 改作業（原本的方式）：綠 → 紅（要訂正）→ 橘（缺交）→ 綠
+                if (sign || window.state.markMode === 'missing') {
+                    nextStatus = currentStatus === STATUS_MISSING ? true : STATUS_MISSING;
                 } else {
-                    nextStatus = STATUS_MISSING;
+                    nextStatus = currentStatus === true ? false : (currentStatus === STATUS_MISSING ? true : STATUS_MISSING);
+                }
+                if (nextStatus === true) {
+                    window.soundEffect.playSuccess();
+                    showToast(`座號 ${seat} 已改回綠燈【${assignment}】`);
+                } else {
                     window.soundEffect.playAlert();
-                    showToast(`座號 ${seat} 已登記缺交【${assignment}】`);
+                    showToast(nextStatus === STATUS_MISSING ? `座號 ${seat} ${sign ? '還沒簽名' : '已登記缺交'}【${assignment}】` : `座號 ${seat} 已登記需訂正【${assignment}】`);
                 }
             } else {
-                if (currentStatus === STATUS_MISSING) {
+                if (sign && currentStatus === STATUS_MISSING) {
+                    // 簽好名的考卷：學生自己點掉
+                    nextStatus = true;
+                    window.soundEffect.playSuccess();
+                    showToast(`座號 ${seat} 已簽名【${assignment}】`);
+                } else if (currentStatus === STATUS_MISSING) {
                     // 學生交了缺交的作業：先變成待訂正（紅燈），訂正完再消單
                     nextStatus = false;
                     window.soundEffect.playToggle();
@@ -3676,6 +3857,7 @@
         // 卡片上的人數標籤：待訂正（紅）、缺交（橘）分開計算
         function slotBadgeText(assignment) {
             const notDone = countPending(assignment);
+            if (isSignItem(assignment)) return notDone === 0 ? '全都簽好 🎉' : `沒簽 ${notDone} 人`;
             if (notDone === 0) return '全員完成 🎉';
             const missing = countMissing(assignment);
             const red = notDone - missing;
@@ -3686,7 +3868,8 @@
 
         function slotBadgeClass(notDone, assignment) {
             const onlyMissing = notDone > 0 && countMissing(assignment) === notDone;
-            const color = notDone === 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+            const color = notDone > 0 && isSignItem(assignment) ? 'bg-violet-50 text-violet-700 border border-violet-300'
+                : notDone === 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                 : (onlyMissing ? 'bg-orange-50 text-orange-700 border border-orange-300' : 'bg-rose-50 text-rose-600 border border-rose-200');
             return `text-base font-black px-2.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap ${color}`;
         }
@@ -3699,7 +3882,7 @@
                 if (s.assignment !== assignment) return;
                 studentIds.forEach(studentId => {
                     const btn = document.getElementById(`btn-slot-${idx}-student-${studentId}`);
-                    if (btn) btn.className = seatButtonClass(getStudentStatus(assignment, studentId), window.state.students.find(st => st.id === studentId)?.name);
+                    if (btn) btn.className = seatButtonClass(getStudentStatus(assignment, studentId), window.state.students.find(st => st.id === studentId)?.name, assignment);
                 });
 
                 const badge = document.getElementById(`slot-badge-${idx}`);
@@ -3960,14 +4143,17 @@
             // 缺交和待訂正分開：缺交先列
             const missing = pending.filter(item => item.missing);
             const toFix = pending.filter(item => !item.missing);
+            const unsigned = missing.filter(item => isSignItem(item.name)).length;
             if (pending.length === 0) {
                 summary.className = 'rounded-2xl px-4 py-2.5 text-white bg-emerald-600';
                 statusTitle.innerText = '目前無需訂正 🎉';
                 pendingSection.classList.add('hidden');
             } else {
                 summary.className = `rounded-2xl px-4 py-2.5 text-white ${toFix.length === 0 ? 'bg-orange-600' : 'bg-rose-600'}`;
-                statusTitle.innerText = missing.length === 0 ? `還有 ${toFix.length} 項作業需要訂正`
-                    : (toFix.length === 0 ? `有 ${missing.length} 項作業缺交` : `缺交 ${missing.length} 項、待訂正 ${toFix.length} 項`);
+                const missingWork = missing.length - unsigned;
+                const work = missingWork === 0 ? (toFix.length ? `還有 ${toFix.length} 項作業需要訂正` : '')
+                    : (toFix.length === 0 ? `有 ${missingWork} 項作業缺交` : `缺交 ${missingWork} 項、待訂正 ${toFix.length} 項`);
+                statusTitle.innerText = [work, unsigned ? `考卷沒簽名 ${unsigned} 張` : ''].filter(Boolean).join('、');
                 document.getElementById('parent-pending-title').innerText = missing.length ? '缺交與需要訂正的作業：' : '需要訂正的作業：';
                 pendingSection.classList.remove('hidden');
                 // 同一本作業的不同次（例如國習 10/15、10/16）放在同一格，日期頁數列在下面
@@ -3977,8 +4163,9 @@
                     // 名稱不截斷：空間不夠時「看板中」標籤換到下一行
                     itemDiv.className = `flex flex-wrap items-center gap-1 px-2.5 py-2 rounded-xl border min-w-0 ${group.missing ? 'bg-orange-50 border-orange-300' : 'bg-rose-50 border-rose-200'} ${hasDetail ? 'col-span-2' : ''}`;
                     itemDiv.innerHTML = `
-                        ${group.missing ? `<span class="text-[13px] font-black px-1.5 py-0.5 rounded-md bg-orange-500 text-white whitespace-nowrap flex-shrink-0">缺交</span>` : `<span class="text-base flex-shrink-0">🚨</span>`}
-                        <span class="text-base font-black text-slate-800 min-w-0 break-all">${escapeHtml(group.base)}</span>
+                        ${group.base === SIGN_BASE && group.missing ? `<span class="text-[13px] font-black px-1.5 py-0.5 rounded-md bg-violet-500 text-white whitespace-nowrap flex-shrink-0">沒簽</span>`
+                            : group.missing ? `<span class="text-[13px] font-black px-1.5 py-0.5 rounded-md bg-orange-500 text-white whitespace-nowrap flex-shrink-0">缺交</span>` : `<span class="text-base flex-shrink-0">🚨</span>`}
+                        <span class="text-base font-black text-slate-800 min-w-0 break-all">${escapeHtml(group.base === SIGN_BASE ? '考卷簽名' : group.base)}</span>
                         ${group.items.some(i => i.onBoard) ? `<span class="ml-auto text-[13px] font-bold px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 whitespace-nowrap flex-shrink-0">看板中</span>` : ''}
                         ${hasDetail ? `<div class="basis-full flex flex-wrap gap-1 mt-0.5">${group.items.map(i =>
                             `<span class="text-sm font-black px-1.5 py-0.5 rounded-md bg-white border ${group.missing ? 'border-orange-200 text-orange-800' : 'border-rose-200 text-rose-800'}">${escapeHtml(i.detail || '（沒寫日期）')}</span>`).join('')}</div>` : ''}
@@ -4935,7 +5122,10 @@
         function saveContact() {
             const lines = id => document.getElementById(id).value.split('\n').map(t => t.trim().slice(0, 40)).filter(Boolean).slice(0, DAILY_ITEMS_MAX);
             const d = window.state.daily || defaultDaily();
-            window.state.daily = { ...d, contact: { ...d.contact, items: lines('contact-input'), tasks: lines('task-input'), date: todayKey() } };
+            // 換新的一天第一次寫：前一天的聯絡簿留著，早上收作業時用
+            const keepPrev = d.contact.date && d.contact.date !== todayKey() && d.contact.items.length > 0;
+            const prev = keepPrev ? { prevItems: d.contact.items, prevDate: d.contact.date } : {};
+            window.state.daily = { ...d, contact: { ...d.contact, ...prev, items: lines('contact-input'), tasks: lines('task-input'), date: todayKey() } };
             window.syncDaily(true);
             closeContactEditor();
             renderContact();
