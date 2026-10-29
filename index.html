@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=70d584c3" rel="stylesheet">
+    <link href="assets/tailwind.css?v=1e42d33c" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -326,6 +326,8 @@
         html.no-zoom, html.no-zoom body { touch-action: pan-x pan-y; }
         /* 下方「已換下看板」小清單出現時，復原列和通知往上移，不要蓋住座號 */
         #undo-bar, #toast { bottom: calc(1.25rem + var(--offboard-h, 0px)); }
+        /* 問要不要刪舊作業：放在左下角、復原列上面，不擋標語列的按鈕 */
+        #cleanup-bar { bottom: calc(5rem + var(--offboard-h, 0px)); }
         /* 抬餐感謝：畫面中間跳出大字 */
         #meal-pop { position: fixed; left: 50%; top: 42%; transform: translate(-50%, -50%) scale(.6); opacity: 0; pointer-events: none; z-index: 60; transition: opacity .25s, transform .35s cubic-bezier(.34,1.56,.64,1); }
         #meal-pop.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
@@ -2336,7 +2338,7 @@
     </div>
 
     <!-- 編輯聯絡簿 -->
-    <div id="modal-contact" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden" onclick="if (event.target === this) closeContactEditor()">
+    <div id="modal-contact" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden" onpointerdown="this.dataset.downOnBackdrop = event.target === this ? '1' : ''" onclick="if (event.target === this && this.dataset.downOnBackdrop === '1') closeContactEditor()">
         <div class="bg-white border-2 border-slate-200 rounded-3xl p-5 w-full max-w-md board-shadow flex flex-col max-h-full">
             <div class="text-center mb-3">
                 <div class="text-3xl mb-1">📒</div>
@@ -2345,12 +2347,12 @@
             </div>
             <div class="overflow-y-auto min-h-0 flex flex-col gap-1">
                 <label for="task-input" class="text-base font-black text-amber-700">⭐ 早修任務 <span class="text-sm font-bold text-slate-400">例如「訂正國卷 L.3」，不用可以空白</span></label>
-                <textarea id="task-input" rows="3" class="w-full bg-amber-50 border-2 border-amber-200 rounded-xl px-3 py-2 text-lg font-black text-slate-800 focus:outline-none focus:border-amber-400 leading-relaxed"></textarea>
+                <textarea id="task-input" oninput="saveContactDraft()" rows="3" class="w-full bg-amber-50 border-2 border-amber-200 rounded-xl px-3 py-2 text-lg font-black text-slate-800 focus:outline-none focus:border-amber-400 leading-relaxed"></textarea>
                 <label for="contact-input" class="text-base font-black text-emerald-800 mt-2">📒 聯絡簿 <span class="text-sm font-bold text-slate-400">例如「國習 P.48」「帶水彩」</span></label>
-                <textarea id="contact-input" rows="6" class="w-full bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2 text-lg font-black text-slate-800 focus:outline-none focus:border-amber-400 leading-relaxed"></textarea>
+                <textarea id="contact-input" oninput="saveContactDraft()" rows="6" class="w-full bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2 text-lg font-black text-slate-800 focus:outline-none focus:border-amber-400 leading-relaxed"></textarea>
             </div>
             <div class="grid grid-cols-2 gap-2.5 mt-3">
-                <button onclick="closeContactEditor()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-base transition-all">取消</button>
+                <button onclick="try { localStorage.removeItem(CONTACT_DRAFT_KEY); } catch (e) {} closeContactEditor()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-base transition-all">取消</button>
                 <button onclick="saveContact()" class="bg-amber-400 hover:bg-amber-500 text-slate-900 font-black py-2.5 rounded-xl text-base transition-all">儲存</button>
             </div>
         </div>
@@ -2382,7 +2384,7 @@
     </div>
 
     <!-- 早上收作業：照前一天的聯絡簿列好項目，勾一勾一次放上看板 -->
-    <div id="modal-collect" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden" onclick="if (event.target === this) closeCollect()">
+    <div id="modal-collect" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden" onpointerdown="this.dataset.downOnBackdrop = event.target === this ? '1' : ''" onclick="if (event.target === this && this.dataset.downOnBackdrop === '1') closeCollect()">
         <div class="bg-white border-2 border-slate-200 rounded-3xl p-5 w-full max-w-xl board-shadow flex flex-col max-h-full">
             <div class="text-center mb-2">
                 <div class="text-3xl mb-1">📥</div>
@@ -2433,6 +2435,16 @@
                     登記缺交
                 </button>
             </div>
+        </div>
+    </div>
+
+    <!-- 全班完成、已換下看板的舊作業：自動問老師要不要刪掉 -->
+    <div id="cleanup-bar" class="hidden fixed left-4 z-40 max-w-[min(28rem,calc(100vw-2rem))] bg-white border-2 border-emerald-300 rounded-2xl shadow-xl p-3 flex flex-col gap-2">
+        <div class="text-base font-black text-emerald-800">🧹 <span id="cleanup-count"></span> 項作業全班都完成了</div>
+        <div id="cleanup-list" class="text-sm font-bold text-slate-600 max-h-24 overflow-y-auto break-all"></div>
+        <div class="flex gap-2 justify-end">
+            <button onclick="snoozeCleanup()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold px-3 py-1.5 rounded-xl text-sm">先不要</button>
+            <button id="cleanup-confirm" onclick="confirmCleanup()" class="bg-emerald-500 hover:bg-emerald-600 text-white font-black px-3 py-1.5 rounded-xl text-sm">刪掉這些</button>
         </div>
     </div>
 
@@ -2750,7 +2762,7 @@
         }
 
         // 解鎖期間，任何點擊或打字都算「有在使用」，重設閒置計時
-        ['pointerdown', 'keydown'].forEach(evt => {
+        ['pointerdown', 'keydown', 'input'].forEach(evt => {
             document.addEventListener(evt, () => {
                 if (window.state && canEditBoard()) resetTeacherTimeout();
             }, true);
@@ -3209,6 +3221,7 @@
         }
 
         function renderOffBoard() {
+            maybeAskCleanup();
             const strip = document.getElementById('offboard-strip');
             if (!strip) return;
             // 看板頁一直顯示；沒有人欠的時候只顯示一行「都完成了」
@@ -3458,6 +3471,7 @@
         function applyAssignmentToSlot(slotIndex, assignmentName) {
             const duplicateSlotIndex = window.state.slots.findIndex((s, idx) => idx !== slotIndex && s.assignment === assignmentName);
             window.state.slots[slotIndex].assignment = assignmentName;
+            window.state.slots[slotIndex].placed = todayKey(); // 今天放上的作業，自動換框時不會被換掉
 
             if (duplicateSlotIndex !== -1) {
                 window.soundEffect.playAlert();
@@ -3604,7 +3618,7 @@
             // 先換掉全班已完成的框（從後面的框開始），換不下的留在作業清單
             const free = window.state.slots.map((s, i) => i).filter(i => countPending(window.state.slots[i].assignment) === 0);
             const placed = fresh.slice(0, free.length);
-            placed.forEach((n, k) => { window.state.slots[free[k]].assignment = n; });
+            placed.forEach((n, k) => { window.state.slots[free[k]].assignment = n; window.state.slots[free[k]].placed = todayKey(); });
             closeCollect();
             if (isTeacherMode()) window.state.markMode = 'missing';
             applyRoleUI(window.state.userRole);
@@ -3816,6 +3830,44 @@
             // 只上傳這一格，其他裝置同時點別的座號也不會被蓋掉
             window.syncStatusChange([[assignment, studentId, nextStatus]], { delay: true });
             showUndo({ assignment, studentId, previous: currentStatus, next: nextStatus });
+            // 學生消單後：下方「已換下看板」有比較多人要訂正的作業，就自動換上看板
+            if (!isTeacherMode() && nextStatus === true) scheduleAutoPromote();
+        }
+
+        // ---- 下方比較多人要訂正的作業自動換上看板 ----
+        // 等學生點完（最後一次點擊後 6 秒，復原時間過了）才換，點的時候作業框不會突然變掉
+        let autoPromoteTimer = null;
+        function scheduleAutoPromote() {
+            clearTimeout(autoPromoteTimer);
+            autoPromoteTimer = setTimeout(autoPromoteOffBoard, UNDO_MS + 1000);
+        }
+
+        function autoPromoteOffBoard() {
+            autoPromoteTimer = null;
+            if (window.IS_PARENT_MODE || window.state.boardRetired) return;
+            const changes = [];
+            // 每次找「下方最多人要訂正」和「看板上最少人要訂正」，下方比較多就互換，直到不能再換
+            for (let guard = 0; guard < window.state.slots.length; guard++) {
+                const onBoard = new Set(window.state.slots.map(s => s.assignment));
+                const off = window.state.assignments.filter(a => !onBoard.has(a))
+                    .map(a => ({ a, n: countPending(a) })).filter(x => x.n > 0)
+                    .sort((x, y) => y.n - x.n)[0];
+                if (!off) break;
+                // 今天才放上看板的作業（例如剛收的、還沒改）不換掉
+                const slots = window.state.slots.map((s, i) => ({ i, n: countPending(s.assignment), today: s.placed === todayKey() }))
+                    .filter(x => !x.today).sort((x, y) => x.n - y.n);
+                const weakest = slots[0];
+                if (!weakest || off.n <= weakest.n) break;
+                changes.push({ index: weakest.i, from: window.state.slots[weakest.i].assignment, to: off.a, n: off.n });
+                window.state.slots[weakest.i].assignment = off.a;
+                window.state.slots[weakest.i].placed = todayKey();
+            }
+            if (changes.length === 0) return;
+            if (window.state.currentTab === 'dashboard') renderDashboard();
+            renderOffBoard();
+            window.syncStateToCloud();
+            window.soundEffect.playToggle();
+            showToast(changes.map(c => `第 ${c.index + 1} 框換上【${c.to}】（還有 ${c.n} 人要訂正）`).join('；'));
         }
 
         // ---- 點錯可以復原：最後一次點座號後 5 秒內可以改回來 ----
@@ -4413,9 +4465,50 @@
         }
 
         // 有日期、頁數的作業（例如「國習｜10/15」）全班完成、又不在看板上，就可以一次刪掉
-        function cleanFinishedOldAssignments() {
+        // 全班完成、不在看板上、有寫日期的作業（沒寫日期的「國習」等常用名稱保留）
+        function finishedOldAssignments() {
             const onBoard = new Set(window.state.slots.map(s => s.assignment));
-            const old = window.state.assignments.filter(a => splitAssignment(a).detail && !onBoard.has(a) && countPending(a) === 0);
+            return window.state.assignments.filter(a => splitAssignment(a).detail && !onBoard.has(a) && countPending(a) === 0);
+        }
+
+        // 有可以刪的舊作業時，在老師登記模式右上角問一次；按「先不要」今天就不再問（除非又多了新的）
+        const CLEANUP_SNOOZE_KEY = 'checkpoint_cleanup_snooze';
+        function maybeAskCleanup() {
+            const bar = document.getElementById('cleanup-bar');
+            if (!bar) return;
+            const old = window.state.isTeacherUnlocked && isTeacherMode() && !window.IS_PARENT_MODE && window.state.currentTab === 'dashboard' ? finishedOldAssignments() : [];
+            let snooze = null;
+            try { snooze = JSON.parse(localStorage.getItem(CLEANUP_SNOOZE_KEY) || 'null'); } catch (e) {}
+            const snoozed = snooze && snooze.date === todayKey() && old.length <= snooze.count;
+            if (old.length === 0 || snoozed) {
+                bar.classList.add('hidden');
+                return;
+            }
+            document.getElementById('cleanup-count').textContent = `有 ${old.length}`;
+            document.getElementById('cleanup-list').textContent = old.join('、');
+            bar.classList.remove('hidden');
+        }
+
+        function snoozeCleanup() {
+            try { localStorage.setItem(CLEANUP_SNOOZE_KEY, JSON.stringify({ date: todayKey(), count: finishedOldAssignments().length })); } catch (e) {}
+            document.getElementById('cleanup-bar').classList.add('hidden');
+            showToast('好的，今天先不刪；之後也可以到設定後台按「🧹 刪除已完成的舊日期作業」');
+        }
+
+        function confirmCleanup() {
+            const old = finishedOldAssignments();
+            document.getElementById('cleanup-bar').classList.add('hidden');
+            if (old.length === 0) return;
+            window.state.assignments = window.state.assignments.filter(a => !old.includes(a));
+            old.forEach(a => { delete window.state.assignmentStatuses[a]; });
+            window.soundEffect.playSuccess();
+            if (window.state.currentTab === 'dashboard') renderDashboard();
+            window.syncStateToCloud();
+            showToast(`已刪除 ${old.length} 項全班完成的舊作業`);
+        }
+
+        function cleanFinishedOldAssignments() {
+            const old = finishedOldAssignments();
             if (old.length === 0) {
                 window.soundEffect.playToggle();
                 showToast('沒有可以刪除的舊作業（全班完成、不在看板上的才會刪除）');
@@ -5107,6 +5200,18 @@
             renderContact();
         }
 
+        // 編輯聯絡簿時邊打邊暫存在這台電腦；按「儲存」後清掉
+        const CONTACT_DRAFT_KEY = 'checkpoint_contact_draft';
+        function saveContactDraft() {
+            try {
+                localStorage.setItem(CONTACT_DRAFT_KEY, JSON.stringify({
+                    date: todayKey(),
+                    tasks: document.getElementById('task-input').value,
+                    items: document.getElementById('contact-input').value
+                }));
+            } catch (e) {}
+        }
+
         function openContactEditor() {
             if (!canEditBoard()) {
                 openTeacherAuthModal(openContactEditor, { allowHelper: true });
@@ -5115,6 +5220,14 @@
             const c = (window.state.daily || defaultDaily()).contact;
             document.getElementById('task-input').value = c.tasks.join('\n');
             document.getElementById('contact-input').value = c.items.join('\n');
+            // 上次打到一半沒儲存（例如視窗被關掉、網頁重新整理）：把打好的內容拿回來
+            let draft = null;
+            try { draft = JSON.parse(localStorage.getItem(CONTACT_DRAFT_KEY) || 'null'); } catch (e) {}
+            if (draft && draft.date === todayKey() && (draft.tasks !== c.tasks.join('\n') || draft.items !== c.items.join('\n'))) {
+                document.getElementById('task-input').value = draft.tasks;
+                document.getElementById('contact-input').value = draft.items;
+                showToast('已拿回上次打到一半、還沒儲存的內容');
+            }
             document.getElementById('modal-contact').classList.remove('hidden');
             setTimeout(() => document.getElementById('task-input').focus(), 100);
         }
@@ -5130,6 +5243,7 @@
             const keepPrev = d.contact.date && d.contact.date !== todayKey() && d.contact.items.length > 0;
             const prev = keepPrev ? { prevItems: d.contact.items, prevDate: d.contact.date } : {};
             window.state.daily = { ...d, contact: { ...d.contact, ...prev, items: lines('contact-input'), tasks: lines('task-input'), date: todayKey() } };
+            try { localStorage.removeItem(CONTACT_DRAFT_KEY); } catch (e) {}
             window.syncDaily(true);
             closeContactEditor();
             renderContact();
@@ -5657,7 +5771,7 @@
                     '按標語列的「<b>➕ 新增並放上看板</b>」，點作業名稱（例如國習）；<b>作業日期</b>預設前一個上課日，可以改；<b>頁數或單元</b>可留白。',
                     '同一本作業的每一次分開記錄，例如「國習｜10/16 p.23」和「國習｜10/17」。點作業框的名稱可以換作業，換下來的紀錄都會保留。',
                                         '換下看板後還有人沒完成，會排在看板最下面的「<b>📌 已換下看板、還沒完成</b>」，訂正完由<b>老師或小幫手</b>點掉（點錯 5 秒內可以復原）。',
-                    '作業項目最多 50 項：偶爾到設定後台按「<b>🧹 刪除已完成的舊日期作業</b>」，把全班完成、不在看板上的舊日期作業一次清掉。'
+                    '有舊日期作業全班都完成、也不在看板上時，教師登記模式右上角會自動問「<b>🧹 要不要刪掉</b>」（按「先不要」今天就不再問；也可以到設定後台按「🧹 刪除已完成的舊日期作業」）。學生消單後，下方「已換下看板」有比較多人要訂正的作業，會<b>自動換上看板</b>（今天才放上的作業不會被換掉）。'
                 ]),
                 page('🟢', '學生自己消單', [
                     '學生訂正完，到教室電腦點自己的<b class="text-rose-600">紅燈</b>座號，就會變成<b class="text-emerald-600">綠燈</b>。',

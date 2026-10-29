@@ -222,3 +222,31 @@ test('早修任務・聯絡簿的標題每天顯示今天的日期；內容是�
     await expect(room.locator('#contact-date')).toContainText('內容是 1/2 寫的');
     expect(room.errors).toEqual([]);
 });
+
+test('編輯聯絡簿打到一半：點到旁邊不會關掉；視窗被關掉或重新整理後，打好的內容會拿回來', async ({ browser }) => {
+    const cloud = createCloud();
+    const room = await openDevice(browser, cloud);
+    await room.evaluate(() => setMorningEnabled(true));
+    const { unlockTeacher } = require('./helpers');
+    await unlockTeacher(room, 'morning');
+    await room.click('text=✏️ 編輯');
+    await room.fill('#contact-input', '國卷L6\n甲本P.16-18');
+    // 在輸入框裡按下、滑到視窗外面才放開（觸控螢幕常發生）：不會關掉
+    const box = await room.locator('#contact-input').boundingBox();
+    await room.mouse.move(box.x + 20, box.y + 10);
+    await room.mouse.down();
+    await room.mouse.move(5, 5, { steps: 3 });
+    await room.mouse.up();
+    await expect(room.locator('#modal-contact')).toBeVisible();
+
+    // 重新整理網頁（例如不小心關掉）：再打開編輯，內容還在
+    await room.reload();
+    await room.waitForFunction(() => document.getElementById('cloud-sync-status')?.textContent.includes('已連線'));
+    await unlockTeacher(room, 'morning');
+    await room.click('text=✏️ 編輯');
+    await expect(room.locator('#contact-input')).toHaveValue('國卷L6\n甲本P.16-18');
+    await room.click('#modal-contact >> text=儲存');
+    // 儲存後草稿清掉
+    expect(await room.evaluate(() => localStorage.getItem('checkpoint_contact_draft'))).toBeNull();
+    expect(room.errors).toEqual([]);
+});
