@@ -83,3 +83,26 @@ test('未訂正名單在手機和電腦都不會超出畫面，家長頁看不�
     const parent = await openDevice(browser, createCloud(), { query: '?p' });
     await expect(parent.locator('#pending-list-button')).toBeHidden();
 });
+
+test('未訂正名單可以列印紙條：每位同學一張，缺交和訂正分開標，有家長簽名欄', async ({ browser }) => {
+    const page = await openDevice(browser, createCloud());
+    await page.evaluate(() => {
+        state.assignments.push('數習｜10/28 P40-43', '八格卷｜10/26 4-2');
+        setStudentStatus('數習｜10/28 P40-43', 7, false);
+        setStudentStatus('八格卷｜10/26 4-2', 7, 'missing');
+        setStudentStatus('數習｜10/28 P40-43', 12, false);
+        renderDashboard();
+    });
+    await page.click('#pending-list-button');
+    const [popup] = await Promise.all([page.waitForEvent('popup'), page.click('#print-pending-button')]);
+    await popup.waitForLoadState();
+    const slips = popup.locator('.slip');
+    await expect(slips).toHaveCount(await page.evaluate(() => getPendingByStudent().length));
+    const seven = slips.filter({ hasText: '7 號' });
+    await expect(seven).toContainText('缺交');
+    await expect(seven).toContainText('八格卷');
+    await expect(seven).toContainText('訂正');
+    await expect(seven).toContainText('P40-43');
+    await expect(seven).toContainText('家長簽名');
+    expect(page.errors).toEqual([]);
+});

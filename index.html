@@ -2146,9 +2146,13 @@
                     <h3 class="text-2xl font-black text-slate-800">📋 未訂正名單</h3>
                     <p id="pending-list-summary" class="text-base font-bold text-slate-500"></p>
                 </div>
-                <button onclick="closePendingList()" class="bg-slate-800 hover:bg-slate-900 text-white font-black px-5 py-2 rounded-xl text-base transition-all">
-                    關閉
-                </button>
+                <div class="flex items-center gap-2">
+                    <!-- 每位同學一張紙條，剪下來貼聯絡簿 -->
+                    <button id="print-pending-button" onclick="printPendingSlips()" class="bg-white hover:bg-rose-50 text-rose-700 border-2 border-rose-200 font-black px-4 py-2 rounded-xl text-base transition-all whitespace-nowrap">🖨️ 列印紙條</button>
+                    <button onclick="closePendingList()" class="bg-slate-800 hover:bg-slate-900 text-white font-black px-5 py-2 rounded-xl text-base transition-all">
+                        關閉
+                    </button>
+                </div>
             </div>
             <div id="pending-list-body" class="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5">
                 <!-- 動態產生 -->
@@ -3321,6 +3325,56 @@
                         </div>
                     </div>`).join('')
             }</div>`;
+        }
+
+        // 列印未訂正紙條：每位還沒完成的同學一張，剪下貼在聯絡簿，完成一項打勾，最後請家長簽名
+        function printPendingSlips() {
+            const rows = getPendingByStudent();
+            if (rows.length === 0) {
+                showToast('全班都訂正完成了，不用列印 🎉');
+                return;
+            }
+            // 先開視窗（必須在點擊當下開，才不會被擋），再填入內容
+            const win = window.open('', '_blank');
+            if (!win) {
+                showToast('瀏覽器擋住了新視窗，請允許彈出視窗後再試一次', false);
+                return;
+            }
+            const now = new Date();
+            const today = `${now.getMonth() + 1}/${now.getDate()}`;
+            const slips = rows.map(({ student, pending }) => {
+                const groups = [...groupByBase(pending.filter(i => i.missing)).map(g => ({ ...g, missing: true })), ...groupByBase(pending.filter(i => !i.missing))];
+                const lines = groups.flatMap(g => (g.items.some(i => i.detail) ? g.items : [g.items[0]]).map(i => `
+                    <li><span class="box"></span><span class="tag ${g.missing ? 'miss' : 'fix'}">${g.missing ? '缺交' : '訂正'}</span><b>${escapeHtml(g.base)}</b>${i.detail ? ` <span class="detail">${escapeHtml(i.detail)}</span>` : ''}</li>`)).join('');
+                return `<div class="slip">
+                    <div class="head"><span class="seat">${escapeHtml(getPureSeatNumber(student.name))} 號</span>還沒完成的作業（${today}，共 ${pending.length} 項）</div>
+                    <ul>${lines}</ul>
+                    <div class="foot">完成一項就打勾 ✔　家長簽名：＿＿＿＿＿＿</div>
+                </div>`;
+            }).join('');
+            win.document.open();
+            win.document.write(`<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><title>未訂正紙條 ${today}</title>
+                <style>
+                    body { font-family: "Nunito", "DFKai-SB", "標楷體", "BiauKai", "Kaiti TC", "STKaiti", "KaiTi", "LXGW WenKai TC", serif; margin: 12px; color: #1e293b; }
+                    h1 { font-size: 16px; margin: 0 0 10px; }
+                    .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; align-items: start; }
+                    .slip { border: 1.5px dashed #94a3b8; border-radius: 8px; padding: 8px 10px; font-size: 14px; line-height: 1.5; break-inside: avoid; page-break-inside: avoid; }
+                    .head { font-weight: 900; font-size: 14px; margin-bottom: 4px; }
+                    .seat { display: inline-block; background: #1e293b; color: #fff; border-radius: 6px; padding: 0 8px; margin-right: 6px; font-size: 16px; }
+                    ul { list-style: none; margin: 0; padding: 0; }
+                    li { display: flex; align-items: baseline; gap: 6px; padding: 1px 0; }
+                    .box { flex: 0 0 auto; width: 12px; height: 12px; border: 1.5px solid #334155; border-radius: 2px; transform: translateY(1px); }
+                    .tag { flex: 0 0 auto; font-size: 11px; font-weight: 900; border-radius: 4px; padding: 0 4px; border: 1px solid; }
+                    .tag.miss { color: #c2410c; border-color: #fdba74; }
+                    .tag.fix { color: #be123c; border-color: #fda4af; }
+                    .detail { color: #475569; font-size: 13px; }
+                    .foot { margin-top: 4px; font-size: 12px; color: #475569; }
+                    @media print { .noprint { display: none; } body { margin: 0; } }
+                </style></head><body>
+                <h1>下課檢查站｜還沒完成的作業（${today}，共 ${rows.length} 位）<button class="noprint" onclick="print()">列印</button>　<span class="noprint" style="font-size:12px;font-weight:normal;color:#64748b">沿虛線剪下，貼在聯絡簿上</span></h1>
+                <div class="grid">${slips}</div>
+                </body></html>`);
+            win.document.close();
         }
 
         function onSlotAssignmentChange(slotIndex, val) {
@@ -5415,7 +5469,7 @@
                     '點錯了可以按左下角的「<b>↩ 復原</b>」。',
                     '學生模式只能把紅燈改成綠燈，不能亂點紅燈。<b class="text-orange-600">缺交</b>的同學補交後點一下會變紅燈，訂正完再點一次才變綠燈。',
                     '看板最下面「已換下看板」的作業，學生只能看，訂正完請老師或小幫手點掉。',
-                    '按「<b>📋 未訂正名單</b>」可以看全班還有誰沒訂正，同一本作業的不同次會合在一起列出日期頁數。'
+                    '按「<b>📋 未訂正名單</b>」可以看全班還有誰沒訂正，同一本作業的不同次會合在一起列出日期頁數；按「<b>🖨️ 列印紙條</b>」每人印一張，剪下貼聯絡簿請家長簽名。'
                 ]),
                 page('👪', '家長查詢', [
                     '「設定後台 → 班級座號名冊」裡，每位學生都有一組<b>家長查詢碼</b>。',
