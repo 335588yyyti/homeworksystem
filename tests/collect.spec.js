@@ -19,13 +19,14 @@ test('收作業：照前一天的聯絡簿列好項目，勾選後一次放上�
     const cloud = createCloud();
     const page = await openDevice(browser, cloud);
     await teacherMode(page);
-    await yesterdayContact(page, ['1.國卷L5', '字詞單L6', '數練p.28-p.30', '考國L6', '*下周社團停課']);
+    await yesterdayContact(page, ['1.國卷L5訂簽', '字詞單L6', '數練p.28-p.30', '考國L6', '*下周社團停課', '數後測卷U4']);
     await page.click('#collect-button');
     const rows = page.locator('#collect-rows .collect-row');
-    await expect(rows).toHaveCount(4); // 星號公告不列
+    await expect(rows).toHaveCount(5); // 星號公告不列
     await expect(rows.nth(0).locator('.collect-base')).toHaveValue('國卷');
     await expect(rows.nth(0).locator('.collect-detail')).toHaveValue('L5');
-    await expect(rows.nth(0).locator('.collect-sign')).toBeChecked(); // 考卷預設要簽名
+    await expect(rows.nth(0).locator('.collect-sign')).toBeChecked(); // 寫了「訂簽」才要簽名
+    await expect(rows.nth(4).locator('.collect-sign')).not.toBeChecked(); // 考卷沒寫訂簽就不用簽
     await expect(rows.nth(2).locator('.collect-base')).toHaveValue('數練');
     await expect(rows.nth(2).locator('.collect-detail')).toHaveValue('p.28-p.30');
     await expect(rows.nth(3).locator('.collect-on')).not.toBeChecked(); // 考試預告預設不收

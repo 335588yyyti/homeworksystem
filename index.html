@@ -3510,8 +3510,12 @@
 
         // 「數練p.28-p.30」→ 名稱「數練」、頁數「p.28-p.30」；認得以前用過的作業名稱
         function parseContactLine(text, bases) {
-            const t = String(text).replace(/^\s*\d+\s*[.、．)）]\s*/, '').trim();
-            if (!t || /^[*＊※]/.test(t)) return null; // 星號開頭是公告，不是作業
+            const raw = String(text).replace(/^\s*\d+\s*[.、．)）]\s*/, '').trim();
+            if (!raw || /^[*＊※]/.test(raw)) return null; // 星號開頭是公告，不是作業
+            // 聯絡簿寫了「訂簽」的才要簽名；「訂簽」兩個字不放進名稱和頁數
+            const needSign = /訂簽|簽名/.test(raw);
+            const t = raw.replace(/[（(]?\s*(訂簽|簽名)\s*[)）]?/g, ' ').replace(/\s+/g, ' ').trim();
+            if (!t) return null;
             const known = bases.find(b => b && t.startsWith(b));
             let base, detail;
             if (known) {
@@ -3525,9 +3529,9 @@
             return {
                 base: base.slice(0, 20),
                 detail: detail.replaceAll(DETAIL_SEP, ' ').slice(0, 14),
-                // 「考國L6」是考試預告，預設不收；考卷預設要簽名
+                // 「考國L6」是考試預告，預設不收；寫了「訂簽」的才勾簽名
                 checked: !/^考/.test(t),
-                sign: base.includes('卷')
+                sign: needSign
             };
         }
 
