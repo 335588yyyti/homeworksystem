@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=a3130dac" rel="stylesheet">
+    <link href="assets/tailwind.css?v=28b17b4a" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -4671,7 +4671,11 @@
         function renderContact() {
             const c = (window.state.daily || defaultDaily()).contact;
             const items = c.items;
-            document.getElementById('contact-date').textContent = c.date ? `（${Number(c.date.slice(5, 7))}/${Number(c.date.slice(8, 10))}）` : '';
+            // 標題一律顯示今天的日期（跟上面的大日期一樣，每天自動換）；內容是之前寫的，旁邊小字提醒是哪天寫的
+            const md = key => `${Number(key.slice(5, 7))}/${Number(key.slice(8, 10))}`;
+            const today = todayKey();
+            document.getElementById('contact-date').innerHTML = `（${md(today)}）`
+                + (c.date && c.date !== today && (items.length || (c.tasks || []).length) ? `<span class="ml-1 text-xs sm:text-sm font-bold text-amber-200/80 whitespace-nowrap">內容是 ${md(c.date)} 寫的</span>` : '');
             ['v', 'h'].forEach(k => {
                 document.getElementById(`contact-layout-${k}`).className = `px-3 py-1 rounded-lg text-sm font-black ${c.layout === k ? 'bg-amber-300 text-amber-900' : 'text-white/80 hover:text-white'}`;
             });

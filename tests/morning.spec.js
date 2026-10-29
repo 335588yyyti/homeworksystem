@@ -205,3 +205,20 @@ test('早修任務也可以切換直式，另一台跟著變，格子不會超�
     expect(room.errors).toEqual([]);
     expect(other.errors).toEqual([]);
 });
+
+test('早修任務・聯絡簿的標題每天顯示今天的日期；內容是前幾天寫的會小字提醒', async ({ browser }) => {
+    const cloud = createCloud();
+    const room = await openDevice(browser, cloud);
+    await room.evaluate(() => setMorningEnabled(true));
+    await unlockTeacher(room, 'morning');
+    await room.click('text=✏️ 編輯');
+    await room.fill('#contact-input', '國卷L5');
+    await room.click('#modal-contact >> text=儲存');
+    const today = await room.evaluate(() => { const d = new Date(); return `（${d.getMonth() + 1}/${d.getDate()}）`; });
+    await expect(room.locator('#contact-date')).toHaveText(today);
+    // 模擬內容是前一天寫的
+    await room.evaluate(() => { state.daily.contact.date = '2000-01-02'; renderContact(); });
+    await expect(room.locator('#contact-date')).toContainText(today);
+    await expect(room.locator('#contact-date')).toContainText('內容是 1/2 寫的');
+    expect(room.errors).toEqual([]);
+});
