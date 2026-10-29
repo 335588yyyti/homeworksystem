@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=35bdc247" rel="stylesheet">
+    <link href="assets/tailwind.css?v=70d584c3" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -5647,12 +5647,13 @@
                 first,
                 page('🔴', '老師登記需要訂正的同學', [
                     '按右上角「<b>教師登記</b>」，輸入教師密碼。',
-                    '點座號會依序切換：<b class="text-rose-600">紅燈</b>＝要訂正 → <b class="text-orange-600">橘燈（缺）</b>＝缺交 → <b class="text-emerald-600">綠燈</b>＝完成。',
+                    '標語列右邊可以切換兩種登記：「<b>✏️ 改作業</b>」點座號依序切換 <b class="text-rose-600">紅燈</b>＝要訂正 → <b class="text-orange-600">橘燈（缺）</b>＝缺交 → <b class="text-emerald-600">綠燈</b>＝完成；「<b>📥 清點缺交</b>」點一下就是缺交，再點一下取消。',
                     '請假的同學缺好幾項作業：按標語列的「<b>🟠 登記缺交</b>」，輸入座號、勾選沒交的作業，一次登記。',
                     '卡片上的「<b>✓ 全部完成</b>」可以把整項作業一次變綠燈（只有老師能用）；全班完成後會出現「<b>換下一項</b>」，換上還有人沒訂正的作業。',
                     '一段時間沒有操作會自動上鎖，回到學生消單模式；上鎖時間可在設定後台選 1.5／3／5／10 分鐘。'
                 ]),
                 page('📝', '出新作業、追蹤舊作業', [
+                    '早上收作業按「<b>📥 收作業</b>」：照前一天的聯絡簿先列好（考試預告不勾、星號公告不列），寫了「<b>訂簽</b>」的會多一個<b class="text-violet-600">簽名項目</b>（沒簽是紫色「簽」，學生簽好自己點掉）；按「放上看板」後點沒交的座號就好。',
                     '按標語列的「<b>➕ 新增並放上看板</b>」，點作業名稱（例如國習）；<b>作業日期</b>預設前一個上課日，可以改；<b>頁數或單元</b>可留白。',
                     '同一本作業的每一次分開記錄，例如「國習｜10/16 p.23」和「國習｜10/17」。點作業框的名稱可以換作業，換下來的紀錄都會保留。',
                                         '換下看板後還有人沒完成，會排在看板最下面的「<b>📌 已換下看板、還沒完成</b>」，訂正完由<b>老師或小幫手</b>點掉（點錯 5 秒內可以復原）。',
