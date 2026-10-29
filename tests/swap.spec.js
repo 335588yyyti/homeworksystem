@@ -30,7 +30,7 @@ test('全班訂正完時出現「換下一項」，按下後換成還有人沒�
     await expect(page.locator('#slot-next-0')).toContainText('換下一項');
 
     await page.click('#slot-next-0');
-    expect(await page.evaluate(() => state.slots[0].assignment)).toBe(earlier);
+    await expect.poll(() => page.evaluate(() => state.slots[0].assignment)).toBe(earlier);
     await expect(page.locator('#slot-badge-0')).toContainText('待訂正 2 人');
     await expect(page.locator('#toast-msg')).toContainText(`【${first}】換成【${earlier}】`);
     await expect.poll(() => cloud.board('main').slots[0].assignment).toBe(earlier);
