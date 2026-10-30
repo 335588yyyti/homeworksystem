@@ -1145,6 +1145,11 @@
                     // 前一次（前一天）寫的聯絡簿：早上「收作業」照這份先列好項目
                     prevItems: Array.isArray(cc.prevItems) ? cc.prevItems.map(String).map(t => t.slice(0, 40)).filter(t => t.trim()).slice(0, DAILY_ITEMS_MAX) : [],
                     prevDate: typeof cc.prevDate === 'string' ? cc.prevDate : '',
+                    // 每一份聯絡簿是哪一天出的作業（下午 3 點後寫的算下一個上課日）：{ 'YYYY-MM-DD': [項目] }，留最近幾份
+                    history: cc.history && typeof cc.history === 'object' ? Object.fromEntries(Object.entries(cc.history)
+                        .filter(([k, v]) => /^\d{4}-\d{2}-\d{2}$/.test(k) && Array.isArray(v))
+                        .sort((a, b) => b[0].localeCompare(a[0])).slice(0, 6)
+                        .map(([k, v]) => [k, v.map(String).map(t => t.slice(0, 40)).filter(t => t.trim()).slice(0, DAILY_ITEMS_MAX)])) : {},
                     layout: cc.layout === 'h' ? 'h' : 'v',
                     // 早修任務也可以直式或橫式（預設橫式）
                     taskLayout: cc.taskLayout === 'v' ? 'v' : 'h'
@@ -3516,9 +3521,18 @@
         // ---- 一次登記缺交（例如請假的同學）----
         // ---- 早上收作業：照前一天的聯絡簿先列好項目 ----
         // 今天已經寫了新的聯絡簿，就用前一份；還沒寫就用目前這份
+        // 收作業：用「前一個上課日出的作業」那份聯絡簿；日期就是出作業那天
         function collectSourceItems() {
             const c = (window.state.daily || defaultDaily()).contact;
+            const target = toDateInputValue(previousSchoolDay(new Date()));
+            const history = c.history || {};
+            if (history[target]) return { items: history[target], date: target };
+            // 前一天沒記到：用今天以前最近的一份
+            const earlier = Object.keys(history).filter(k => k < todayKey()).sort().pop();
+            if (earlier) return { items: history[earlier], date: earlier };
+            // 還沒有紀錄（剛上線）：沿用舊的做法
             if (c.date === todayKey()) return { items: c.prevItems || [], date: c.prevDate || '' };
+            if (c.prevItems && c.prevItems.length) return { items: c.prevItems, date: target };
             return { items: c.items || [], date: c.date || '' };
         }
 
@@ -3568,7 +3582,7 @@
             const src = collectSourceItems();
             const rows = src.items.map(t => parseContactLine(t, bases)).filter(Boolean);
             document.getElementById('collect-source').textContent = rows.length
-                ? `照 ${Number(src.date.slice(5, 7))}/${Number(src.date.slice(8, 10))} 的聯絡簿先列好了，不收的取消勾選、名稱頁數可以改`
+                ? `照 ${Number(src.date.slice(5, 7))}/${Number(src.date.slice(8, 10))} 出的作業（聯絡簿）先列好了，不收的取消勾選、名稱頁數可以改`
                 : '早自習的聯絡簿還沒有內容，請自己填要收的作業';
             if (rows.length === 0) rows.push({ base: '', detail: '', checked: true, sign: false });
             document.getElementById('collect-rows').innerHTML = rows.map(collectRowHtml).join('');
@@ -3724,6 +3738,21 @@
         function pickNewOnBoardName(name) {
             document.getElementById('new-on-board-name').value = name;
             document.getElementById('new-on-board-detail').focus();
+        }
+
+        const CONTACT_HISTORY_MAX = 6;
+        const CONTACT_NEXT_DAY_HOUR = 15; // 下午 3 點後寫的聯絡簿算下一個上課日的作業
+
+        function nextSchoolDay(today) {
+            const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+            while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+            return d;
+        }
+
+        // 這時候寫的聯絡簿是哪一天出的作業
+        function contactAssignDate(now) {
+            const weekend = now.getDay() === 0 || now.getDay() === 6;
+            return toDateInputValue(now.getHours() >= CONTACT_NEXT_DAY_HOUR || weekend ? nextSchoolDay(now) : now);
         }
 
         function previousSchoolDay(today) {
@@ -5240,9 +5269,13 @@
             const lines = id => document.getElementById(id).value.split('\n').map(t => t.trim().slice(0, 40)).filter(Boolean).slice(0, DAILY_ITEMS_MAX);
             const d = window.state.daily || defaultDaily();
             // 換新的一天第一次寫：前一天的聯絡簿留著，早上收作業時用
+            // 這份聯絡簿是哪一天出的作業：下午 3 點後寫的是下一個上課日的作業
+            const items = lines('contact-input');
+            const history = { ...(d.contact.history || {}), [contactAssignDate(new Date())]: items };
+            const keptHistory = Object.fromEntries(Object.entries(history).sort((a, b) => b[0].localeCompare(a[0])).slice(0, CONTACT_HISTORY_MAX));
             const keepPrev = d.contact.date && d.contact.date !== todayKey() && d.contact.items.length > 0;
             const prev = keepPrev ? { prevItems: d.contact.items, prevDate: d.contact.date } : {};
-            window.state.daily = { ...d, contact: { ...d.contact, ...prev, items: lines('contact-input'), tasks: lines('task-input'), date: todayKey() } };
+            window.state.daily = { ...d, contact: { ...d.contact, ...prev, history: keptHistory, items, tasks: lines('task-input'), date: todayKey() } };
             try { localStorage.removeItem(CONTACT_DRAFT_KEY); } catch (e) {}
             window.syncDaily(true);
             closeContactEditor();
