@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=1e42d33c" rel="stylesheet">
+    <link href="assets/tailwind.css?v=e259662b" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -1145,11 +1145,14 @@
                     // 前一次（前一天）寫的聯絡簿：早上「收作業」照這份先列好項目
                     prevItems: Array.isArray(cc.prevItems) ? cc.prevItems.map(String).map(t => t.slice(0, 40)).filter(t => t.trim()).slice(0, DAILY_ITEMS_MAX) : [],
                     prevDate: typeof cc.prevDate === 'string' ? cc.prevDate : '',
-                    // 每一份聯絡簿是哪一天出的作業（下午 3 點後寫的算下一個上課日）：{ 'YYYY-MM-DD': [項目] }，留最近幾份
+                    // 每一份聯絡簿是哪一天出的作業（下午 3 點後寫的算下一個上課日）：{ 'YYYY-MM-DD': [項目] }，留近三天＋先打好的幾天
                     history: cc.history && typeof cc.history === 'object' ? Object.fromEntries(Object.entries(cc.history)
                         .filter(([k, v]) => /^\d{4}-\d{2}-\d{2}$/.test(k) && Array.isArray(v))
-                        .sort((a, b) => b[0].localeCompare(a[0])).slice(0, 4)
+                        .sort((a, b) => b[0].localeCompare(a[0])).slice(0, 10)
                         .map(([k, v]) => [k, v.map(String).map(t => t.slice(0, 40)).filter(t => t.trim()).slice(0, DAILY_ITEMS_MAX)])) : {},
+                    // 老師自己改過「哪天收」的：{ 出作業那天: 收作業那天 }（沒改的就是下一個上課日收）
+                    due: cc.due && typeof cc.due === 'object' ? Object.fromEntries(Object.entries(cc.due)
+                        .filter(([k, v]) => /^\d{4}-\d{2}-\d{2}$/.test(k) && /^\d{4}-\d{2}-\d{2}$/.test(String(v))).slice(0, 10)) : {},
                     layout: cc.layout === 'h' ? 'h' : 'v',
                     // 早修任務也可以直式或橫式（預設橫式）
                     taskLayout: cc.taskLayout === 'v' ? 'v' : 'h'
@@ -2353,7 +2356,16 @@
             <div class="overflow-y-auto min-h-0 flex flex-col gap-1">
                 <label for="task-input" class="text-base font-black text-amber-700">⭐ 早修任務 <span class="text-sm font-bold text-slate-400">例如「訂正國卷 L.3」，不用可以空白</span></label>
                 <textarea id="task-input" oninput="saveContactDraft()" rows="3" class="w-full bg-amber-50 border-2 border-amber-200 rounded-xl px-3 py-2 text-lg font-black text-slate-800 focus:outline-none focus:border-amber-400 leading-relaxed"></textarea>
-                <label for="contact-input" class="text-base font-black text-emerald-800 mt-2">📒 聯絡簿 <span class="text-sm font-bold text-slate-400">例如「國習 P.48」「帶水彩」</span></label>
+                <!-- 這份聯絡簿是哪天的作業、哪天收；可以先打好之後幾天的 -->
+                <div class="flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-2 text-base font-black text-emerald-800">
+                    <span>📒 聯絡簿：</span>
+                    <input type="date" id="contact-for-date" onchange="loadContactDate(this.value)" aria-label="這是哪天的作業" class="bg-slate-50 border-2 border-slate-200 rounded-xl px-2 py-1 text-base font-black text-slate-800 focus:outline-none focus:border-amber-400">
+                    <span>的作業，</span>
+                    <input type="date" id="contact-due-date" onchange="saveContactDraft()" aria-label="哪天收" class="bg-slate-50 border-2 border-slate-200 rounded-xl px-2 py-1 text-base font-black text-slate-800 focus:outline-none focus:border-amber-400">
+                    <span>收</span>
+                </div>
+                <p class="text-xs font-bold text-slate-400"><span id="contact-date-hint"></span> <button type="button" id="contact-copy-prev" onclick="copyPrevContact()" class="text-emerald-700 hover:text-emerald-900 underline underline-offset-2 hidden">帶入上一份</button></p>
+                <label for="contact-input" class="text-base font-black text-emerald-800 mt-1">聯絡簿內容 <span class="text-sm font-bold text-slate-400">例如「國習 P.48」「帶水彩」</span></label>
                 <textarea id="contact-input" oninput="saveContactDraft()" rows="6" class="w-full bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2 text-lg font-black text-slate-800 focus:outline-none focus:border-amber-400 leading-relaxed"></textarea>
             </div>
             <div class="grid grid-cols-2 gap-2.5 mt-3">
@@ -3520,21 +3532,25 @@
         }
 
         // ---- 一次登記缺交（例如請假的同學）----
-        // ---- 早上收作業：照前一天的聯絡簿先列好項目 ----
-        // 今天已經寫了新的聯絡簿，就用前一份；還沒寫就用目前這份
-        // 收作業：用「前一個上課日出的作業」那份聯絡簿；日期就是出作業那天
-        function collectSourceItems() {
+        // ---- 早上收作業：照聯絡簿先列好項目 ----
+        // 收作業：列出「今天要收」的作業（哪天出的都算）；日期就是出作業那天。週末打開就是下週一要收的
+        function collectSources() {
             const c = (window.state.daily || defaultDaily()).contact;
-            const target = toDateInputValue(previousSchoolDay(new Date()));
+            const now = new Date();
+            const day = toDateInputValue(now.getDay() === 0 || now.getDay() === 6 ? nextSchoolDay(now) : now);
             const history = c.history || {};
-            if (history[target]) return { items: history[target], date: target };
-            // 前一天沒記到：用今天以前最近的一份
-            const earlier = Object.keys(history).filter(k => k < todayKey()).sort().pop();
-            if (earlier) return { items: history[earlier], date: earlier };
+            const past = Object.keys(history).filter(k => k < day).sort();
+            const due = past.filter(k => contactDueDate(c, k) === day);
+            if (due.length) return due.map(date => ({ date, items: history[date] }));
+            // 該收的那天沒收到（例如放假）：用最近一份已經到期的
+            const late = past.filter(k => contactDueDate(c, k) < day).pop();
+            if (late) return [{ date: late, items: history[late] }];
+            if (past.length) return [];
             // 還沒有紀錄（剛上線）：沿用舊的做法
-            if (c.date === todayKey()) return { items: c.prevItems || [], date: c.prevDate || '' };
-            if (c.prevItems && c.prevItems.length) return { items: c.prevItems, date: target };
-            return { items: c.items || [], date: c.date || '' };
+            const target = toDateInputValue(previousSchoolDay(now));
+            if (c.date === todayKey()) return [{ items: c.prevItems || [], date: c.prevDate || '' }];
+            if (c.prevItems && c.prevItems.length) return [{ items: c.prevItems, date: target }];
+            return [{ items: c.items || [], date: c.date || '' }];
         }
 
         // 「數練p.28-p.30」→ 名稱「數練」、頁數「p.28-p.30」；認得以前用過的作業名稱
@@ -3565,7 +3581,7 @@
         }
 
         function collectRowHtml(row) {
-            return `<div class="collect-row grid grid-cols-[auto_minmax(0,1.1fr)_minmax(0,1fr)_auto] gap-x-2 items-center">
+            return `<div data-date="${row.date || ''}" class="collect-row grid grid-cols-[auto_minmax(0,1.1fr)_minmax(0,1fr)_auto] gap-x-2 items-center">
                 <input type="checkbox" class="collect-on w-5 h-5 accent-sky-500" ${row.checked ? 'checked' : ''} aria-label="收這項">
                 <input type="text" class="collect-base min-w-0 bg-slate-50 border-2 border-slate-200 rounded-lg px-2 py-1 font-black text-slate-800 focus:outline-none focus:border-sky-400" maxlength="20" value="${escapeHtml(row.base)}" placeholder="例如：國習">
                 <input type="text" class="collect-detail min-w-0 bg-slate-50 border-2 border-slate-200 rounded-lg px-2 py-1 font-black text-slate-800 focus:outline-none focus:border-sky-400" maxlength="14" value="${escapeHtml(row.detail)}" placeholder="可留白">
@@ -3578,11 +3594,13 @@
                 .filter(b => b !== SIGN_BASE).sort((a, b) => b.length - a.length);
         }
 
-        // 把某一天出的作業列成一行一行（沒有就留一行空白讓老師填）
-        function fillCollectRows(items, date, emptyHint) {
-            const rows = items.map(t => parseContactLine(t, collectBases())).filter(Boolean);
+        // 把那幾天出的作業列成一行一行，每行記得是哪天出的（沒有就留一行空白讓老師填）
+        function fillCollectRows(sources, emptyHint) {
+            const rows = sources.flatMap(src => src.items.map(t => parseContactLine(t, collectBases())).filter(Boolean)
+                .map(row => ({ ...row, date: isDateKey(src.date) ? src.date : '' })));
+            const dates = sources.filter(src => src.items.length && isDateKey(src.date)).map(src => shortDate(src.date));
             document.getElementById('collect-source').textContent = rows.length
-                ? `照 ${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))} 出的作業（聯絡簿）先列好了，不收的取消勾選、名稱頁數可以改`
+                ? `照 ${dates.join('、') || '聯絡簿'} 出的作業（聯絡簿）先列好了，不收的取消勾選、名稱頁數可以改`
                 : emptyHint;
             if (rows.length === 0) rows.push({ base: '', detail: '', checked: true, sign: false });
             document.getElementById('collect-rows').innerHTML = rows.map(collectRowHtml).join('');
@@ -3593,11 +3611,10 @@
                 openTeacherAuthModal(openCollect, { allowHelper: true });
                 return;
             }
-            const src = collectSourceItems();
-            fillCollectRows(src.items, src.date, '早自習的聯絡簿還沒有內容，請自己填要收的作業');
-            document.getElementById('collect-date').value = toDateInputValue(src.date && src.date !== todayKey()
-                ? new Date(Number(src.date.slice(0, 4)), Number(src.date.slice(5, 7)) - 1, Number(src.date.slice(8, 10)))
-                : previousSchoolDay(new Date()));
+            const sources = collectSources();
+            fillCollectRows(sources, sources.length ? '早自習的聯絡簿還沒有內容，請自己填要收的作業' : '今天沒有要收的聯絡簿作業；可以改作業日期找前幾天的，或自己填');
+            const last = sources.map(src => src.date).filter(d => isDateKey(d) && d !== todayKey()).pop();
+            document.getElementById('collect-date').value = last || toDateInputValue(previousSchoolDay(new Date()));
             document.getElementById('modal-collect').classList.remove('hidden');
         }
 
@@ -3605,7 +3622,7 @@
         function loadCollectDate(date) {
             if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
             const items = ((window.state.daily || defaultDaily()).contact.history || {})[date];
-            fillCollectRows(items || [], date, `沒有 ${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))} 出的作業紀錄（只記得最近三天），請自己填`);
+            fillCollectRows([{ date, items: items || [] }], `沒有 ${shortDate(date)} 出的作業紀錄（只記得最近三天），請自己填`);
         }
 
         function addCollectRow() {
@@ -3619,9 +3636,11 @@
 
         function confirmCollect() {
             const dateValue = document.getElementById('collect-date').value;
-            const date = /^\d{4}-\d{2}-\d{2}$/.test(dateValue) ? `${Number(dateValue.slice(5, 7))}/${Number(dateValue.slice(8, 10))}` : '';
             const names = [];
             document.querySelectorAll('#collect-rows .collect-row').forEach(row => {
+                // 每行用它自己是哪天出的；自己加的行用上面的作業日期
+                const rowDate = isDateKey(row.dataset.date) ? row.dataset.date : dateValue;
+                const date = isDateKey(rowDate) ? shortDate(rowDate) : '';
                 const base = row.querySelector('.collect-base').value.replaceAll(DETAIL_SEP, ' ').trim();
                 if (!row.querySelector('.collect-on').checked || !base || base === SIGN_BASE) return;
                 const pages = row.querySelector('.collect-detail').value.replaceAll(DETAIL_SEP, ' ').trim();
@@ -3756,7 +3775,8 @@
             document.getElementById('new-on-board-detail').focus();
         }
 
-        const CONTACT_HISTORY_MAX = 4; // 近三天＋下午寫好的明天那份，不多存
+        const CONTACT_PAST_KEEP = 3; // 已經出過的作業只留近三天，不多存
+        const CONTACT_AHEAD_DAYS = 5; // 聯絡簿最多先打好之後 5 個上課日
         const CONTACT_NEXT_DAY_HOUR = 15; // 下午 3 點後寫的聯絡簿算下一個上課日的作業
 
         function nextSchoolDay(today) {
@@ -3775,6 +3795,35 @@
             const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
             while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1);
             return d;
+        }
+
+        function fromDateKey(key) {
+            return new Date(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, Number(key.slice(8, 10)));
+        }
+
+        const isDateKey = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
+        const shortDate = key => `${Number(key.slice(5, 7))}/${Number(key.slice(8, 10))}`;
+
+        // 這份作業哪天收：老師改過就照改的，不然是下一個上課日
+        function contactDueDate(c, key) {
+            const due = (c.due || {})[key];
+            return isDateKey(due) ? due : toDateInputValue(nextSchoolDay(fromDateKey(key)));
+        }
+
+        // 聯絡簿最晚可以先打到哪一天
+        function contactAheadLimit(now) {
+            let d = now;
+            for (let i = 0; i < CONTACT_AHEAD_DAYS; i++) d = nextSchoolDay(d);
+            return toDateInputValue(d);
+        }
+
+        // 教室現在要顯示哪一份：下午 3 點前是今天的，3 點後是下一個上課日的；那天還沒寫就先顯示前一份
+        function contactShown(c, now = new Date()) {
+            const history = c.history || {};
+            const keys = Object.keys(history);
+            if (keys.length === 0) return { key: '', items: c.items || [] };
+            const key = keys.filter(k => k <= contactAssignDate(now)).sort().pop();
+            return key ? { key, items: history[key] } : { key: '', items: [] };
         }
 
         function toDateInputValue(d) {
@@ -5061,14 +5110,21 @@
                 : `<span>${escapeHtml(m)}</span>`).join('');
         }
 
+        let contactRenderedFor = '';
         function renderContact() {
             const c = (window.state.daily || defaultDaily()).contact;
-            const items = c.items;
-            // 標題一律顯示今天的日期（跟上面的大日期一樣，每天自動換）；內容是之前寫的，旁邊小字提醒是哪天寫的
-            const md = key => `${Number(key.slice(5, 7))}/${Number(key.slice(8, 10))}`;
+            // 先打好的聯絡簿：下午 3 點一到自動換成下一個上課日那份
+            contactRenderedFor = contactAssignDate(new Date());
+            const shown = contactShown(c);
+            const items = shown.items;
+            // 標題一律顯示今天的日期（跟上面的大日期一樣，每天自動換）；內容是之前的，旁邊小字提醒是哪天的
+            const md = shortDate;
             const today = todayKey();
+            const old = shown.key
+                ? (shown.key < contactRenderedFor && items.length ? `這是 ${md(shown.key)} 的作業` : '')
+                : (c.date && c.date !== today && (items.length || (c.tasks || []).length) ? `內容是 ${md(c.date)} 寫的` : '');
             document.getElementById('contact-date').innerHTML = `（${md(today)}）`
-                + (c.date && c.date !== today && (items.length || (c.tasks || []).length) ? `<span class="ml-1 text-xs sm:text-sm font-bold text-amber-200/80 whitespace-nowrap">內容是 ${md(c.date)} 寫的</span>` : '');
+                + (old ? `<span class="ml-1 text-xs sm:text-sm font-bold text-amber-200/80 whitespace-nowrap">${old}</span>` : '');
             ['v', 'h'].forEach(k => {
                 document.getElementById(`contact-layout-${k}`).className = `px-3 py-1 rounded-lg text-sm font-black ${c.layout === k ? 'bg-amber-300 text-amber-900' : 'text-white/80 hover:text-white'}`;
             });
@@ -5261,6 +5317,8 @@
             try {
                 localStorage.setItem(CONTACT_DRAFT_KEY, JSON.stringify({
                     date: todayKey(),
+                    forDate: document.getElementById('contact-for-date').value,
+                    due: document.getElementById('contact-due-date').value,
                     tasks: document.getElementById('task-input').value,
                     items: document.getElementById('contact-input').value
                 }));
@@ -5273,18 +5331,64 @@
                 return;
             }
             const c = (window.state.daily || defaultDaily()).contact;
+            const now = new Date();
+            const forInput = document.getElementById('contact-for-date');
+            forInput.min = toDateInputValue(previousSchoolDay(previousSchoolDay(previousSchoolDay(now))));
+            forInput.max = contactAheadLimit(now);
             document.getElementById('task-input').value = c.tasks.join('\n');
-            document.getElementById('contact-input').value = c.items.join('\n');
+            fillContactDate(contactAssignDate(now));
             // 上次打到一半沒儲存（例如視窗被關掉、網頁重新整理）：把打好的內容拿回來
             let draft = null;
             try { draft = JSON.parse(localStorage.getItem(CONTACT_DRAFT_KEY) || 'null'); } catch (e) {}
-            if (draft && draft.date === todayKey() && (draft.tasks !== c.tasks.join('\n') || draft.items !== c.items.join('\n'))) {
+            if (draft && draft.date === todayKey() && (draft.tasks !== c.tasks.join('\n') || draft.items !== document.getElementById('contact-input').value
+                || (isDateKey(draft.forDate) && draft.forDate !== forInput.value))) {
+                if (isDateKey(draft.forDate)) fillContactDate(draft.forDate);
+                if (isDateKey(draft.due)) document.getElementById('contact-due-date').value = draft.due;
                 document.getElementById('task-input').value = draft.tasks;
                 document.getElementById('contact-input').value = draft.items;
                 showToast('已拿回上次打到一半、還沒儲存的內容');
             }
             document.getElementById('modal-contact').classList.remove('hidden');
             setTimeout(() => document.getElementById('task-input').focus(), 100);
+        }
+
+        // 編輯視窗換成某一天的聯絡簿（還沒寫就空白）
+        function fillContactDate(date) {
+            const c = (window.state.daily || defaultDaily()).contact;
+            const history = c.history || {};
+            const now = new Date();
+            const hasHistory = Object.keys(history).length > 0;
+            const items = history[date] || (!hasHistory && date === contactAssignDate(now) ? c.items : []);
+            document.getElementById('contact-for-date').value = date;
+            const dueInput = document.getElementById('contact-due-date');
+            dueInput.min = toDateInputValue(new Date(fromDateKey(date).getTime() + 86400000));
+            dueInput.value = contactDueDate(c, date);
+            document.getElementById('contact-input').value = items.join('\n');
+            const cur = contactAssignDate(now);
+            document.getElementById('contact-date-hint').textContent = date === cur
+                ? (now.getHours() >= CONTACT_NEXT_DAY_HOUR ? '下午 3 點後寫的算下一個上課日的作業。' : '今天的作業。') + '可以改日期先打好之後幾天的。'
+                : date > cur
+                    ? `先打好 ${shortDate(date)} 的，到時候教室畫面會自動換上。`
+                    : `${shortDate(date)} 已經出過的作業，改了只影響收作業。`;
+            const prev = Object.keys(history).filter(k => k < date).sort().pop();
+            document.getElementById('contact-copy-prev').classList.toggle('hidden', !(prev && items.length === 0));
+        }
+
+        function loadContactDate(date) {
+            if (!isDateKey(date)) return;
+            fillContactDate(date);
+            saveContactDraft();
+        }
+
+        // 新的一天還沒寫：把上一份拿來改
+        function copyPrevContact() {
+            const history = (window.state.daily || defaultDaily()).contact.history || {};
+            const date = document.getElementById('contact-for-date').value;
+            const prev = Object.keys(history).filter(k => k < date).sort().pop();
+            if (!prev) return;
+            document.getElementById('contact-input').value = history[prev].join('\n');
+            document.getElementById('contact-copy-prev').classList.add('hidden');
+            saveContactDraft();
         }
 
         function closeContactEditor() {
@@ -5294,20 +5398,40 @@
         function saveContact() {
             const lines = id => document.getElementById(id).value.split('\n').map(t => t.trim().slice(0, 40)).filter(Boolean).slice(0, DAILY_ITEMS_MAX);
             const d = window.state.daily || defaultDaily();
-            // 換新的一天第一次寫：前一天的聯絡簿留著，早上收作業時用
-            // 這份聯絡簿是哪一天出的作業：下午 3 點後寫的是下一個上課日的作業
+            const now = new Date();
+            const cur = contactAssignDate(now);
+            // 這份聯絡簿是哪一天出的作業：預設下午 3 點後寫的是下一個上課日的作業，老師也可以自己選
+            const picked = document.getElementById('contact-for-date').value;
+            const forDate = isDateKey(picked) ? picked : cur;
+            if (forDate > contactAheadLimit(now)) {
+                window.soundEffect.playAlert();
+                showToast(`最多先打到 ${shortDate(contactAheadLimit(now))} 的聯絡簿`, false);
+                return;
+            }
             const items = lines('contact-input');
-            const history = { ...(d.contact.history || {}), [contactAssignDate(new Date())]: items };
-            const keptHistory = Object.fromEntries(Object.entries(history).sort((a, b) => b[0].localeCompare(a[0])).slice(0, CONTACT_HISTORY_MAX));
+            const history = { ...(d.contact.history || {}), [forDate]: items };
+            if (items.length === 0 && forDate !== cur) delete history[forDate];
+            // 已經出過的只留近三天；先打好的留著
+            const pastKeys = Object.keys(history).filter(k => k < cur).sort().reverse().slice(0, CONTACT_PAST_KEEP);
+            const keptHistory = Object.fromEntries(Object.entries(history).filter(([k]) => k >= cur || pastKeys.includes(k)));
+            const pickedDue = document.getElementById('contact-due-date').value;
+            const due = { ...(d.contact.due || {}) };
+            delete due[forDate];
+            if (isDateKey(pickedDue) && pickedDue > forDate && pickedDue !== contactDueDate({}, forDate)) due[forDate] = pickedDue;
+            const keptDue = Object.fromEntries(Object.entries(due).filter(([k]) => k in keptHistory));
             const keepPrev = d.contact.date && d.contact.date !== todayKey() && d.contact.items.length > 0;
             const prev = keepPrev ? { prevItems: d.contact.items, prevDate: d.contact.date } : {};
-            window.state.daily = { ...d, contact: { ...d.contact, ...prev, history: keptHistory, items, tasks: lines('task-input'), date: todayKey() } };
+            const contact = { ...d.contact, ...prev, history: keptHistory, due: keptDue, tasks: lines('task-input'), date: todayKey() };
+            contact.items = contactShown(contact, now).items;
+            window.state.daily = { ...d, contact };
             try { localStorage.removeItem(CONTACT_DRAFT_KEY); } catch (e) {}
             window.syncDaily(true);
             closeContactEditor();
             renderContact();
             window.soundEffect.playSuccess();
-            showToast('早修任務和聯絡簿已更新');
+            showToast(forDate > cur
+                ? `已存好 ${shortDate(forDate)} 的聯絡簿（${shortDate(contactDueDate(contact, forDate))} 收），到時候教室畫面會自動換上`
+                : '早修任務和聯絡簿已更新');
         }
 
         // 時鐘只在早自習頁開著時每秒更新
@@ -5318,6 +5442,7 @@
             if (el) el.textContent = [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2, '0')).join(':');
             // 換日：打卡自動歸零
             if (morningRenderedDay && morningRenderedDay !== todayKey()) renderMorning();
+            else if (contactRenderedFor && contactRenderedFor !== contactAssignDate(d)) renderContact();
             morningRenderedDay = todayKey();
         }
         let morningRenderedDay = '';
@@ -5830,7 +5955,7 @@
                     '按標語列的「<b>➕ 新增並放上看板</b>」，點作業名稱（例如國習）；<b>作業日期</b>預設前一個上課日，可以改；<b>頁數或單元</b>可留白。',
                     '同一本作業的每一次分開記錄，例如「國習｜10/16 p.23」和「國習｜10/17」。點作業框的名稱可以換作業，換下來的紀錄都會保留。',
                                         '換下看板後還有人沒完成，會排在看板最下面的「<b>📌 已換下看板、還沒完成</b>」，訂正完由<b>老師或小幫手</b>點掉（點錯 5 秒內可以復原）。',
-                    '有舊日期作業全班都完成、也不在看板上時，教師登記模式右上角會自動問「<b>🧹 要不要刪掉</b>」（按「先不要」今天就不再問；也可以到設定後台按「🧹 刪除已完成的舊日期作業」）。點完座號後，看板會<b>自動排</b>：比較多人要訂正、一樣多時日期較近的放看板，少人的、日期較舊的放下方（今天才放上的作業不會被換掉）。「📥 收作業」可以改作業日期，回頭找近三天出的作業。'
+                    '有舊日期作業全班都完成、也不在看板上時，教師登記模式右上角會自動問「<b>🧹 要不要刪掉</b>」（按「先不要」今天就不再問；也可以到設定後台按「🧹 刪除已完成的舊日期作業」）。點完座號後，看板會<b>自動排</b>：比較多人要訂正、一樣多時日期較近的放看板，少人的、日期較舊的放下方（今天才放上的作業不會被換掉）。「📥 收作業」會列出<b>今天要收</b>的作業，也可以改作業日期，回頭找近三天出的作業。'
                 ]),
                 page('🟢', '學生自己消單', [
                     '學生訂正完，到教室電腦點自己的<b class="text-rose-600">紅燈</b>座號，就會變成<b class="text-emerald-600">綠燈</b>。',
@@ -5857,7 +5982,7 @@
                     '到「設定後台 → 看板設定」勾選「<b>📖 開啟早自習</b>」，上方會多一個「<b>早自習</b>」分頁；沒開啟就不會出現。',
                     '<b>到校打卡</b>：學生到教室點自己的座號，記下時間；<b>08:00 以後</b>打卡會標成<b class="text-orange-600">遲到</b>（按「✏️ 改時間」可以改）。學生點錯不能自己取消，請找老師或小幫手。',
                     '老師或小幫手在<b>教師登記</b>模式點座號，可以切換「未到 → 已到 → 請假」。打卡紀錄<b>每天自動歸零</b>。',
-                    '按「<b>✏️ 編輯</b>」寫<b>早修任務</b>（黃色便利貼）和<b>聯絡簿</b>，一行一項，不用自己打「1.」編號。聯絡簿右上角、早修任務標題旁邊都可以各自切換<b>直式</b>（由右往左一項一欄，太長自動接下一行）或<b>橫式</b>（條列）；字會自動放大到剛好填滿。',
+                    '按「<b>✏️ 編輯</b>」寫<b>早修任務</b>（黃色便利貼）和<b>聯絡簿</b>，一行一項，不用自己打「1.」編號。聯絡簿上面可以選<b>這是哪天的作業、哪天收</b>（預設下午 3 點後寫的算下一個上課日、隔一個上課日收），也可以<b>先打好之後 5 個上課日</b>的，到時候教室畫面會自動換上。聯絡簿右上角、早修任務標題旁邊都可以各自切換<b>直式</b>（由右往左一項一欄，太長自動接下一行）或<b>橫式</b>（條列）；字會自動放大到剛好填滿。',
                     '早修任務和聯絡簿中間的<b>小白線可以左右拖曳</b>，調整兩邊寬度，這台電腦會記住。',
                     '家長頁會顯示孩子「<b>今日到教室</b>」的時間，每天到了遲到時間（例如 8:00）才統一更新，<b>那時教室的看板要開著</b>。聯絡簿不會給家長看。'
                 ]),

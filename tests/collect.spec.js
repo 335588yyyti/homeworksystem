@@ -154,3 +154,30 @@ test('收作業可以改日期回頭找前幾天出的作業；沒有紀錄就�
     await expect(page.locator('#collect-rows .collect-base')).toHaveValue('');
     expect(page.errors).toEqual([]);
 });
+
+test('收作業列出「今天要收」的作業：不同天出、改過收作業日期的都會列出，各自標出作業那天；還沒到期的不列', async ({ browser }) => {
+    const page = await openDevice(browser, createCloud());
+    await teacherMode(page);
+    const [d1, d2] = await page.evaluate(() => {
+        const now = new Date();
+        const day = now.getDay() === 0 || now.getDay() === 6 ? nextSchoolDay(now) : now;
+        const a = toDateInputValue(previousSchoolDay(day));   // 前一個上課日出的：照預設今天收
+        const b = toDateInputValue(previousSchoolDay(previousSchoolDay(day))); // 再前一天出的：老師改成今天收
+        const c = toDateInputValue(previousSchoolDay(previousSchoolDay(previousSchoolDay(day)))); // 改成之後才收
+        state.daily = { ...state.daily, contact: { ...state.daily.contact, date: todayKey(), items: [],
+            history: { [a]: ['國習P.20'], [b]: ['週末作業甲本P.5'], [c]: ['數習P.30'] },
+            due: { [b]: toDateInputValue(day), [c]: toDateInputValue(nextSchoolDay(day)) } } };
+        return [a, b];
+    });
+    await page.click('#collect-button');
+    const bases = page.locator('#collect-rows .collect-base');
+    await expect(bases).toHaveCount(2);
+    await expect(bases.nth(0)).toHaveValue('週末作業甲本');
+    await expect(bases.nth(1)).toHaveValue('國習');
+    await page.click('#collect-confirm');
+    const md = (k) => `${Number(k.slice(5, 7))}/${Number(k.slice(8, 10))}`;
+    const slots = await page.evaluate(() => state.slots.map((s) => s.assignment));
+    expect(slots).toContain(`國習｜${md(d1)} P.20`);
+    expect(slots).toContain(`週末作業甲本｜${md(d2)} P.5`);
+    expect(page.errors).toEqual([]);
+});
