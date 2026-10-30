@@ -109,3 +109,26 @@ test('今天寫了新的聯絡簿後，收作業仍然照前一天的那份', as
     await expect(page.locator('#collect-rows .collect-base')).toHaveValue('國卷');
     expect(page.errors).toEqual([]);
 });
+
+test('下午 3 點後寫的聯絡簿算下一個上課日出的作業；收作業用前一個上課日出的那份', async ({ browser }) => {
+    const page = await openDevice(browser, createCloud());
+    const dates = await page.evaluate(() => [
+        contactAssignDate(new Date(2026, 9, 29, 10, 0)),  // 週四上午：當天
+        contactAssignDate(new Date(2026, 9, 29, 15, 30)), // 週四下午 3 點後：週五
+        contactAssignDate(new Date(2026, 9, 30, 16, 0)),  // 週五下午：下週一
+    ]);
+    expect(dates).toEqual(['2026-10-29', '2026-10-30', '2026-11-02']);
+
+    await teacherMode(page);
+    await page.evaluate(() => {
+        const key = (d) => toDateInputValue(d);
+        const yesterday = key(previousSchoolDay(new Date()));
+        state.daily = { ...state.daily, contact: { ...state.daily.contact, date: todayKey(), items: ['明天的數習P.50'],
+            history: { [yesterday]: ['國習P.20'], [key(nextSchoolDay(new Date()))]: ['明天的數習P.50'] } } };
+    });
+    await page.click('#collect-button');
+    await expect(page.locator('#collect-rows .collect-base')).toHaveValue('國習');
+    const expected = await page.evaluate(() => toDateInputValue(previousSchoolDay(new Date())));
+    await expect(page.locator('#collect-date')).toHaveValue(expected);
+    expect(page.errors).toEqual([]);
+});
