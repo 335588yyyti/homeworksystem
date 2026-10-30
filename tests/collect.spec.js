@@ -132,3 +132,25 @@ test('下午 3 點後寫的聯絡簿算下一個上課日出的作業；收作�
     await expect(page.locator('#collect-date')).toHaveValue(expected);
     expect(page.errors).toEqual([]);
 });
+
+test('收作業可以改日期回頭找前幾天出的作業；沒有紀錄就留空自己填', async ({ browser }) => {
+    const page = await openDevice(browser, createCloud());
+    await teacherMode(page);
+    const [d1, d2] = await page.evaluate(() => {
+        const a = toDateInputValue(previousSchoolDay(new Date()));
+        const b = toDateInputValue(previousSchoolDay(previousSchoolDay(new Date())));
+        state.daily = { ...state.daily, contact: { ...state.daily.contact, date: todayKey(), items: [], history: { [a]: ['國習P.20'], [b]: ['數習P.30', '甲本P.5'] } } };
+        return [a, b];
+    });
+    await page.click('#collect-button');
+    await expect(page.locator('#collect-rows .collect-base')).toHaveValue('國習');
+    await page.fill('#collect-date', d2);
+    await page.dispatchEvent('#collect-date', 'change');
+    await expect(page.locator('#collect-rows .collect-base')).toHaveCount(2);
+    await expect(page.locator('#collect-rows .collect-base').first()).toHaveValue('數習');
+    await page.fill('#collect-date', '2000-01-03');
+    await page.dispatchEvent('#collect-date', 'change');
+    await expect(page.locator('#collect-source')).toContainText('沒有 1/3 出的作業紀錄');
+    await expect(page.locator('#collect-rows .collect-base')).toHaveValue('');
+    expect(page.errors).toEqual([]);
+});

@@ -1148,7 +1148,7 @@
                     // 每一份聯絡簿是哪一天出的作業（下午 3 點後寫的算下一個上課日）：{ 'YYYY-MM-DD': [項目] }，留最近幾份
                     history: cc.history && typeof cc.history === 'object' ? Object.fromEntries(Object.entries(cc.history)
                         .filter(([k, v]) => /^\d{4}-\d{2}-\d{2}$/.test(k) && Array.isArray(v))
-                        .sort((a, b) => b[0].localeCompare(a[0])).slice(0, 6)
+                        .sort((a, b) => b[0].localeCompare(a[0])).slice(0, 4)
                         .map(([k, v]) => [k, v.map(String).map(t => t.slice(0, 40)).filter(t => t.trim()).slice(0, DAILY_ITEMS_MAX)])) : {},
                     layout: cc.layout === 'h' ? 'h' : 'v',
                     // 早修任務也可以直式或橫式（預設橫式）
@@ -2398,7 +2398,7 @@
             </div>
             <div class="flex items-center gap-2 mb-2">
                 <label for="collect-date" class="text-base font-black text-slate-700 whitespace-nowrap">作業日期</label>
-                <input type="date" id="collect-date" class="flex-1 min-w-0 bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-1.5 font-black text-slate-800 focus:outline-none focus:border-sky-400">
+                <input type="date" id="collect-date" onchange="loadCollectDate(this.value)" class="flex-1 min-w-0 bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-1.5 font-black text-slate-800 focus:outline-none focus:border-sky-400">
             </div>
             <div class="grid grid-cols-[auto_minmax(0,1.1fr)_minmax(0,1fr)_auto] gap-x-2 gap-y-1 items-center text-xs font-black text-slate-400 px-1">
                 <span>收</span><span>作業名稱</span><span>頁數／單元</span><span>✍️簽名</span>
@@ -3572,24 +3572,39 @@
             </div>`;
         }
 
+        function collectBases() {
+            return [...new Set(window.state.assignments.map(a => splitAssignment(a).base))]
+                .filter(b => b !== SIGN_BASE).sort((a, b) => b.length - a.length);
+        }
+
+        // 把某一天出的作業列成一行一行（沒有就留一行空白讓老師填）
+        function fillCollectRows(items, date, emptyHint) {
+            const rows = items.map(t => parseContactLine(t, collectBases())).filter(Boolean);
+            document.getElementById('collect-source').textContent = rows.length
+                ? `照 ${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))} 出的作業（聯絡簿）先列好了，不收的取消勾選、名稱頁數可以改`
+                : emptyHint;
+            if (rows.length === 0) rows.push({ base: '', detail: '', checked: true, sign: false });
+            document.getElementById('collect-rows').innerHTML = rows.map(collectRowHtml).join('');
+        }
+
         function openCollect() {
             if (!canEditBoard()) {
                 openTeacherAuthModal(openCollect, { allowHelper: true });
                 return;
             }
-            const bases = [...new Set(window.state.assignments.map(a => splitAssignment(a).base))]
-                .filter(b => b !== SIGN_BASE).sort((a, b) => b.length - a.length);
             const src = collectSourceItems();
-            const rows = src.items.map(t => parseContactLine(t, bases)).filter(Boolean);
-            document.getElementById('collect-source').textContent = rows.length
-                ? `照 ${Number(src.date.slice(5, 7))}/${Number(src.date.slice(8, 10))} 出的作業（聯絡簿）先列好了，不收的取消勾選、名稱頁數可以改`
-                : '早自習的聯絡簿還沒有內容，請自己填要收的作業';
-            if (rows.length === 0) rows.push({ base: '', detail: '', checked: true, sign: false });
-            document.getElementById('collect-rows').innerHTML = rows.map(collectRowHtml).join('');
+            fillCollectRows(src.items, src.date, '早自習的聯絡簿還沒有內容，請自己填要收的作業');
             document.getElementById('collect-date').value = toDateInputValue(src.date && src.date !== todayKey()
                 ? new Date(Number(src.date.slice(0, 4)), Number(src.date.slice(5, 7)) - 1, Number(src.date.slice(8, 10)))
                 : previousSchoolDay(new Date()));
             document.getElementById('modal-collect').classList.remove('hidden');
+        }
+
+        // 改作業日期：換成那天出的作業（只記得最近三天）
+        function loadCollectDate(date) {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+            const items = ((window.state.daily || defaultDaily()).contact.history || {})[date];
+            fillCollectRows(items || [], date, `沒有 ${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))} 出的作業紀錄（只記得最近三天），請自己填`);
         }
 
         function addCollectRow() {
@@ -3740,7 +3755,7 @@
             document.getElementById('new-on-board-detail').focus();
         }
 
-        const CONTACT_HISTORY_MAX = 6;
+        const CONTACT_HISTORY_MAX = 4; // 近三天＋下午寫好的明天那份，不多存
         const CONTACT_NEXT_DAY_HOUR = 15; // 下午 3 點後寫的聯絡簿算下一個上課日的作業
 
         function nextSchoolDay(today) {
