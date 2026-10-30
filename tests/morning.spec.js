@@ -206,7 +206,7 @@ test('早修任務也可以切換直式，另一台跟著變，格子不會超�
     expect(other.errors).toEqual([]);
 });
 
-test('早修任務・聯絡簿的標題每天顯示今天的日期；內容是前幾天寫的會小字提醒', async ({ browser }) => {
+test('早修任務・聯絡簿的標題每天顯示今天的日期；內容是前幾天的作業會小字提醒', async ({ browser }) => {
     const cloud = createCloud();
     const room = await openDevice(browser, cloud);
     await room.evaluate(() => setMorningEnabled(true));
@@ -217,9 +217,9 @@ test('早修任務・聯絡簿的標題每天顯示今天的日期；內容是�
     const today = await room.evaluate(() => { const d = new Date(); return `（${d.getMonth() + 1}/${d.getDate()}）`; });
     await expect(room.locator('#contact-date')).toHaveText(today);
     // 模擬內容是前一天寫的
-    await room.evaluate(() => { state.daily.contact.date = '2000-01-02'; renderContact(); });
+    await room.evaluate(() => { state.daily.contact.history = { '2000-01-02': ['國卷L5'] }; renderContact(); });
     await expect(room.locator('#contact-date')).toContainText(today);
-    await expect(room.locator('#contact-date')).toContainText('內容是 1/2 寫的');
+    await expect(room.locator('#contact-date')).toContainText('這是 1/2 的作業');
     expect(room.errors).toEqual([]);
 });
 
@@ -248,5 +248,48 @@ test('編輯聯絡簿打到一半：點到旁邊不會關掉；視窗被關掉�
     await room.click('#modal-contact >> text=儲存');
     // 儲存後草稿清掉
     expect(await room.evaluate(() => localStorage.getItem('checkpoint_contact_draft'))).toBeNull();
+    expect(room.errors).toEqual([]);
+});
+
+test('聯絡簿可以選哪天的作業、哪天收，也能先打好之後幾天的；到那天教室畫面自動換上', async ({ browser }) => {
+    const cloud = createCloud();
+    const room = await openDevice(browser, cloud);
+    await room.evaluate(() => setMorningEnabled(true));
+    await unlockTeacher(room, 'morning');
+    await room.click('text=✏️ 編輯');
+    const cur = await room.inputValue('#contact-for-date');
+    expect(cur).toBe(await room.evaluate(() => contactAssignDate(new Date())));
+    await room.fill('#contact-input', '國習P.48');
+    await room.click('#modal-contact >> text=儲存');
+    await expect(room.locator('#contact-body')).toContainText('國習');
+
+    // 先打好下一份，改成隔兩個上課日才收
+    const [next, due] = await room.evaluate((k) => {
+        const n = nextSchoolDay(fromDateKey(k));
+        return [toDateInputValue(n), toDateInputValue(nextSchoolDay(nextSchoolDay(n)))];
+    }, cur);
+    await room.click('text=✏️ 編輯');
+    await room.fill('#contact-for-date', next);
+    await room.dispatchEvent('#contact-for-date', 'change');
+    await expect(room.locator('#contact-input')).toHaveValue('');
+    await expect(room.locator('#contact-copy-prev')).toBeVisible();
+    await room.fill('#contact-input', '數習P.13');
+    await room.fill('#contact-due-date', due);
+    await room.click('#modal-contact >> text=儲存');
+    // 教室畫面還是現在這份
+    await expect(room.locator('#contact-body')).toContainText('國習');
+    await expect(room.locator('#contact-body')).not.toContainText('數習');
+    await expect.poll(() => cloud.board('main').daily?.contact?.history?.[next], { timeout: 15000 }).toEqual(['數習P.13']);
+    expect(cloud.board('main').daily.contact.due).toEqual({ [next]: due });
+    // 到了那天：顯示先打好的那份
+    expect(await room.evaluate((k) => contactShown(state.daily.contact, new Date(fromDateKey(k).getTime() + 9 * 3600000)).items, next)).toEqual(['數習P.13']);
+
+    // 重新打開編輯：選回那天就看到打好的內容和收作業日期
+    await room.click('text=✏️ 編輯');
+    await expect(room.locator('#contact-input')).toHaveValue('國習P.48');
+    await room.fill('#contact-for-date', next);
+    await room.dispatchEvent('#contact-for-date', 'change');
+    await expect(room.locator('#contact-input')).toHaveValue('數習P.13');
+    await expect(room.locator('#contact-due-date')).toHaveValue(due);
     expect(room.errors).toEqual([]);
 });
