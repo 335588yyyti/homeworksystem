@@ -5,7 +5,8 @@ const { createCloud, openDevice, seatLayoutProblems } = require('./helpers');
 test('全班訂正完時出現「換下一項」，按下後換成還有人沒訂正的作業並同步到雲端', async ({ browser }) => {
     const cloud = createCloud();
     const page = await openDevice(browser, cloud);
-    await page.evaluate(() => { startTeacherSession(); applyRoleUI('teacher'); });
+    // 這裡測手動「換下一項」，關掉自動換上看板，免得 CI 太慢時先被自動換掉
+    await page.evaluate(() => { startTeacherSession(); applyRoleUI('teacher'); window.scheduleAutoPromote = () => {}; });
     const first = await page.evaluate(() => state.slots[0].assignment);
     // 看板外的兩項作業有人還沒訂正（只有第二項是排在前面的才會被選到）
     const [later, earlier] = await page.evaluate(() => {

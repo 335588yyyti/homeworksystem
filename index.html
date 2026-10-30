@@ -1148,7 +1148,7 @@
                     // 每一份聯絡簿是哪一天出的作業（下午 3 點後寫的算下一個上課日）：{ 'YYYY-MM-DD': [項目] }，留最近幾份
                     history: cc.history && typeof cc.history === 'object' ? Object.fromEntries(Object.entries(cc.history)
                         .filter(([k, v]) => /^\d{4}-\d{2}-\d{2}$/.test(k) && Array.isArray(v))
-                        .sort((a, b) => b[0].localeCompare(a[0])).slice(0, 6)
+                        .sort((a, b) => b[0].localeCompare(a[0])).slice(0, 4)
                         .map(([k, v]) => [k, v.map(String).map(t => t.slice(0, 40)).filter(t => t.trim()).slice(0, DAILY_ITEMS_MAX)])) : {},
                     layout: cc.layout === 'h' ? 'h' : 'v',
                     // 早修任務也可以直式或橫式（預設橫式）
@@ -2398,7 +2398,7 @@
             </div>
             <div class="flex items-center gap-2 mb-2">
                 <label for="collect-date" class="text-base font-black text-slate-700 whitespace-nowrap">作業日期</label>
-                <input type="date" id="collect-date" class="flex-1 min-w-0 bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-1.5 font-black text-slate-800 focus:outline-none focus:border-sky-400">
+                <input type="date" id="collect-date" onchange="loadCollectDate(this.value)" class="flex-1 min-w-0 bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-1.5 font-black text-slate-800 focus:outline-none focus:border-sky-400">
             </div>
             <div class="grid grid-cols-[auto_minmax(0,1.1fr)_minmax(0,1fr)_auto] gap-x-2 gap-y-1 items-center text-xs font-black text-slate-400 px-1">
                 <span>收</span><span>作業名稱</span><span>頁數／單元</span><span>✍️簽名</span>
@@ -3282,6 +3282,7 @@
             refreshPendingList();
             window.syncStatusChange([[assignment, studentId, true]], { delay: true });
             showUndo({ assignment, studentId, previous, next: true });
+            scheduleAutoPromote();
         }
 
         const SLOT_COUNT_OPTIONS = [4, 6, 8, 10];
@@ -3572,24 +3573,39 @@
             </div>`;
         }
 
+        function collectBases() {
+            return [...new Set(window.state.assignments.map(a => splitAssignment(a).base))]
+                .filter(b => b !== SIGN_BASE).sort((a, b) => b.length - a.length);
+        }
+
+        // 把某一天出的作業列成一行一行（沒有就留一行空白讓老師填）
+        function fillCollectRows(items, date, emptyHint) {
+            const rows = items.map(t => parseContactLine(t, collectBases())).filter(Boolean);
+            document.getElementById('collect-source').textContent = rows.length
+                ? `照 ${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))} 出的作業（聯絡簿）先列好了，不收的取消勾選、名稱頁數可以改`
+                : emptyHint;
+            if (rows.length === 0) rows.push({ base: '', detail: '', checked: true, sign: false });
+            document.getElementById('collect-rows').innerHTML = rows.map(collectRowHtml).join('');
+        }
+
         function openCollect() {
             if (!canEditBoard()) {
                 openTeacherAuthModal(openCollect, { allowHelper: true });
                 return;
             }
-            const bases = [...new Set(window.state.assignments.map(a => splitAssignment(a).base))]
-                .filter(b => b !== SIGN_BASE).sort((a, b) => b.length - a.length);
             const src = collectSourceItems();
-            const rows = src.items.map(t => parseContactLine(t, bases)).filter(Boolean);
-            document.getElementById('collect-source').textContent = rows.length
-                ? `照 ${Number(src.date.slice(5, 7))}/${Number(src.date.slice(8, 10))} 出的作業（聯絡簿）先列好了，不收的取消勾選、名稱頁數可以改`
-                : '早自習的聯絡簿還沒有內容，請自己填要收的作業';
-            if (rows.length === 0) rows.push({ base: '', detail: '', checked: true, sign: false });
-            document.getElementById('collect-rows').innerHTML = rows.map(collectRowHtml).join('');
+            fillCollectRows(src.items, src.date, '早自習的聯絡簿還沒有內容，請自己填要收的作業');
             document.getElementById('collect-date').value = toDateInputValue(src.date && src.date !== todayKey()
                 ? new Date(Number(src.date.slice(0, 4)), Number(src.date.slice(5, 7)) - 1, Number(src.date.slice(8, 10)))
                 : previousSchoolDay(new Date()));
             document.getElementById('modal-collect').classList.remove('hidden');
+        }
+
+        // 改作業日期：換成那天出的作業（只記得最近三天）
+        function loadCollectDate(date) {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+            const items = ((window.state.daily || defaultDaily()).contact.history || {})[date];
+            fillCollectRows(items || [], date, `沒有 ${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))} 出的作業紀錄（只記得最近三天），請自己填`);
         }
 
         function addCollectRow() {
@@ -3740,7 +3756,7 @@
             document.getElementById('new-on-board-detail').focus();
         }
 
-        const CONTACT_HISTORY_MAX = 6;
+        const CONTACT_HISTORY_MAX = 4; // 近三天＋下午寫好的明天那份，不多存
         const CONTACT_NEXT_DAY_HOUR = 15; // 下午 3 點後寫的聯絡簿算下一個上課日的作業
 
         function nextSchoolDay(today) {
@@ -3859,8 +3875,8 @@
             // 只上傳這一格，其他裝置同時點別的座號也不會被蓋掉
             window.syncStatusChange([[assignment, studentId, nextStatus]], { delay: true });
             showUndo({ assignment, studentId, previous: currentStatus, next: nextStatus });
-            // 學生消單後：下方「已換下看板」有比較多人要訂正的作業，就自動換上看板
-            if (!isTeacherMode() && nextStatus === true) scheduleAutoPromote();
+            // 點完座號後：下方「已換下看板」有比較多人要訂正（或一樣多但日期較近）的作業，就自動換上看板
+            scheduleAutoPromote();
         }
 
         // ---- 下方比較多人要訂正的作業自動換上看板 ----
@@ -3871,23 +3887,33 @@
             autoPromoteTimer = setTimeout(autoPromoteOffBoard, UNDO_MS + 1000);
         }
 
+        // 作業日期（名稱裡的「10/27」）換成可以比大小的數字，沒寫日期的當作最舊
+        function assignmentDateRank(assignment) {
+            const m = splitAssignment(assignment).detail.match(/(\d{1,2})\/(\d{1,2})/);
+            return m ? Number(m[1]) * 100 + Number(m[2]) : 0;
+        }
+
+        // 誰比較該放在看板上：要訂正的人多的優先，一樣多就日期較近的優先
+        function boardPriority(a, b) {
+            return a.n !== b.n ? a.n - b.n : a.d - b.d;
+        }
+
         function autoPromoteOffBoard() {
             autoPromoteTimer = null;
             if (window.IS_PARENT_MODE || window.state.boardRetired) return;
+            const info = a => ({ a, n: countPending(a), d: assignmentDateRank(a) });
             const changes = [];
-            // 每次找「下方最多人要訂正」和「看板上最少人要訂正」，下方比較多就互換，直到不能再換
+            // 每次拿「下方最該上看板的」和「看板上最不需要的」比，下方比較需要就互換，直到不能再換
             for (let guard = 0; guard < window.state.slots.length; guard++) {
                 const onBoard = new Set(window.state.slots.map(s => s.assignment));
-                const off = window.state.assignments.filter(a => !onBoard.has(a))
-                    .map(a => ({ a, n: countPending(a) })).filter(x => x.n > 0)
-                    .sort((x, y) => y.n - x.n)[0];
+                const off = window.state.assignments.filter(a => !onBoard.has(a)).map(info)
+                    .filter(x => x.n > 0).sort((x, y) => boardPriority(y, x))[0];
                 if (!off) break;
                 // 今天才放上看板的作業（例如剛收的、還沒改）不換掉
-                const slots = window.state.slots.map((s, i) => ({ i, n: countPending(s.assignment), today: s.placed === todayKey() }))
-                    .filter(x => !x.today).sort((x, y) => x.n - y.n);
-                const weakest = slots[0];
-                if (!weakest || off.n <= weakest.n) break;
-                changes.push({ index: weakest.i, from: window.state.slots[weakest.i].assignment, to: off.a, n: off.n });
+                const weakest = window.state.slots.map((s, i) => ({ ...info(s.assignment), i, today: s.placed === todayKey() }))
+                    .filter(x => !x.today).sort(boardPriority)[0];
+                if (!weakest || boardPriority(off, weakest) <= 0) break;
+                changes.push({ index: weakest.i, to: off.a, n: off.n });
                 window.state.slots[weakest.i].assignment = off.a;
                 window.state.slots[weakest.i].placed = todayKey();
             }
@@ -5804,7 +5830,7 @@
                     '按標語列的「<b>➕ 新增並放上看板</b>」，點作業名稱（例如國習）；<b>作業日期</b>預設前一個上課日，可以改；<b>頁數或單元</b>可留白。',
                     '同一本作業的每一次分開記錄，例如「國習｜10/16 p.23」和「國習｜10/17」。點作業框的名稱可以換作業，換下來的紀錄都會保留。',
                                         '換下看板後還有人沒完成，會排在看板最下面的「<b>📌 已換下看板、還沒完成</b>」，訂正完由<b>老師或小幫手</b>點掉（點錯 5 秒內可以復原）。',
-                    '有舊日期作業全班都完成、也不在看板上時，教師登記模式右上角會自動問「<b>🧹 要不要刪掉</b>」（按「先不要」今天就不再問；也可以到設定後台按「🧹 刪除已完成的舊日期作業」）。學生消單後，下方「已換下看板」有比較多人要訂正的作業，會<b>自動換上看板</b>（今天才放上的作業不會被換掉）。'
+                    '有舊日期作業全班都完成、也不在看板上時，教師登記模式右上角會自動問「<b>🧹 要不要刪掉</b>」（按「先不要」今天就不再問；也可以到設定後台按「🧹 刪除已完成的舊日期作業」）。點完座號後，看板會<b>自動排</b>：比較多人要訂正、一樣多時日期較近的放看板，少人的、日期較舊的放下方（今天才放上的作業不會被換掉）。「📥 收作業」可以改作業日期，回頭找近三天出的作業。'
                 ]),
                 page('🟢', '學生自己消單', [
                     '學生訂正完，到教室電腦點自己的<b class="text-rose-600">紅燈</b>座號，就會變成<b class="text-emerald-600">綠燈</b>。',

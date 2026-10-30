@@ -60,3 +60,27 @@ test('學生消單後，下方比較多人要訂正的作業會自動換上看�
     await expect.poll(() => cloud.board('main').slots[0].assignment, { timeout: 15000 }).toBe('數練｜10/27 26-27');
     expect(page.errors).toEqual([]);
 });
+
+test('一樣多人要訂正時，日期較近的放看板、較舊的換到下方；老師登記時也會自動換', async ({ browser }) => {
+    const cloud = createCloud();
+    const page = await openDevice(browser, cloud);
+    await page.evaluate(() => {
+        state.assignments.forEach((a) => { state.assignmentStatuses[a] = {}; });
+        state.assignments.push('國習｜10/20 p.5', '國習｜10/28 p.9');
+        state.slots.forEach((s) => { s.placed = '2000-01-01'; });
+        state.slots[0].assignment = '國習｜10/20 p.5';
+        [2, 3, 4].forEach((id) => setStudentStatus('國習｜10/20 p.5', id, false)); // 看板上：3 人、10/20
+        [5, 6].forEach((id) => setStudentStatus('國習｜10/28 p.9', id, false));   // 下方：2 人、10/28
+        state.slots.slice(1).forEach((s) => [11, 12, 13].forEach((id) => setStudentStatus(s.assignment, id, false)));
+        startTeacherSession(); applyRoleUI('teacher');
+        renderDashboard();
+        syncStateToCloud(true);
+    });
+    await expect.poll(() => cloud.board('main')?.assignments?.includes('國習｜10/28 p.9'), { timeout: 15000 }).toBe(true);
+    // 老師把看板上 10/20 那項的 2 號改成綠燈：剩 2 人，跟下方 10/28 一樣多，日期較近的換上看板
+    await page.click('#mark-mode-fix');
+    await page.click('#btn-slot-0-student-2');
+    await page.click('#btn-slot-0-student-2'); // 紅 → 缺交 → 綠
+    await expect.poll(() => page.evaluate(() => state.slots[0].assignment), { timeout: 15000 }).toBe('國習｜10/28 p.9');
+    expect(page.errors).toEqual([]);
+});
