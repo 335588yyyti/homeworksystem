@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=1e13a2ed" rel="stylesheet">
+    <link href="assets/tailwind.css?v=241e9f78" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -1754,12 +1754,15 @@
             <div class="flex-1 min-h-0 flex flex-col justify-center gap-3">
                 <div class="flex items-end justify-between gap-4">
                     <div id="exam-name" class="font-black leading-none truncate" style="font-size: clamp(2.5rem, 11vh, 7rem)"></div>
-                    <div id="exam-left" class="font-black leading-none tabular-nums flex-shrink-0" style="font-family: Nunito, sans-serif; font-size: clamp(2.5rem, 11vh, 7rem)"></div>
+                    <div class="flex items-baseline gap-3 flex-shrink-0">
+                        <span id="exam-left-label" class="font-black text-white/60 text-3xl sm:text-4xl whitespace-nowrap"></span>
+                        <div id="exam-left" class="font-black leading-none tabular-nums" style="font-family: Nunito, sans-serif; font-size: clamp(2.5rem, 11vh, 7rem)"></div>
+                    </div>
                 </div>
                 <div id="exam-bar-box" class="h-10 sm:h-12 bg-white/15 rounded-full overflow-hidden">
                     <div id="exam-bar" class="h-full rounded-full transition-[width] duration-1000 ease-linear" style="width: 0%"></div>
                 </div>
-                <div id="exam-range" class="flex justify-between text-2xl sm:text-3xl font-black text-white/50 tabular-nums" style="font-family: Nunito, sans-serif"><span></span><span></span></div>
+                <div id="exam-range" class="flex justify-between font-black text-white/70 tabular-nums leading-none" style="font-family: Nunito, sans-serif; font-size: clamp(2rem, 7vh, 4rem)"><span></span><span></span></div>
             </div>
             <div id="exam-timeline" class="flex flex-wrap justify-center gap-2.5 pb-2"></div>
         </div>
@@ -5718,6 +5721,7 @@
                 nameEl.textContent = cur.n;
                 nameEl.className = `font-black leading-none truncate ${cur.rest ? 'text-sky-300' : 'text-white'}`;
                 leftEl.textContent = fmt(left);
+                document.getElementById('exam-left-label').textContent = '剩餘時間';
                 bar.style.width = `${(left / total) * 100}%`;
                 bar.className = `h-full rounded-full transition-[width] duration-1000 ease-linear ${cur.rest ? 'bg-sky-400' : left <= 60 ? 'bg-rose-500' : left <= 300 ? 'bg-amber-400' : 'bg-emerald-400'}`;
                 range[0].textContent = cur.s;
@@ -5728,6 +5732,7 @@
                 nameEl.textContent = next ? next.n : '';
                 nameEl.className = 'font-black leading-none truncate text-white/50';
                 leftEl.textContent = next ? fmt(toMinutes(next.s) * 60 - sec) : '';
+                document.getElementById('exam-left-label').textContent = next ? '距離開始' : '';
                 bar.style.width = '0%';
                 range[0].textContent = '';
                 range[1].textContent = next ? next.s : '';
