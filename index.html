@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=9dd5416c" rel="stylesheet">
+    <link href="assets/tailwind.css?v=f6e4d31c" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -1759,7 +1759,7 @@
                 </div>
                 <div id="exam-range" class="flex justify-between text-2xl sm:text-3xl font-black text-white/50 tabular-nums" style="font-family: Nunito, sans-serif"><span></span><span></span></div>
             </div>
-            <div id="exam-timeline" class="flex flex-wrap justify-center gap-2 pb-1"></div>
+            <div id="exam-timeline" class="flex flex-wrap justify-center gap-2.5 pb-2"></div>
         </div>
     </main>
 
@@ -5662,9 +5662,9 @@
             const timeline = blocks.map((b, i) => {
                 const past = toMinutes(b.e) * 60 <= sec;
                 const look = i === idx ? 'bg-amber-400 text-slate-900' : b.rest ? 'bg-white/5 text-sky-200' : 'bg-white/10 text-white';
-                return `<div class="exam-block rounded-xl px-3 py-1.5 font-black text-center ${look} ${past ? 'opacity-35' : ''}">
-                    <div class="text-sm tabular-nums" style="font-family: Nunito, sans-serif">${b.s}–${b.e}</div>
-                    <div class="${b.rest ? 'text-base' : 'text-xl'}">${escapeHtml(b.n)}</div>
+                return `<div class="exam-block flex-1 min-w-[8rem] max-w-[16rem] rounded-2xl px-3 py-2.5 font-black text-center ${look} ${past ? 'opacity-35' : ''}">
+                    <div class="text-xl sm:text-2xl tabular-nums" style="font-family: Nunito, sans-serif">${b.s}–${b.e}</div>
+                    <div class="${b.rest ? 'text-2xl sm:text-3xl' : 'text-3xl sm:text-4xl'} leading-tight">${escapeHtml(b.n)}</div>
                 </div>`;
             }).join('');
             const tl = document.getElementById('exam-timeline');
