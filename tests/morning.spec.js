@@ -216,8 +216,9 @@ test('早修任務・聯絡簿的標題每天顯示今天的日期；內容是�
     await room.click('#modal-contact >> text=儲存');
     const today = await room.evaluate(() => { const d = new Date(); return `（${d.getMonth() + 1}/${d.getDate()}）`; });
     await expect(room.locator('#contact-date')).toHaveText(today);
-    // 模擬內容是前一天寫的
-    await room.evaluate(() => { state.daily.contact.history = { '2000-01-02': ['國卷L5'] }; renderContact(); });
+    // 模擬內容是前一天寫的（先等剛才的儲存回到雲端，免得被它蓋掉）
+    await expect.poll(() => cloud.board('main').daily?.contact?.items, { timeout: 15000 }).toEqual(['國卷L5']);
+    await room.evaluate(() => { state.daily.contact.history = { '2000-01-02': ['國卷L5'] }; syncDaily(true); renderContact(); });
     await expect(room.locator('#contact-date')).toContainText(today);
     await expect(room.locator('#contact-date')).toContainText('這是 1/2 的作業');
     expect(room.errors).toEqual([]);
