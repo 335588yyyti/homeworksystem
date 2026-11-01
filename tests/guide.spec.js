@@ -7,10 +7,10 @@ test('設定後台的「使用說明」可以一頁一頁看完', async ({ brows
     await unlockTeacher(page, 'settings');
     await page.click('#open-guide');
     await expect(page.locator('#modal-guide')).toBeVisible();
-    await expect(page.locator('#guide-step')).toHaveText('1 / 8');
+    await expect(page.locator('#guide-step')).toHaveText('1 / 9');
     await expect(page.locator('#guide-prev')).toBeDisabled();
     const titles = [];
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 9; i++) {
         titles.push(await page.locator('#guide-body h3').innerText());
         if (i === 7) {
             // 最後一頁提醒：全新看板連結已經有班級可以接回，以及怎麼切回原本的班級
