@@ -93,3 +93,32 @@ test('考試畫面有應到、實到、未到座號：開了早自習就照打�
     await expect.poll(() => cloud.board('main').daily?.exam?.absent?.ids, { timeout: 15000 }).toEqual([5, 17]);
     expect(room.errors).toEqual([]);
 });
+
+test('考試時鐘照網路時間（不靠這台電腦的時鐘），老師可以調快調慢對齊學校鐘聲', async ({ browser }) => {
+    const cloud = createCloud();
+    const room = await openDevice(browser, cloud);
+    // 這台電腦慢了 30 秒：網站回應的時間是 10:00:30
+    await room.clock.setFixedTime(new Date(2026, 10, 2, 10, 0, 0));
+    await room.route('**/*clock=*', (route) => route.fulfill({ status: 200, headers: { date: new Date(2026, 10, 2, 10, 0, 30).toUTCString() }, body: '' }));
+    await room.evaluate(() => setExamEnabled(true));
+    await unlockTeacher(room, 'exam');
+    await expect(room.locator('#exam-clock')).toHaveText('10:00:30');
+
+    // 學校鐘聲慢 10 秒：按 −10，時鐘跟著變慢
+    await room.click('text=✏️ 時程');
+    await expect(room.locator('#exam-net-status')).toContainText(/這台電腦慢 3[01] 秒/);
+    await room.click('text=−10');
+    await expect(room.locator('#exam-adjust-text')).toHaveText('−10 秒');
+    await expect(room.locator('#exam-clock')).toHaveText('10:00:20');
+    await room.fill('#exam-rows .exam-row >> nth=0 >> .exam-n', '國語');
+    await room.click('#exam-save');
+    await expect(room.locator('#exam-clock')).toHaveText('10:00:20');
+    await expect.poll(() => cloud.board('main').daily?.exam?.adjust, { timeout: 15000 }).toBe(-10);
+
+    // 取消的話不會改到
+    await room.click('text=✏️ 時程');
+    await room.click('text=+10');
+    await room.click('#modal-exam >> text=取消');
+    await expect(room.locator('#exam-clock')).toHaveText('10:00:20');
+    expect(room.errors).toEqual([]);
+});

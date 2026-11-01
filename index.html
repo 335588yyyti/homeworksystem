@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=f6e4d31c" rel="stylesheet">
+    <link href="assets/tailwind.css?v=1e13a2ed" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -1144,6 +1144,8 @@
                     items: Array.isArray(dd.exam?.items) ? dd.exam.items
                         .filter(x => x && /^\d{2}:\d{2}$/.test(String(x.s)) && /^\d{2}:\d{2}$/.test(String(x.e)) && x.s < x.e)
                         .map(x => ({ s: x.s, e: x.e, n: String(x.n || '').slice(0, 10) })).slice(0, 12) : [],
+                    // 跟學校鐘聲對齊：時鐘要快（＋）或慢（－）幾秒
+                    adjust: Number.isFinite(Number(dd.exam?.adjust)) ? Math.max(-900, Math.min(900, Math.round(Number(dd.exam.adjust)))) : 0,
                     // 老師自己點的未到座號（只算當天；沒點過就照早自習打卡）
                     absent: dd.exam?.absent && typeof dd.exam.absent.date === 'string' && Array.isArray(dd.exam.absent.ids)
                         ? { date: dd.exam.absent.date, ids: dd.exam.absent.ids.map(Number).filter(Number.isFinite).slice(0, 40) } : null
@@ -2434,6 +2436,20 @@
                 <div class="text-3xl mb-1">📝</div>
                 <h4 class="text-xl font-black text-slate-800">考試時程</h4>
                 <p class="text-sm text-slate-500 mt-0.5">一節一行；節和節中間自動顯示「下課」（最多 12 節）</p>
+            </div>
+            <!-- 時鐘跟學校鐘聲對齊 -->
+            <div class="bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2 mb-3">
+                <div class="flex items-center justify-between gap-2">
+                    <span class="font-black text-slate-700 whitespace-nowrap">🔔 對齊鐘聲</span>
+                    <div class="flex items-center gap-1">
+                        <button type="button" onclick="nudgeExamAdjust(-10)" class="px-2 py-1 rounded-lg bg-white border border-slate-200 font-black text-slate-600">−10</button>
+                        <button type="button" onclick="nudgeExamAdjust(-1)" class="px-2 py-1 rounded-lg bg-white border border-slate-200 font-black text-slate-600">−1</button>
+                        <span id="exam-adjust-text" class="w-20 text-center font-black text-slate-800 tabular-nums"></span>
+                        <button type="button" onclick="nudgeExamAdjust(1)" class="px-2 py-1 rounded-lg bg-white border border-slate-200 font-black text-slate-600">+1</button>
+                        <button type="button" onclick="nudgeExamAdjust(10)" class="px-2 py-1 rounded-lg bg-white border border-slate-200 font-black text-slate-600">+10</button>
+                    </div>
+                </div>
+                <p class="text-xs font-bold text-slate-400 mt-1"><span id="exam-adjust-clock" class="tabular-nums text-slate-600"></span>・<span id="exam-net-status"></span>；學校鐘聲比較快就按 +，比較慢就按 −</p>
             </div>
             <div id="exam-rows" class="flex flex-col gap-1.5 overflow-y-auto min-h-0"></div>
             <button onclick="addExamRow()" class="self-start mt-2 text-sm font-black text-sky-700 hover:text-sky-900">＋ 再加一節</button>
@@ -5538,7 +5554,7 @@
         const EXAM_MAX = 12;
         function examData() {
             const e = (window.state.daily || {}).exam;
-            return { enabled: e?.enabled === true, items: Array.isArray(e?.items) ? e.items : [], absent: e?.absent || null };
+            return { enabled: e?.enabled === true, items: Array.isArray(e?.items) ? e.items : [], absent: e?.absent || null, adjust: Number(e?.adjust) || 0 };
         }
         function isExamEnabled() {
             return examData().enabled;
@@ -5572,6 +5588,64 @@
                 blocks.push({ ...x, rest: false });
             });
             return blocks;
+        }
+
+        // ---- 準確的時間：跟網路上的時間對準（不靠這台電腦的時鐘），再加上老師調的鐘聲差 ----
+        let examNetOffset = 0;
+        let examNetSyncedAt = 0;
+        let examNetOk = false;
+        // 問網站幾次現在幾點（回應裡的 Date，準到秒），用每次來回的時間把誤差縮小到一秒內
+        async function syncExamClock() {
+            examNetSyncedAt = Date.now();
+            let lo = -Infinity, hi = Infinity;
+            for (let i = 0; i < 5; i++) {
+                const t0 = Date.now();
+                try {
+                    const res = await fetch(`${location.pathname}?clock=${t0}${i}`, { method: 'HEAD', cache: 'no-store' });
+                    const t1 = Date.now();
+                    const server = Date.parse(res.headers.get('Date') || '');
+                    if (Number.isFinite(server)) {
+                        lo = Math.max(lo, server - t1);
+                        hi = Math.min(hi, server + 1000 - t0);
+                    }
+                } catch (e) {
+                    break;
+                }
+                await new Promise(r => setTimeout(r, 230));
+            }
+            if (Number.isFinite(lo) && Number.isFinite(hi)) {
+                examNetOffset = Math.round((lo + hi) / 2);
+                examNetOk = true;
+            }
+            renderExamAdjust();
+        }
+
+        function examNow() {
+            return new Date(Date.now() + examNetOffset + examAdjustDraftOr() * 1000);
+        }
+
+        // 編輯視窗開著時，用正在調的秒數預覽
+        let examAdjustDraft = null;
+        function examAdjustDraftOr() {
+            return examAdjustDraft ?? examData().adjust;
+        }
+
+        function nudgeExamAdjust(delta) {
+            examAdjustDraft = Math.max(-900, Math.min(900, examAdjustDraftOr() + delta));
+            renderExamAdjust();
+            renderExam();
+        }
+
+        function renderExamAdjust() {
+            const el = document.getElementById('exam-adjust-text');
+            if (!el) return;
+            const a = examAdjustDraftOr();
+            el.textContent = a === 0 ? '±0 秒' : `${a > 0 ? '+' : '−'}${Math.abs(a)} 秒`;
+            const d = examNow();
+            document.getElementById('exam-adjust-clock').textContent = [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2, '0')).join(':');
+            const diff = Math.round(examNetOffset / 1000);
+            document.getElementById('exam-net-status').textContent = !examNetOk ? '連不上網路，用這台電腦的時間'
+                : diff === 0 ? '已對準網路時間' : `已對準網路時間（這台電腦${diff > 0 ? '慢' : '快'} ${Math.abs(diff)} 秒）`;
         }
 
         // 未到：老師今天點過就照點的；不然開了早自習就照打卡（沒打卡、請假都算未到）
@@ -5621,7 +5695,7 @@
         }
 
         function renderExam() {
-            const now = new Date();
+            const now = examNow();
             const pad = n => String(n).padStart(2, '0');
             document.getElementById('exam-clock').textContent = [now.getHours(), now.getMinutes(), now.getSeconds()].map(pad).join(':');
             const absent = examAbsentIds();
@@ -5677,7 +5751,9 @@
         let examClockTimer = null;
         function toggleExamClock(on) {
             clearInterval(examClockTimer);
-            examClockTimer = on ? setInterval(renderExam, 1000) : null;
+            examClockTimer = on ? setInterval(() => { renderExam(); renderExamAdjust(); }, 1000) : null;
+            // 每 30 分鐘重新對一次網路時間
+            if (on && Date.now() - examNetSyncedAt > 30 * 60000) syncExamClock();
         }
 
         function toggleExamFullscreen() {
@@ -5703,11 +5779,15 @@
             }
             const items = [...examData().items].sort((a, b) => a.s.localeCompare(b.s));
             document.getElementById('exam-rows').innerHTML = (items.length ? items : [{ s: '08:40', e: '09:20', n: '' }]).map(examRowHtml).join('');
+            examAdjustDraft = examData().adjust;
+            renderExamAdjust();
             document.getElementById('modal-exam').classList.remove('hidden');
         }
 
         function closeExamEditor() {
+            examAdjustDraft = null;
             document.getElementById('modal-exam').classList.add('hidden');
+            renderExam();
         }
 
         // 新的一節：接在上一節後面，中間下課 10 分鐘，考 40 分鐘
@@ -5745,7 +5825,7 @@
                 return;
             }
             const d = window.state.daily || defaultDaily();
-            window.state.daily = { ...d, exam: { ...examData(), items: items.slice(0, EXAM_MAX) } };
+            window.state.daily = { ...d, exam: { ...examData(), items: items.slice(0, EXAM_MAX), adjust: examAdjustDraftOr() } };
             window.syncDaily(true);
             closeExamEditor();
             renderExam();
@@ -6298,7 +6378,8 @@
                     '在「設定後台」打開「<b>📝 開啟考試</b>」，上方多一個「考試」分頁；不用時關掉就看不到。',
                     '按「<b>✏️ 時程</b>」一節一行填開始、結束時間和科目；按「＋ 再加一節」會自動接在後面（下課 10 分鐘、考 40 分鐘，可以改）。節和節中間自動顯示「<b>下課</b>」。',
                     '畫面只有<b>大時鐘</b>、現在這節還剩多久的<b>倒數條</b>（剩 5 分鐘變黃、剩 1 分鐘變紅）和今天的時程，沒有其他字。按「⛶ 全螢幕」可以投影到整個畫面。',
-                    '時鐘下面有<b>應到、實到、未到座號</b>：開了早自習就照到校打卡（沒打卡、請假都算未到）；點一下這一行可以自己點未到的座號（只算當天）。'
+                    '時鐘下面有<b>應到、實到、未到座號</b>：開了早自習就照到校打卡（沒打卡、請假都算未到）；點一下這一行可以自己點未到的座號（只算當天）。',
+                    '時鐘會自動對準<b>網路時間</b>，不怕電腦時間不準；學校鐘聲有快慢時，在「✏️ 時程」的「<b>🔔 對齊鐘聲</b>」按 +／− 調幾秒，跟著鐘聲走。'
                 ]),
                 page('⚙️', '其他小技巧', [
                     '<b>🙋 小幫手模式</b>：在設定後台開啟，讓小老師幫忙點紅燈、換作業、消掉下方清單，但不能進設定後台、不能按「全部完成」。',
