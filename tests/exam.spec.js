@@ -82,9 +82,7 @@ test('考試畫面有應到、實到、未到座號：開了早自習就照打�
 
     // 老師自己點：只有 5、17 號未到
     await room.click('#exam-attend');
-    await room.click('text=照早自習打卡');
-    await expect.poll(() => cloud.board('main').daily?.exam?.absent, { timeout: 15000 }).toBeNull();
-    await room.click('#exam-attend');
+    await expect(room.locator('text=照早自習打卡')).toHaveCount(0);
     const seats = room.locator('#exam-absent-seats .exam-absent-seat');
     for (let i = 0; i < 28; i++) {
         if (![1, 2, 5, 17].includes(i + 1)) await seats.nth(i).click();

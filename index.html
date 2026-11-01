@@ -2451,8 +2451,7 @@
                 <h4 class="text-xl font-black text-slate-800">未到的座號</h4>
                 <p id="exam-absent-hint" class="text-sm text-slate-500 mt-0.5">點座號變紅色＝未到，再點一下取消</p>
             </div>
-            <div id="exam-absent-seats" class="grid grid-cols-6 sm:grid-cols-8 gap-1.5 overflow-y-auto min-h-0"></div>
-            <button id="exam-absent-reset" onclick="resetExamAbsent()" class="self-start mt-2 text-sm font-black text-sky-700 hover:text-sky-900">照早自習打卡</button>
+            <div id="exam-absent-seats" class="grid grid-cols-6 sm:grid-cols-8 gap-1.5 overflow-y-auto min-h-0 mb-1"></div>
             <div class="grid grid-cols-2 gap-2.5 mt-3">
                 <button onclick="closeExamAbsent()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-base transition-all">取消</button>
                 <button id="exam-absent-save" onclick="saveExamAbsent()" class="bg-amber-400 hover:bg-amber-500 text-slate-900 font-black py-2.5 rounded-xl text-base transition-all">儲存</button>
@@ -5599,7 +5598,6 @@
                 return;
             }
             examAbsentDraft = examAbsentIds();
-            document.getElementById('exam-absent-reset').classList.toggle('hidden', !isMorningEnabled());
             renderExamAbsentSeats();
             document.getElementById('modal-exam-absent').classList.remove('hidden');
         }
@@ -5613,18 +5611,13 @@
             renderExamAbsentSeats();
         }
 
-        function saveExamAbsent(manual = true) {
+        function saveExamAbsent() {
             const d = window.state.daily || defaultDaily();
-            window.state.daily = { ...d, exam: { ...examData(), absent: manual ? { date: todayKey(), ids: [...examAbsentDraft] } : null } };
+            window.state.daily = { ...d, exam: { ...examData(), absent: { date: todayKey(), ids: [...examAbsentDraft] } } };
             window.syncDaily(true);
             closeExamAbsent();
             renderExam();
             window.soundEffect.playSuccess();
-        }
-
-        // 不用自己點的了：改回照早自習打卡
-        function resetExamAbsent() {
-            saveExamAbsent(false);
         }
 
         function renderExam() {
