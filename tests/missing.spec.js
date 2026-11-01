@@ -44,7 +44,8 @@ test('教師登記：點座號依序切換 綠燈 → 紅燈 → 缺交 → 綠�
 });
 
 test('學生消單：缺交點一下變成待訂正（補交），再點一下才消單', async ({ browser }) => {
-    const page = await openDevice(browser, createCloud());
+    const cloud = createCloud();
+    const page = await openDevice(browser, cloud);
     await page.evaluate(() => { setStudentStatus(state.slots[0].assignment, 8, 'missing'); renderDashboard(); applyRoleUI('student'); });
     const seat = page.locator('#btn-slot-0-student-8');
     await expect(seat).toHaveClass(/seat-missing/);
@@ -58,7 +59,9 @@ test('學生消單：缺交點一下變成待訂正（補交），再點一下�
     await seat.click();
     await expect(seat).not.toHaveClass(/seat-missing|seat-pending/);
     // 點錯可以復原回缺交
-    await page.evaluate(() => { setStudentStatus(state.slots[0].assignment, 9, 'missing'); renderDashboard(); });
+    // 先存到雲端，免得前面的點擊從雲端傳回來時把 9 號蓋掉
+    const asgn = await page.evaluate(() => { setStudentStatus(state.slots[0].assignment, 9, 'missing'); renderDashboard(); syncStateToCloud(true); return state.slots[0].assignment; });
+    await expect.poll(() => cloud.board('main').statuses?.[asgn]?.['9'], { timeout: 20000 }).toBe('missing');
     // 復原列 5 秒後自動收起：點座號和按復原在同一步做完（測試電腦很慢時才不會超過 5 秒）
     await page.evaluate(() => {
         document.getElementById('btn-slot-0-student-9').click();
