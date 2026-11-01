@@ -64,3 +64,34 @@ test('考試時程：時間重疊或結束比開始早不能存；關掉考試�
     await expect(room.locator('#view-dashboard')).toBeVisible();
     expect(room.errors).toEqual([]);
 });
+
+test('考試畫面有應到、實到、未到座號：開了早自習就照打卡，老師也可以自己點未到', async ({ browser }) => {
+    const cloud = createCloud();
+    const room = await openDevice(browser, cloud);
+    await room.evaluate(() => { setExamEnabled(true); setMorningEnabled(true); });
+    await unlockTeacher(room, 'exam');
+    // 早自習只有 1、2 號打卡
+    await room.evaluate(() => {
+        state.daily = { ...state.daily, date: todayKey(), arrive: { 1: '07:40', 2: '07:45' }, leave: [] };
+        syncDaily(true);
+    });
+    await expect.poll(() => cloud.board('main').daily?.arrive?.['2'], { timeout: 15000 }).toBe('07:45');
+    await expect(room.locator('#exam-should')).toHaveText('28');
+    await expect(room.locator('#exam-present')).toHaveText('2');
+    await expect(room.locator('#exam-absent')).toContainText('3、4、5');
+
+    // 老師自己點：只有 5、17 號未到
+    await room.click('#exam-attend');
+    await room.click('text=照早自習打卡');
+    await expect.poll(() => cloud.board('main').daily?.exam?.absent, { timeout: 15000 }).toBeNull();
+    await room.click('#exam-attend');
+    const seats = room.locator('#exam-absent-seats .exam-absent-seat');
+    for (let i = 0; i < 28; i++) {
+        if (![1, 2, 5, 17].includes(i + 1)) await seats.nth(i).click();
+    }
+    await room.click('#exam-absent-save');
+    await expect(room.locator('#exam-present')).toHaveText('26');
+    await expect(room.locator('#exam-absent')).toHaveText('5、17');
+    await expect.poll(() => cloud.board('main').daily?.exam?.absent?.ids, { timeout: 15000 }).toEqual([5, 17]);
+    expect(room.errors).toEqual([]);
+});

@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=87fc78b5" rel="stylesheet">
+    <link href="assets/tailwind.css?v=9dd5416c" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -1143,7 +1143,10 @@
                     enabled: dd.exam?.enabled === true,
                     items: Array.isArray(dd.exam?.items) ? dd.exam.items
                         .filter(x => x && /^\d{2}:\d{2}$/.test(String(x.s)) && /^\d{2}:\d{2}$/.test(String(x.e)) && x.s < x.e)
-                        .map(x => ({ s: x.s, e: x.e, n: String(x.n || '').slice(0, 10) })).slice(0, 12) : []
+                        .map(x => ({ s: x.s, e: x.e, n: String(x.n || '').slice(0, 10) })).slice(0, 12) : [],
+                    // 老師自己點的未到座號（只算當天；沒點過就照早自習打卡）
+                    absent: dd.exam?.absent && typeof dd.exam.absent.date === 'string' && Array.isArray(dd.exam.absent.ids)
+                        ? { date: dd.exam.absent.date, ids: dd.exam.absent.ids.map(Number).filter(Number.isFinite).slice(0, 40) } : null
                 },
                 contact: {
                     date: typeof cc.date === 'string' ? cc.date : '',
@@ -1740,6 +1743,12 @@
                 <button onclick="toggleExamFullscreen()" class="px-3 py-1.5 rounded-xl text-sm font-black bg-white/10 hover:bg-white/20 text-white/80">⛶ 全螢幕</button>
             </div>
             <div id="exam-clock" class="text-center font-black tabular-nums leading-none tracking-wider" style="font-family: Nunito, sans-serif; font-size: clamp(4rem, 19vh, 13rem)">--:--:--</div>
+            <!-- 應到、實到、未到座號；老師點一下可以改未到 -->
+            <div id="exam-attend" onclick="openExamAbsent()" class="flex flex-wrap items-baseline justify-center gap-x-8 gap-y-1 font-black text-3xl sm:text-4xl cursor-pointer select-none">
+                <span>應到 <b id="exam-should" class="tabular-nums" style="font-family: Nunito, sans-serif"></b> 人</span>
+                <span>實到 <b id="exam-present" class="tabular-nums text-emerald-300" style="font-family: Nunito, sans-serif"></b> 人</span>
+                <span>未到 <b id="exam-absent" class="tabular-nums text-rose-300" style="font-family: Nunito, sans-serif"></b></span>
+            </div>
             <div class="flex-1 min-h-0 flex flex-col justify-center gap-3">
                 <div class="flex items-end justify-between gap-4">
                     <div id="exam-name" class="font-black leading-none truncate" style="font-size: clamp(2.5rem, 11vh, 7rem)"></div>
@@ -2431,6 +2440,22 @@
             <div class="grid grid-cols-2 gap-2.5 mt-3">
                 <button onclick="closeExamEditor()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-base transition-all">取消</button>
                 <button id="exam-save" onclick="saveExamSchedule()" class="bg-amber-400 hover:bg-amber-500 text-slate-900 font-black py-2.5 rounded-xl text-base transition-all">儲存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 考試未到：點座號 -->
+    <div id="modal-exam-absent" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden" onclick="if (event.target === this) closeExamAbsent()">
+        <div class="bg-white border-2 border-slate-200 rounded-3xl p-5 w-full max-w-md board-shadow flex flex-col max-h-full">
+            <div class="text-center mb-3">
+                <h4 class="text-xl font-black text-slate-800">未到的座號</h4>
+                <p id="exam-absent-hint" class="text-sm text-slate-500 mt-0.5">點座號變紅色＝未到，再點一下取消</p>
+            </div>
+            <div id="exam-absent-seats" class="grid grid-cols-6 sm:grid-cols-8 gap-1.5 overflow-y-auto min-h-0"></div>
+            <button id="exam-absent-reset" onclick="resetExamAbsent()" class="self-start mt-2 text-sm font-black text-sky-700 hover:text-sky-900">照早自習打卡</button>
+            <div class="grid grid-cols-2 gap-2.5 mt-3">
+                <button onclick="closeExamAbsent()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-base transition-all">取消</button>
+                <button id="exam-absent-save" onclick="saveExamAbsent()" class="bg-amber-400 hover:bg-amber-500 text-slate-900 font-black py-2.5 rounded-xl text-base transition-all">儲存</button>
             </div>
         </div>
     </div>
@@ -5514,7 +5539,7 @@
         const EXAM_MAX = 12;
         function examData() {
             const e = (window.state.daily || {}).exam;
-            return { enabled: e?.enabled === true, items: Array.isArray(e?.items) ? e.items : [] };
+            return { enabled: e?.enabled === true, items: Array.isArray(e?.items) ? e.items : [], absent: e?.absent || null };
         }
         function isExamEnabled() {
             return examData().enabled;
@@ -5550,10 +5575,67 @@
             return blocks;
         }
 
+        // 未到：老師今天點過就照點的；不然開了早自習就照打卡（沒打卡、請假都算未到）
+        function examAbsentIds() {
+            const ids = window.state.students.map(s => s.id);
+            const manual = examData().absent;
+            if (manual && manual.date === todayKey()) return ids.filter(id => manual.ids.includes(id));
+            if (!isMorningEnabled()) return [];
+            const { arrive } = todayArrivals();
+            return ids.filter(id => !arrive[id]);
+        }
+
+        let examAbsentDraft = [];
+        function renderExamAbsentSeats() {
+            document.getElementById('exam-absent-seats').innerHTML = window.state.students.map(s => {
+                const on = examAbsentDraft.includes(s.id);
+                return `<button type="button" onclick="toggleExamAbsent(${s.id})" class="exam-absent-seat py-2 rounded-xl font-black text-lg border-2 ${on ? 'bg-rose-500 border-rose-500 text-white' : 'bg-slate-50 border-slate-200 text-slate-700'}">${escapeHtml(getSeatLabel(s.id))}</button>`;
+            }).join('');
+        }
+
+        function openExamAbsent() {
+            if (!canEditBoard()) {
+                openTeacherAuthModal(openExamAbsent, { allowHelper: true });
+                return;
+            }
+            examAbsentDraft = examAbsentIds();
+            document.getElementById('exam-absent-reset').classList.toggle('hidden', !isMorningEnabled());
+            renderExamAbsentSeats();
+            document.getElementById('modal-exam-absent').classList.remove('hidden');
+        }
+
+        function closeExamAbsent() {
+            document.getElementById('modal-exam-absent').classList.add('hidden');
+        }
+
+        function toggleExamAbsent(id) {
+            examAbsentDraft = examAbsentDraft.includes(id) ? examAbsentDraft.filter(x => x !== id) : [...examAbsentDraft, id];
+            renderExamAbsentSeats();
+        }
+
+        function saveExamAbsent(manual = true) {
+            const d = window.state.daily || defaultDaily();
+            window.state.daily = { ...d, exam: { ...examData(), absent: manual ? { date: todayKey(), ids: [...examAbsentDraft] } : null } };
+            window.syncDaily(true);
+            closeExamAbsent();
+            renderExam();
+            window.soundEffect.playSuccess();
+        }
+
+        // 不用自己點的了：改回照早自習打卡
+        function resetExamAbsent() {
+            saveExamAbsent(false);
+        }
+
         function renderExam() {
             const now = new Date();
             const pad = n => String(n).padStart(2, '0');
             document.getElementById('exam-clock').textContent = [now.getHours(), now.getMinutes(), now.getSeconds()].map(pad).join(':');
+            const absent = examAbsentIds();
+            const students = window.state.students;
+            document.getElementById('exam-should').textContent = students.length;
+            document.getElementById('exam-present').textContent = students.length - absent.length;
+            document.getElementById('exam-absent').textContent = absent.length ? absent.map(getSeatLabel).join('、') : '0';
             const sec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
             const blocks = examBlocks();
             const idx = blocks.findIndex(b => sec >= toMinutes(b.s) * 60 && sec < toMinutes(b.e) * 60);
@@ -6222,7 +6304,8 @@
                 page('📝', '考試', [
                     '在「設定後台」打開「<b>📝 開啟考試</b>」，上方多一個「考試」分頁；不用時關掉就看不到。',
                     '按「<b>✏️ 時程</b>」一節一行填開始、結束時間和科目；按「＋ 再加一節」會自動接在後面（下課 10 分鐘、考 40 分鐘，可以改）。節和節中間自動顯示「<b>下課</b>」。',
-                    '畫面只有<b>大時鐘</b>、現在這節還剩多久的<b>倒數條</b>（剩 5 分鐘變黃、剩 1 分鐘變紅）和今天的時程，沒有其他字。按「⛶ 全螢幕」可以投影到整個畫面。'
+                    '畫面只有<b>大時鐘</b>、現在這節還剩多久的<b>倒數條</b>（剩 5 分鐘變黃、剩 1 分鐘變紅）和今天的時程，沒有其他字。按「⛶ 全螢幕」可以投影到整個畫面。',
+                    '時鐘下面有<b>應到、實到、未到座號</b>：開了早自習就照到校打卡（沒打卡、請假都算未到）；點一下這一行可以自己點未到的座號（只算當天）。'
                 ]),
                 page('⚙️', '其他小技巧', [
                     '<b>🙋 小幫手模式</b>：在設定後台開啟，讓小老師幫忙點紅燈、換作業、消掉下方清單，但不能進設定後台、不能按「全部完成」。',
