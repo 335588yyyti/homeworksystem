@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=e259662b" rel="stylesheet">
+    <link href="assets/tailwind.css?v=241e9f78" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -1138,6 +1138,18 @@
                 // 前一天的打卡（遲到時間以前，家長頁還是顯示這一份）
                 prev: pp ? { date: pp.date, arrive: readArrive(pp.arrive), leave: Array.isArray(pp.leave) ? pp.leave.map(Number).filter(Number.isFinite) : [] } : null,
                 deadline: /^\d{2}:\d{2}$/.test(String(dd.deadline)) ? dd.deadline : '08:00',
+                // 考試時程：{ enabled, items: [{ s: '08:40', e: '09:20', n: '國語' }] }
+                exam: {
+                    enabled: dd.exam?.enabled === true,
+                    items: Array.isArray(dd.exam?.items) ? dd.exam.items
+                        .filter(x => x && /^\d{2}:\d{2}$/.test(String(x.s)) && /^\d{2}:\d{2}$/.test(String(x.e)) && x.s < x.e)
+                        .map(x => ({ s: x.s, e: x.e, n: String(x.n || '').slice(0, 10) })).slice(0, 12) : [],
+                    // 跟學校鐘聲對齊：時鐘要快（＋）或慢（－）幾秒
+                    adjust: Number.isFinite(Number(dd.exam?.adjust)) ? Math.max(-900, Math.min(900, Math.round(Number(dd.exam.adjust)))) : 0,
+                    // 老師自己點的未到座號（只算當天；沒點過就照早自習打卡）
+                    absent: dd.exam?.absent && typeof dd.exam.absent.date === 'string' && Array.isArray(dd.exam.absent.ids)
+                        ? { date: dd.exam.absent.date, ids: dd.exam.absent.ids.map(Number).filter(Number.isFinite).slice(0, 40) } : null
+                },
                 contact: {
                     date: typeof cc.date === 'string' ? cc.date : '',
                     items: Array.isArray(cc.items) ? cc.items.map(String).map(t => t.slice(0, 40)).filter(t => t.trim()).slice(0, DAILY_ITEMS_MAX) : [],
@@ -1199,9 +1211,11 @@
             window.enforceHelperAccess();
             window.applyBrushVisibility();
             window.applyMorningVisibility();
+            window.applyExamVisibility();
             if (tab === 'dashboard') window.renderDashboard();
             if (tab === 'brush') window.renderBrush();
             if (tab === 'morning') window.renderMorning();
+            if (tab === 'exam') window.renderExam();
             if (tab === 'parent') window.initParentView();
             if (tab === 'settings') {
                 window.renderCurrentClassCode();
@@ -1590,6 +1604,9 @@
                 <button onclick="switchTab('morning')" id="tab-morning" class="hidden px-2 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900">
                     <span class="leading-none hidden 2xl:inline">📖</span>早自習
                 </button>
+                <button onclick="switchTab('exam')" id="tab-exam" class="hidden px-2 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900">
+                    <span class="leading-none hidden 2xl:inline">📝</span>考試
+                </button>
                 <button onclick="switchTab('brush')" id="tab-brush" class="hidden px-2 2xl:px-4 py-1.5 rounded-lg text-sm sm:text-base font-bold flex items-center gap-1.5 whitespace-nowrap transition-all text-slate-600 hover:text-slate-900">
                     <span class="leading-none hidden 2xl:inline">🦷</span>潔牙
                 </button>
@@ -1717,6 +1734,37 @@
                     <div id="contact-body" class="flex-1 min-h-0 overflow-auto"></div>
                 </section>
             </div>
+        </div>
+    </main>
+
+    <!-- 考試：只有時鐘、現在這節、倒數條和今天的時程，不放其他字 -->
+    <main id="view-exam" class="w-full flex-1 min-h-0 overflow-hidden hidden bg-slate-900 text-white">
+        <div class="h-full max-w-[1700px] mx-auto px-4 py-3 flex flex-col gap-2">
+            <div class="flex items-center justify-end gap-2">
+                <button onclick="openExamEditor()" class="teacher-ui px-3 py-1.5 rounded-xl text-sm font-black bg-white/10 hover:bg-white/20 text-white/80">✏️ 時程</button>
+                <button onclick="toggleExamFullscreen()" class="px-3 py-1.5 rounded-xl text-sm font-black bg-white/10 hover:bg-white/20 text-white/80">⛶ 全螢幕</button>
+            </div>
+            <div id="exam-clock" class="text-center font-black tabular-nums leading-none tracking-wider" style="font-family: Nunito, sans-serif; font-size: clamp(4rem, 19vh, 13rem)">--:--:--</div>
+            <!-- 應到、實到、未到座號；老師點一下可以改未到 -->
+            <div id="exam-attend" onclick="openExamAbsent()" class="flex flex-wrap items-baseline justify-center gap-x-8 gap-y-1 font-black text-3xl sm:text-4xl cursor-pointer select-none">
+                <span>應到 <b id="exam-should" class="tabular-nums" style="font-family: Nunito, sans-serif"></b> 人</span>
+                <span>實到 <b id="exam-present" class="tabular-nums text-emerald-300" style="font-family: Nunito, sans-serif"></b> 人</span>
+                <span>未到 <b id="exam-absent" class="tabular-nums text-rose-300" style="font-family: Nunito, sans-serif"></b></span>
+            </div>
+            <div class="flex-1 min-h-0 flex flex-col justify-center gap-3">
+                <div class="flex items-end justify-between gap-4">
+                    <div id="exam-name" class="font-black leading-none truncate" style="font-size: clamp(2.5rem, 11vh, 7rem)"></div>
+                    <div class="flex items-baseline gap-3 flex-shrink-0">
+                        <span id="exam-left-label" class="font-black text-white/60 text-3xl sm:text-4xl whitespace-nowrap"></span>
+                        <div id="exam-left" class="font-black leading-none tabular-nums" style="font-family: Nunito, sans-serif; font-size: clamp(2.5rem, 11vh, 7rem)"></div>
+                    </div>
+                </div>
+                <div id="exam-bar-box" class="h-10 sm:h-12 bg-white/15 rounded-full overflow-hidden">
+                    <div id="exam-bar" class="h-full rounded-full transition-[width] duration-1000 ease-linear" style="width: 0%"></div>
+                </div>
+                <div id="exam-range" class="flex justify-between font-black text-white/70 tabular-nums leading-none" style="font-family: Nunito, sans-serif; font-size: clamp(2rem, 7vh, 4rem)"><span></span><span></span></div>
+            </div>
+            <div id="exam-timeline" class="flex flex-wrap justify-center gap-2.5 pb-2"></div>
         </div>
     </main>
 
@@ -1971,6 +2019,15 @@
                             <span class="text-sm font-black text-slate-800">📖 開啟早自習（到校打卡＋早修任務＋聯絡簿）</span>
                         </label>
                         <p class="text-[14px] text-slate-500 mt-1">開啟後上方多一個「早自習」分頁：學生到校點自己的座號打卡，旁邊顯示早修任務和今天的聯絡簿（可選直式或橫式）。家長查詢頁會顯示孩子幾點到教室。</p>
+                    </div>
+
+                    <!-- 考試開關 -->
+                    <div class="mt-4 pt-3 border-t border-slate-100">
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="exam-enabled" onchange="setExamEnabled(this.checked)" class="w-5 h-5 accent-slate-700">
+                            <span class="text-sm font-black text-slate-800">📝 開啟考試（時鐘＋倒數條＋考試時程）</span>
+                        </label>
+                        <p class="text-[14px] text-slate-500 mt-1">開啟後上方多一個「考試」分頁：大時鐘、這節還剩多久的倒數條和今天的時程（含下課），畫面上沒有其他字。</p>
                     </div>
                 </div>
 
@@ -2375,6 +2432,52 @@
         </div>
     </div>
 
+    <!-- 編輯考試時程：一節一行，節和節中間自動是下課 -->
+    <div id="modal-exam" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden" onpointerdown="this.dataset.downOnBackdrop = event.target === this ? '1' : ''" onclick="if (event.target === this && this.dataset.downOnBackdrop === '1') closeExamEditor()">
+        <div class="bg-white border-2 border-slate-200 rounded-3xl p-5 w-full max-w-md board-shadow flex flex-col max-h-full">
+            <div class="text-center mb-3">
+                <div class="text-3xl mb-1">📝</div>
+                <h4 class="text-xl font-black text-slate-800">考試時程</h4>
+                <p class="text-sm text-slate-500 mt-0.5">一節一行；節和節中間自動顯示「下課」（最多 12 節）</p>
+            </div>
+            <!-- 時鐘跟學校鐘聲對齊 -->
+            <div class="bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2 mb-3">
+                <div class="flex items-center justify-between gap-2">
+                    <span class="font-black text-slate-700 whitespace-nowrap">🔔 對齊鐘聲</span>
+                    <div class="flex items-center gap-1">
+                        <button type="button" onclick="nudgeExamAdjust(-10)" class="px-2 py-1 rounded-lg bg-white border border-slate-200 font-black text-slate-600">−10</button>
+                        <button type="button" onclick="nudgeExamAdjust(-1)" class="px-2 py-1 rounded-lg bg-white border border-slate-200 font-black text-slate-600">−1</button>
+                        <span id="exam-adjust-text" class="w-20 text-center font-black text-slate-800 tabular-nums"></span>
+                        <button type="button" onclick="nudgeExamAdjust(1)" class="px-2 py-1 rounded-lg bg-white border border-slate-200 font-black text-slate-600">+1</button>
+                        <button type="button" onclick="nudgeExamAdjust(10)" class="px-2 py-1 rounded-lg bg-white border border-slate-200 font-black text-slate-600">+10</button>
+                    </div>
+                </div>
+                <p class="text-xs font-bold text-slate-400 mt-1"><span id="exam-adjust-clock" class="tabular-nums text-slate-600"></span>・<span id="exam-net-status"></span>；學校鐘聲比較快就按 +，比較慢就按 −</p>
+            </div>
+            <div id="exam-rows" class="flex flex-col gap-1.5 overflow-y-auto min-h-0"></div>
+            <button onclick="addExamRow()" class="self-start mt-2 text-sm font-black text-sky-700 hover:text-sky-900">＋ 再加一節</button>
+            <div class="grid grid-cols-2 gap-2.5 mt-3">
+                <button onclick="closeExamEditor()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-base transition-all">取消</button>
+                <button id="exam-save" onclick="saveExamSchedule()" class="bg-amber-400 hover:bg-amber-500 text-slate-900 font-black py-2.5 rounded-xl text-base transition-all">儲存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 考試未到：點座號 -->
+    <div id="modal-exam-absent" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden" onclick="if (event.target === this) closeExamAbsent()">
+        <div class="bg-white border-2 border-slate-200 rounded-3xl p-5 w-full max-w-md board-shadow flex flex-col max-h-full">
+            <div class="text-center mb-3">
+                <h4 class="text-xl font-black text-slate-800">未到的座號</h4>
+                <p id="exam-absent-hint" class="text-sm text-slate-500 mt-0.5">點座號變紅色＝未到，再點一下取消</p>
+            </div>
+            <div id="exam-absent-seats" class="grid grid-cols-6 sm:grid-cols-8 gap-1.5 overflow-y-auto min-h-0 mb-1"></div>
+            <div class="grid grid-cols-2 gap-2.5 mt-3">
+                <button onclick="closeExamAbsent()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-base transition-all">取消</button>
+                <button id="exam-absent-save" onclick="saveExamAbsent()" class="bg-amber-400 hover:bg-amber-500 text-slate-900 font-black py-2.5 rounded-xl text-base transition-all">儲存</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 修改抬餐項目 -->
     <div id="modal-meal-items" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden" onclick="if (event.target === this) closeMealEditor()">
         <div class="bg-white border-2 border-slate-200 rounded-3xl p-5 w-full max-w-md board-shadow flex flex-col max-h-full">
@@ -2719,6 +2822,7 @@
 
             if (tab === 'brush' && !isBrushEnabled()) tab = 'dashboard';
             if (tab === 'morning' && !isMorningEnabled()) tab = 'dashboard';
+            if (tab === 'exam' && !isExamEnabled()) tab = 'dashboard';
             if (tab === 'settings' && !window.state.isTeacherUnlocked) {
                 openTeacherAuthModal(() => switchTab('settings', true));
                 return;
@@ -2727,8 +2831,8 @@
             window.state.currentTab = tab;
             if (tab !== 'settings') document.getElementById('modal-force-pin').classList.add('hidden');
 
-            document.body.classList.toggle('brush-mode', tab === 'brush' || tab === 'morning');
-            ['dashboard', 'morning', 'brush', 'parent', 'settings'].forEach(t => {
+            document.body.classList.toggle('brush-mode', tab === 'brush' || tab === 'morning' || tab === 'exam');
+            ['dashboard', 'morning', 'exam', 'brush', 'parent', 'settings'].forEach(t => {
                 const btn = document.getElementById(`tab-${t}`);
                 const view = document.getElementById(`view-${t}`);
                 if (t === tab) {
@@ -2741,14 +2845,17 @@
             });
             document.getElementById('tab-brush').classList.toggle('hidden', !isBrushEnabled());
             document.getElementById('tab-morning').classList.toggle('hidden', !isMorningEnabled());
+            document.getElementById('tab-exam').classList.toggle('hidden', !isExamEnabled());
             // 個別查詢不放在上方分頁，從設定後台進入
             document.getElementById('tab-parent').classList.add('hidden');
             renderOffBoard();
             toggleMorningClock(tab === 'morning');
+            toggleExamClock(tab === 'exam');
 
             if (tab === 'dashboard') renderDashboard();
             if (tab === 'brush') renderBrush();
             if (tab === 'morning') renderMorning();
+            if (tab === 'exam') renderExam();
             if (tab === 'parent') initParentView();
             if (tab === 'settings') {
                 renderSettingsAssignments();
@@ -2763,6 +2870,7 @@
                 renderHelperSettings();
                 document.getElementById('brush-enabled').checked = isBrushEnabled();
                 document.getElementById('morning-enabled').checked = isMorningEnabled();
+                document.getElementById('exam-enabled').checked = isExamEnabled();
                 renderLockMinuteButtons();
                 // 還是預設密碼 8888：先請老師改成自己的密碼
                 if (window.state.teacherPin === DEFAULT_TEACHER_PIN) openForcePinModal();
@@ -5445,6 +5553,291 @@
             else if (contactRenderedFor && contactRenderedFor !== contactAssignDate(d)) renderContact();
             morningRenderedDay = todayKey();
         }
+        // ---- 考試：時鐘、這節的倒數條、今天的時程（節和節中間自動是下課）----
+        const EXAM_MAX = 12;
+        function examData() {
+            const e = (window.state.daily || {}).exam;
+            return { enabled: e?.enabled === true, items: Array.isArray(e?.items) ? e.items : [], absent: e?.absent || null, adjust: Number(e?.adjust) || 0 };
+        }
+        function isExamEnabled() {
+            return examData().enabled;
+        }
+
+        function applyExamVisibility() {
+            const on = isExamEnabled();
+            document.getElementById('tab-exam')?.classList.toggle('hidden', !on);
+            if (!on && window.state.currentTab === 'exam') switchTab('dashboard', true);
+        }
+
+        function setExamEnabled(on) {
+            const d = window.state.daily || defaultDaily();
+            window.state.daily = { ...d, exam: { ...examData(), enabled: !!on } };
+            window.syncDaily(true);
+            applyExamVisibility();
+            window.soundEffect.playToggle();
+            showToast(on ? '已開啟考試，上方多了「考試」分頁' : '已關閉考試');
+        }
+
+        const toMinutes = t => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+        const isHHMM = t => /^\d{2}:\d{2}$/.test(String(t || ''));
+
+        // 時程排好、補上下課
+        function examBlocks() {
+            const items = [...examData().items].sort((a, b) => a.s.localeCompare(b.s));
+            const blocks = [];
+            items.forEach((x, i) => {
+                const prev = items[i - 1];
+                if (prev && prev.e < x.s) blocks.push({ s: prev.e, e: x.s, n: '下課', rest: true });
+                blocks.push({ ...x, rest: false });
+            });
+            return blocks;
+        }
+
+        // ---- 準確的時間：跟網路上的時間對準（不靠這台電腦的時鐘），再加上老師調的鐘聲差 ----
+        let examNetOffset = 0;
+        let examNetSyncedAt = 0;
+        let examNetOk = false;
+        // 問網站幾次現在幾點（回應裡的 Date，準到秒），用每次來回的時間把誤差縮小到一秒內
+        async function syncExamClock() {
+            examNetSyncedAt = Date.now();
+            let lo = -Infinity, hi = Infinity;
+            for (let i = 0; i < 5; i++) {
+                const t0 = Date.now();
+                try {
+                    const res = await fetch(`${location.pathname}?clock=${t0}${i}`, { method: 'HEAD', cache: 'no-store' });
+                    const t1 = Date.now();
+                    const server = Date.parse(res.headers.get('Date') || '');
+                    if (Number.isFinite(server)) {
+                        lo = Math.max(lo, server - t1);
+                        hi = Math.min(hi, server + 1000 - t0);
+                    }
+                } catch (e) {
+                    break;
+                }
+                await new Promise(r => setTimeout(r, 230));
+            }
+            if (Number.isFinite(lo) && Number.isFinite(hi)) {
+                examNetOffset = Math.round((lo + hi) / 2);
+                examNetOk = true;
+            }
+            renderExamAdjust();
+        }
+
+        function examNow() {
+            return new Date(Date.now() + examNetOffset + examAdjustDraftOr() * 1000);
+        }
+
+        // 編輯視窗開著時，用正在調的秒數預覽
+        let examAdjustDraft = null;
+        function examAdjustDraftOr() {
+            return examAdjustDraft ?? examData().adjust;
+        }
+
+        function nudgeExamAdjust(delta) {
+            examAdjustDraft = Math.max(-900, Math.min(900, examAdjustDraftOr() + delta));
+            renderExamAdjust();
+            renderExam();
+        }
+
+        function renderExamAdjust() {
+            const el = document.getElementById('exam-adjust-text');
+            if (!el) return;
+            const a = examAdjustDraftOr();
+            el.textContent = a === 0 ? '±0 秒' : `${a > 0 ? '+' : '−'}${Math.abs(a)} 秒`;
+            const d = examNow();
+            document.getElementById('exam-adjust-clock').textContent = [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2, '0')).join(':');
+            const diff = Math.round(examNetOffset / 1000);
+            document.getElementById('exam-net-status').textContent = !examNetOk ? '連不上網路，用這台電腦的時間'
+                : diff === 0 ? '已對準網路時間' : `已對準網路時間（這台電腦${diff > 0 ? '慢' : '快'} ${Math.abs(diff)} 秒）`;
+        }
+
+        // 未到：老師今天點過就照點的；不然開了早自習就照打卡（沒打卡、請假都算未到）
+        function examAbsentIds() {
+            const ids = window.state.students.map(s => s.id);
+            const manual = examData().absent;
+            if (manual && manual.date === todayKey()) return ids.filter(id => manual.ids.includes(id));
+            if (!isMorningEnabled()) return [];
+            const { arrive } = todayArrivals();
+            return ids.filter(id => !arrive[id]);
+        }
+
+        let examAbsentDraft = [];
+        function renderExamAbsentSeats() {
+            document.getElementById('exam-absent-seats').innerHTML = window.state.students.map(s => {
+                const on = examAbsentDraft.includes(s.id);
+                return `<button type="button" onclick="toggleExamAbsent(${s.id})" class="exam-absent-seat py-2 rounded-xl font-black text-lg border-2 ${on ? 'bg-rose-500 border-rose-500 text-white' : 'bg-slate-50 border-slate-200 text-slate-700'}">${escapeHtml(getSeatLabel(s.id))}</button>`;
+            }).join('');
+        }
+
+        function openExamAbsent() {
+            if (!canEditBoard()) {
+                openTeacherAuthModal(openExamAbsent, { allowHelper: true });
+                return;
+            }
+            examAbsentDraft = examAbsentIds();
+            renderExamAbsentSeats();
+            document.getElementById('modal-exam-absent').classList.remove('hidden');
+        }
+
+        function closeExamAbsent() {
+            document.getElementById('modal-exam-absent').classList.add('hidden');
+        }
+
+        function toggleExamAbsent(id) {
+            examAbsentDraft = examAbsentDraft.includes(id) ? examAbsentDraft.filter(x => x !== id) : [...examAbsentDraft, id];
+            renderExamAbsentSeats();
+        }
+
+        function saveExamAbsent() {
+            const d = window.state.daily || defaultDaily();
+            window.state.daily = { ...d, exam: { ...examData(), absent: { date: todayKey(), ids: [...examAbsentDraft] } } };
+            window.syncDaily(true);
+            closeExamAbsent();
+            renderExam();
+            window.soundEffect.playSuccess();
+        }
+
+        function renderExam() {
+            const now = examNow();
+            const pad = n => String(n).padStart(2, '0');
+            document.getElementById('exam-clock').textContent = [now.getHours(), now.getMinutes(), now.getSeconds()].map(pad).join(':');
+            const absent = examAbsentIds();
+            const students = window.state.students;
+            document.getElementById('exam-should').textContent = students.length;
+            document.getElementById('exam-present').textContent = students.length - absent.length;
+            document.getElementById('exam-absent').textContent = absent.length ? absent.map(getSeatLabel).join('、') : '0';
+            const sec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+            const blocks = examBlocks();
+            const idx = blocks.findIndex(b => sec >= toMinutes(b.s) * 60 && sec < toMinutes(b.e) * 60);
+            const cur = blocks[idx];
+            const nameEl = document.getElementById('exam-name');
+            const leftEl = document.getElementById('exam-left');
+            const bar = document.getElementById('exam-bar');
+            const range = document.getElementById('exam-range').children;
+            const fmt = s => `${Math.floor(s / 60)}:${pad(s % 60)}`;
+            if (cur) {
+                const total = (toMinutes(cur.e) - toMinutes(cur.s)) * 60;
+                const left = toMinutes(cur.e) * 60 - sec;
+                nameEl.textContent = cur.n;
+                nameEl.className = `font-black leading-none truncate ${cur.rest ? 'text-sky-300' : 'text-white'}`;
+                leftEl.textContent = fmt(left);
+                document.getElementById('exam-left-label').textContent = '剩餘時間';
+                bar.style.width = `${(left / total) * 100}%`;
+                bar.className = `h-full rounded-full transition-[width] duration-1000 ease-linear ${cur.rest ? 'bg-sky-400' : left <= 60 ? 'bg-rose-500' : left <= 300 ? 'bg-amber-400' : 'bg-emerald-400'}`;
+                range[0].textContent = cur.s;
+                range[1].textContent = cur.e;
+            } else {
+                // 還沒開始：顯示離下一節還有多久；都考完了就不顯示
+                const next = blocks.find(b => toMinutes(b.s) * 60 > sec);
+                nameEl.textContent = next ? next.n : '';
+                nameEl.className = 'font-black leading-none truncate text-white/50';
+                leftEl.textContent = next ? fmt(toMinutes(next.s) * 60 - sec) : '';
+                document.getElementById('exam-left-label').textContent = next ? '距離開始' : '';
+                bar.style.width = '0%';
+                range[0].textContent = '';
+                range[1].textContent = next ? next.s : '';
+            }
+            document.getElementById('exam-bar-box').classList.toggle('invisible', blocks.length === 0);
+            const timeline = blocks.map((b, i) => {
+                const past = toMinutes(b.e) * 60 <= sec;
+                const look = i === idx ? 'bg-amber-400 text-slate-900' : b.rest ? 'bg-white/5 text-sky-200' : 'bg-white/10 text-white';
+                return `<div class="exam-block flex-1 min-w-[8rem] max-w-[16rem] rounded-2xl px-3 py-2.5 font-black text-center ${look} ${past ? 'opacity-35' : ''}">
+                    <div class="text-xl sm:text-2xl tabular-nums" style="font-family: Nunito, sans-serif">${b.s}–${b.e}</div>
+                    <div class="${b.rest ? 'text-2xl sm:text-3xl' : 'text-3xl sm:text-4xl'} leading-tight">${escapeHtml(b.n)}</div>
+                </div>`;
+            }).join('');
+            const tl = document.getElementById('exam-timeline');
+            if (tl.dataset.html !== timeline) {
+                tl.innerHTML = timeline;
+                tl.dataset.html = timeline;
+            }
+        }
+
+        let examClockTimer = null;
+        function toggleExamClock(on) {
+            clearInterval(examClockTimer);
+            examClockTimer = on ? setInterval(() => { renderExam(); renderExamAdjust(); }, 1000) : null;
+            // 每 30 分鐘重新對一次網路時間
+            if (on && Date.now() - examNetSyncedAt > 30 * 60000) syncExamClock();
+        }
+
+        function toggleExamFullscreen() {
+            if (document.fullscreenElement) document.exitFullscreen?.();
+            else document.getElementById('view-exam').requestFullscreen?.().catch(() => {});
+        }
+
+        function examRowHtml(x) {
+            const box = 'bg-slate-50 border-2 border-slate-200 rounded-lg px-1.5 py-1 font-black text-slate-800 focus:outline-none focus:border-amber-400';
+            return `<div class="exam-row grid grid-cols-[auto_auto_auto_minmax(0,1fr)_auto] gap-1.5 items-center">
+                <input type="time" class="exam-s ${box}" value="${x.s || ''}" aria-label="開始">
+                <span class="text-slate-400 font-black">–</span>
+                <input type="time" class="exam-e ${box}" value="${x.e || ''}" aria-label="結束">
+                <input type="text" class="exam-n min-w-0 ${box}" maxlength="10" value="${escapeHtml(x.n || '')}" placeholder="例如：國語" aria-label="科目">
+                <button type="button" onclick="this.parentElement.remove()" class="text-slate-400 hover:text-rose-500 font-black px-1" aria-label="刪掉這節">✕</button>
+            </div>`;
+        }
+
+        function openExamEditor() {
+            if (!canEditBoard()) {
+                openTeacherAuthModal(openExamEditor, { allowHelper: true });
+                return;
+            }
+            const items = [...examData().items].sort((a, b) => a.s.localeCompare(b.s));
+            document.getElementById('exam-rows').innerHTML = (items.length ? items : [{ s: '08:40', e: '09:20', n: '' }]).map(examRowHtml).join('');
+            examAdjustDraft = examData().adjust;
+            renderExamAdjust();
+            document.getElementById('modal-exam').classList.remove('hidden');
+        }
+
+        function closeExamEditor() {
+            examAdjustDraft = null;
+            document.getElementById('modal-exam').classList.add('hidden');
+            renderExam();
+        }
+
+        // 新的一節：接在上一節後面，中間下課 10 分鐘，考 40 分鐘
+        function addExamRow() {
+            const rows = document.querySelectorAll('#exam-rows .exam-row');
+            if (rows.length >= EXAM_MAX) {
+                showToast(`最多 ${EXAM_MAX} 節`, false);
+                return;
+            }
+            const last = rows[rows.length - 1]?.querySelector('.exam-e').value;
+            const hhmm = m => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+            const start = isHHMM(last) ? toMinutes(last) + 10 : 8 * 60 + 40;
+            document.getElementById('exam-rows').insertAdjacentHTML('beforeend', examRowHtml({ s: hhmm(start), e: hhmm(start + 40), n: '' }));
+            document.querySelector('#exam-rows .exam-row:last-child .exam-n').focus();
+        }
+
+        function saveExamSchedule() {
+            const items = [];
+            for (const row of document.querySelectorAll('#exam-rows .exam-row')) {
+                const s = row.querySelector('.exam-s').value;
+                const e = row.querySelector('.exam-e').value;
+                const n = row.querySelector('.exam-n').value.trim().slice(0, 10);
+                if (!s && !e && !n) continue;
+                if (!isHHMM(s) || !isHHMM(e) || s >= e) {
+                    window.soundEffect.playAlert();
+                    showToast('每一節的結束時間要比開始晚', false);
+                    return;
+                }
+                items.push({ s, e, n: n || '考試' });
+            }
+            items.sort((a, b) => a.s.localeCompare(b.s));
+            if (items.some((x, i) => i > 0 && x.s < items[i - 1].e)) {
+                window.soundEffect.playAlert();
+                showToast('有兩節的時間重疊了', false);
+                return;
+            }
+            const d = window.state.daily || defaultDaily();
+            window.state.daily = { ...d, exam: { ...examData(), items: items.slice(0, EXAM_MAX), adjust: examAdjustDraftOr() } };
+            window.syncDaily(true);
+            closeExamEditor();
+            renderExam();
+            window.soundEffect.playSuccess();
+            showToast('考試時程已更新');
+        }
+
         let morningRenderedDay = '';
         function toggleMorningClock(on) {
             clearInterval(morningClockTimer);
@@ -5985,6 +6378,13 @@
                     '按「<b>✏️ 編輯</b>」寫<b>早修任務</b>（黃色便利貼）和<b>聯絡簿</b>，一行一項，不用自己打「1.」編號。聯絡簿上面可以選<b>這是哪天的作業、哪天收</b>（預設下午 3 點後寫的算下一個上課日、隔一個上課日收），也可以<b>先打好之後 5 個上課日</b>的，到時候教室畫面會自動換上。聯絡簿右上角、早修任務標題旁邊都可以各自切換<b>直式</b>（由右往左一項一欄，太長自動接下一行）或<b>橫式</b>（條列）；字會自動放大到剛好填滿。',
                     '早修任務和聯絡簿中間的<b>小白線可以左右拖曳</b>，調整兩邊寬度，這台電腦會記住。',
                     '家長頁會顯示孩子「<b>今日到教室</b>」的時間，每天到了遲到時間（例如 8:00）才統一更新，<b>那時教室的看板要開著</b>。聯絡簿不會給家長看。'
+                ]),
+                page('📝', '考試', [
+                    '在「設定後台」打開「<b>📝 開啟考試</b>」，上方多一個「考試」分頁；不用時關掉就看不到。',
+                    '按「<b>✏️ 時程</b>」一節一行填開始、結束時間和科目；按「＋ 再加一節」會自動接在後面（下課 10 分鐘、考 40 分鐘，可以改）。節和節中間自動顯示「<b>下課</b>」。',
+                    '畫面只有<b>大時鐘</b>、現在這節還剩多久的<b>倒數條</b>（剩 5 分鐘變黃、剩 1 分鐘變紅）和今天的時程，沒有其他字。按「⛶ 全螢幕」可以投影到整個畫面。',
+                    '時鐘下面有<b>應到、實到、未到座號</b>：開了早自習就照到校打卡（沒打卡、請假都算未到）；點一下這一行可以自己點未到的座號（只算當天）。',
+                    '時鐘會自動對準<b>網路時間</b>，不怕電腦時間不準；學校鐘聲有快慢時，在「✏️ 時程」的「<b>🔔 對齊鐘聲</b>」按 +／− 調幾秒，跟著鐘聲走。'
                 ]),
                 page('⚙️', '其他小技巧', [
                     '<b>🙋 小幫手模式</b>：在設定後台開啟，讓小老師幫忙點紅燈、換作業、消掉下方清單，但不能進設定後台、不能按「全部完成」。',
