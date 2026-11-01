@@ -13,9 +13,9 @@ test('考試預設關閉；打開後老師排時程，現在這節顯示倒數�
     await unlockTeacher(room, 'exam');
     await expect(room.locator('#exam-clock')).toHaveText(/^\d{2}:\d{2}:\d{2}$/);
 
-    // 現在正在考第一節，第二節在 20 分鐘後
-    const now = await room.evaluate(() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); });
-    test.skip(now < 30 || now > 23 * 60, '跨午夜時不測');
+    // 現在正在考第一節，第二節在 20 分鐘後（時間固定住，測試電腦慢也不會差太多）
+    await room.clock.setFixedTime(new Date(2026, 10, 2, 10, 0, 0));
+    const now = 10 * 60;
     await room.click('text=✏️ 時程');
     await room.fill('#exam-rows .exam-row >> nth=0 >> .exam-s', hhmm(now - 10));
     await room.fill('#exam-rows .exam-row >> nth=0 >> .exam-e', hhmm(now + 10));
@@ -26,15 +26,15 @@ test('考試預設關閉；打開後老師排時程，現在這節顯示倒數�
     await room.click('#exam-save');
 
     await expect(room.locator('#exam-name')).toHaveText('國語');
-    await expect(room.locator('#exam-left')).toHaveText(/^(9|10):\d{2}$/);
+    await expect(room.locator('#exam-left')).toHaveText('10:00');
     const width = await room.evaluate(() => parseFloat(document.getElementById('exam-bar').style.width));
-    expect(width).toBeGreaterThan(40);
-    expect(width).toBeLessThan(55);
+    expect(width).toBeCloseTo(50, 0);
     await expect(room.locator('#exam-timeline .exam-block')).toHaveCount(3);
     await expect(room.locator('#exam-timeline .exam-block').nth(1)).toContainText('下課');
     await expect.poll(() => cloud.board('main').daily?.exam?.items?.length, { timeout: 15000 }).toBe(2);
 
     await expect(other.locator('#tab-exam')).toBeVisible({ timeout: 15000 });
+    await other.clock.setFixedTime(new Date(2026, 10, 2, 10, 0, 0));
     await other.click('#tab-exam');
     await expect(other.locator('#exam-name')).toHaveText('國語');
     // 考試頁不顯示上面的標語
