@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=241e9f78" rel="stylesheet">
+    <link href="assets/tailwind.css?v=9bb3262a" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -5723,7 +5723,7 @@
                 leftEl.textContent = fmt(left);
                 document.getElementById('exam-left-label').textContent = '剩餘時間';
                 bar.style.width = `${(left / total) * 100}%`;
-                bar.className = `h-full rounded-full transition-[width] duration-1000 ease-linear ${cur.rest ? 'bg-sky-400' : left <= 60 ? 'bg-rose-500' : left <= 300 ? 'bg-amber-400' : 'bg-emerald-400'}`;
+                bar.className = `h-full rounded-full transition-[width] duration-1000 ease-linear ${cur.rest ? 'bg-sky-400' : left <= 300 ? 'bg-red-500' : left <= 600 ? 'bg-pink-400' : left <= 900 ? 'bg-amber-400' : 'bg-emerald-400'}`;
                 range[0].textContent = cur.s;
                 range[1].textContent = cur.e;
             } else {
@@ -6382,7 +6382,7 @@
                 page('📝', '考試', [
                     '在「設定後台」打開「<b>📝 開啟考試</b>」，上方多一個「考試」分頁；不用時關掉就看不到。',
                     '按「<b>✏️ 時程</b>」一節一行填開始、結束時間和科目；按「＋ 再加一節」會自動接在後面（下課 10 分鐘、考 40 分鐘，可以改）。節和節中間自動顯示「<b>下課</b>」。',
-                    '畫面只有<b>大時鐘</b>、現在這節還剩多久的<b>倒數條</b>（剩 5 分鐘變黃、剩 1 分鐘變紅）和今天的時程，沒有其他字。按「⛶ 全螢幕」可以投影到整個畫面。',
+                    '畫面只有<b>大時鐘</b>、現在這節還剩多久的<b>倒數條</b>（剩 15 分鐘變黃、10 分鐘變粉紅、5 分鐘變紅）和今天的時程，沒有其他字。按「⛶ 全螢幕」可以投影到整個畫面。',
                     '時鐘下面有<b>應到、實到、未到座號</b>：開了早自習就照到校打卡（沒打卡、請假都算未到）；點一下這一行可以自己點未到的座號（只算當天）。',
                     '時鐘會自動對準<b>網路時間</b>，不怕電腦時間不準；學校鐘聲有快慢時，在「✏️ 時程」的「<b>🔔 對齊鐘聲</b>」按 +／− 調幾秒，跟著鐘聲走。'
                 ]),

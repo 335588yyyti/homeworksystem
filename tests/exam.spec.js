@@ -122,3 +122,19 @@ test('考試時鐘照網路時間（不靠這台電腦的時鐘），老師可�
     await expect(room.locator('#exam-clock')).toHaveText('10:00:20');
     expect(room.errors).toEqual([]);
 });
+
+test('倒數條顏色：剩 15 分鐘變黃、10 分鐘變粉紅、5 分鐘變紅', async ({ browser }) => {
+    const room = await openDevice(browser, createCloud());
+    await room.clock.setFixedTime(new Date(2026, 10, 2, 9, 0, 0));
+    await room.evaluate(() => {
+        state.daily = { ...state.daily, exam: { enabled: true, adjust: 0, items: [{ s: '08:40', e: '09:25', n: '國語' }] } };
+        syncDaily(true);
+    });
+    await unlockTeacher(room, 'exam');
+    const bar = room.locator('#exam-bar');
+    for (const [time, color] of [[[9, 0], /bg-emerald-400/], [[9, 11], /bg-amber-400/], [[9, 16], /bg-pink-400/], [[9, 21], /bg-red-500/]]) {
+        await room.clock.setFixedTime(new Date(2026, 10, 2, time[0], time[1], 0));
+        await expect(bar).toHaveClass(color);
+    }
+    expect(room.errors).toEqual([]);
+});
