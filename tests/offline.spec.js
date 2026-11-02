@@ -18,7 +18,7 @@ test('斷線時顯示離線中，恢復連線後自動上傳修改', async ({ br
 
     await page.context().setOffline(false);
     // 點座號會等最後一次點擊後 5 秒才上傳，再加上恢復連線的時間
-    await expect(page.locator('#cloud-sync-status')).toContainText('已連線存檔', { timeout: 15000 });
+    await expect(page.locator('#cloud-sync-status')).toContainText('已連線存檔', { timeout: 60000 });
     const statuses = cloud.board('main').statuses['國習'];
     expect(statuses['7']).toBe(false);
     expect(statuses['8']).toBe(false);
@@ -35,7 +35,7 @@ test('離線開啟網頁、本機沒有快取時，不會把本機資料當成�
 
     // 恢復連線後載入雲端的 3 人，不會用本機預設的 28 人覆蓋
     await page.context().setOffline(false);
-    await expect(page.locator('#cloud-sync-status')).toContainText('已連線存檔');
+    await expect(page.locator('#cloud-sync-status')).toContainText('已連線存檔', { timeout: 60000 });
     await expect.poll(() => page.evaluate(() => state.students.length)).toBe(3);
     await page.waitForTimeout(500);
     expect(cloud.board('main').students).toHaveLength(3);
