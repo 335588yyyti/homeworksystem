@@ -328,6 +328,8 @@ test('聯絡簿標題可以挑要顯示哪一天：下午 3 點後也能先顯�
     // 老師挑今天的
     await pick.selectOption('2026-11-02');
     await expect(room.locator('#contact-body')).toContainText('國習');
+    // 直式每一欄的字也換成今天的
+    await expect(room.locator('#contact-body .contact-paper .txt-wrap').first()).toContainText('國');
     await expect.poll(() => cloud.board('main').daily?.contact?.pick?.key, { timeout: 15000 }).toBe('2026-11-02');
     // 隔天就恢復自動
     await room.clock.setFixedTime(new Date(2026, 10, 3, 8, 0, 0));

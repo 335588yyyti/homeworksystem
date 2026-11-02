@@ -5433,7 +5433,7 @@
 
         function fitContactVertical() {
             const c = (window.state.daily || defaultDaily()).contact;
-            fitVerticalCols(document.querySelector('#contact-body .contact-paper .contact-cols'), c.items);
+            fitVerticalCols(document.querySelector('#contact-body .contact-paper .contact-cols'), contactShown(c).items);
             fitVerticalCols(document.querySelector('#morning-task .task-cols'), c.tasks || []);
         }
 
