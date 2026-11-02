@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=9bb3262a" rel="stylesheet">
+    <link href="assets/tailwind.css?v=b71d1eed" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -1144,6 +1144,11 @@
                     items: Array.isArray(dd.exam?.items) ? dd.exam.items
                         .filter(x => x && /^\d{2}:\d{2}$/.test(String(x.s)) && /^\d{2}:\d{2}$/.test(String(x.e)) && x.s < x.e)
                         .map(x => ({ s: x.s, e: x.e, n: String(x.n || '').slice(0, 10) })).slice(0, 12) : [],
+                    // 指定日期的考試（期中考、期末考）：{ 'YYYY-MM-DD': [節] }，那幾天自動出現考試分頁
+                    days: dd.exam?.days && typeof dd.exam.days === 'object' ? Object.fromEntries(Object.entries(dd.exam.days)
+                        .filter(([k, v]) => /^\d{4}-\d{2}-\d{2}$/.test(k) && Array.isArray(v)).slice(0, 6)
+                        .map(([k, v]) => [k, v.filter(x => x && /^\d{2}:\d{2}$/.test(String(x.s)) && /^\d{2}:\d{2}$/.test(String(x.e)) && x.s < x.e)
+                            .map(x => ({ s: x.s, e: x.e, n: String(x.n || '').slice(0, 10) })).slice(0, 12)])) : {},
                     // 跟學校鐘聲對齊：時鐘要快（＋）或慢（－）幾秒
                     adjust: Number.isFinite(Number(dd.exam?.adjust)) ? Math.max(-900, Math.min(900, Math.round(Number(dd.exam.adjust)))) : 0,
                     // 老師自己點的未到座號（只算當天；沒點過就照早自習打卡）
@@ -2027,7 +2032,8 @@
                             <input type="checkbox" id="exam-enabled" onchange="setExamEnabled(this.checked)" class="w-5 h-5 accent-slate-700">
                             <span class="text-sm font-black text-slate-800">📝 開啟考試（時鐘＋倒數條＋考試時程）</span>
                         </label>
-                        <p class="text-[14px] text-slate-500 mt-1">開啟後上方多一個「考試」分頁：大時鐘、這節還剩多久的倒數條和今天的時程（含下課），畫面上沒有其他字。</p>
+                        <p class="text-[14px] text-slate-500 mt-1">開啟後上方多一個「考試」分頁：大時鐘、這節還剩多久的倒數條和今天的時程（含下課），畫面上沒有其他字。期中考、期末考可以先<b>指定日期</b>排好，那幾天不用開也會自動出現。</p>
+                        <button onclick="openExamEditor()" class="mt-1.5 text-sm font-black text-sky-700 hover:text-sky-900 underline underline-offset-2">📅 指定考試日期和時程</button>
                     </div>
                 </div>
 
@@ -2438,7 +2444,7 @@
             <div class="text-center mb-3">
                 <div class="text-3xl mb-1">📝</div>
                 <h4 class="text-xl font-black text-slate-800">考試時程</h4>
-                <p class="text-sm text-slate-500 mt-0.5">一節一行；節和節中間自動顯示「下課」（最多 12 節）</p>
+                <p class="text-sm text-slate-500 mt-0.5">一節一行，時間用 24 小時制（例如 13:20）；節和節中間自動顯示「下課」</p>
             </div>
             <!-- 時鐘跟學校鐘聲對齊 -->
             <div class="bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2 mb-3">
@@ -2454,6 +2460,8 @@
                 </div>
                 <p class="text-xs font-bold text-slate-400 mt-1"><span id="exam-adjust-clock" class="tabular-nums text-slate-600"></span>・<span id="exam-net-status"></span>；學校鐘聲比較快就按 +，比較慢就按 −</p>
             </div>
+            <!-- 平常用的時程，或指定日期（期中考、期末考）：那幾天自動出現考試分頁 -->
+            <div id="exam-days" class="flex flex-wrap items-center gap-1.5 mb-2"></div>
             <div id="exam-rows" class="flex flex-col gap-1.5 overflow-y-auto min-h-0"></div>
             <button onclick="addExamRow()" class="self-start mt-2 text-sm font-black text-sky-700 hover:text-sky-900">＋ 再加一節</button>
             <div class="grid grid-cols-2 gap-2.5 mt-3">
@@ -5557,10 +5565,16 @@
         const EXAM_MAX = 12;
         function examData() {
             const e = (window.state.daily || {}).exam;
-            return { enabled: e?.enabled === true, items: Array.isArray(e?.items) ? e.items : [], absent: e?.absent || null, adjust: Number(e?.adjust) || 0 };
+            return { enabled: e?.enabled === true, items: Array.isArray(e?.items) ? e.items : [], absent: e?.absent || null, adjust: Number(e?.adjust) || 0,
+                days: e?.days && typeof e.days === 'object' ? e.days : {} };
+        }
+        // 今天考哪幾節：今天有指定日期就用那天的，不然開著考試就用平常的
+        function examTodayItems() {
+            const e = examData();
+            return e.days[todayKey()] || (e.enabled ? e.items : []);
         }
         function isExamEnabled() {
-            return examData().enabled;
+            return examData().enabled || !!examData().days[todayKey()];
         }
 
         function applyExamVisibility() {
@@ -5580,10 +5594,23 @@
 
         const toMinutes = t => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
         const isHHMM = t => /^\d{2}:\d{2}$/.test(String(t || ''));
+        // 「840」「8:40」「８：４０」都變成 08:40；1～6 點當成下午（上課時間不會是凌晨）
+        function normalizeExamTime(raw) {
+            const t = String(raw || '').trim().replace(/[０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0)).replace(/[：.．\s]/g, ':');
+            const m = t.match(/^(\d{1,2}):(\d{2})$/) || t.match(/^(\d{1,2})(\d{2})$/);
+            if (!m) return null;
+            let h = Number(m[1]);
+            const min = Number(m[2]);
+            if (h >= 1 && h <= 6) h += 12;
+            if (h > 23 || min > 59) return null;
+            return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+        }
+        // 指定日期的考試過了就不用留
+        setInterval(() => applyExamVisibility(), 60000);
 
         // 時程排好、補上下課
         function examBlocks() {
-            const items = [...examData().items].sort((a, b) => a.s.localeCompare(b.s));
+            const items = [...examTodayItems()].sort((a, b) => a.s.localeCompare(b.s));
             const blocks = [];
             items.forEach((x, i) => {
                 const prev = items[i - 1];
@@ -5768,13 +5795,66 @@
 
         function examRowHtml(x) {
             const box = 'bg-slate-50 border-2 border-slate-200 rounded-lg px-1.5 py-1 font-black text-slate-800 focus:outline-none focus:border-amber-400';
-            return `<div class="exam-row grid grid-cols-[auto_auto_auto_minmax(0,1fr)_auto] gap-1.5 items-center">
-                <input type="time" class="exam-s ${box}" value="${x.s || ''}" aria-label="開始">
+            const time = (cls, v, label) => `<input type="text" inputmode="numeric" maxlength="5" class="${cls} w-[4.5rem] text-center tabular-nums ${box}" value="${escapeHtml(v || '')}" placeholder="08:40" aria-label="${label}" onblur="const t = normalizeExamTime(this.value); if (t) this.value = t">`;
+            return `<div class="exam-row grid grid-cols-[auto_auto_auto_minmax(0,1fr)_auto] gap-1.5 items-center rounded-lg">
+                ${time('exam-s', x.s, '開始')}
                 <span class="text-slate-400 font-black">–</span>
-                <input type="time" class="exam-e ${box}" value="${x.e || ''}" aria-label="結束">
+                ${time('exam-e', x.e, '結束')}
                 <input type="text" class="exam-n min-w-0 ${box}" maxlength="10" value="${escapeHtml(x.n || '')}" placeholder="例如：國語" aria-label="科目">
                 <button type="button" onclick="this.parentElement.remove()" class="text-slate-400 hover:text-rose-500 font-black px-1" aria-label="刪掉這節">✕</button>
             </div>`;
+        }
+
+        // 編輯中的各份時程：'' 是平常用的，其他是指定日期
+        let examEditorDays = {};
+        let examEditorKey = '';
+        const examDayLabel = key => {
+            if (!key) return '平常';
+            const d = fromDateKey(key);
+            return `${d.getMonth() + 1}/${d.getDate()}（${'日一二三四五六'[d.getDay()]}）`;
+        };
+
+        function readExamRows() {
+            return [...document.querySelectorAll('#exam-rows .exam-row')].map(row => ({
+                s: row.querySelector('.exam-s').value.trim(),
+                e: row.querySelector('.exam-e').value.trim(),
+                n: row.querySelector('.exam-n').value.trim().slice(0, 10)
+            }));
+        }
+
+        function renderExamDays() {
+            const keys = ['', ...Object.keys(examEditorDays).filter(Boolean).sort()];
+            const chip = key => `<span class="exam-day inline-flex items-center rounded-lg border-2 font-black text-sm ${key === examEditorKey ? 'bg-amber-400 border-amber-400 text-slate-900' : 'bg-white border-slate-200 text-slate-600'}">
+                <button type="button" onclick="pickExamDay('${key}')" class="px-2 py-0.5">${examDayLabel(key)}</button>${key ? `<button type="button" onclick="removeExamDay('${key}')" class="pr-1.5 text-slate-500 hover:text-rose-600" aria-label="刪掉這天">✕</button>` : ''}
+            </span>`;
+            document.getElementById('exam-days').innerHTML = keys.map(chip).join('')
+                + (keys.length <= 6 ? `<label class="inline-flex items-center gap-1 text-sm font-black text-sky-700">＋ 指定日期<input type="date" id="exam-day-add" min="${todayKey()}" onchange="addExamDay(this.value)" class="bg-white border-2 border-slate-200 rounded-lg px-1 py-0.5 text-sm font-black text-slate-600" aria-label="指定考試日期"></label>` : '');
+        }
+
+        function showExamDay(key) {
+            examEditorKey = key;
+            const items = examEditorDays[key] || [];
+            document.getElementById('exam-rows').innerHTML = (items.length ? items : [{ s: '08:40', e: '09:20', n: '' }]).map(examRowHtml).join('');
+            renderExamDays();
+        }
+
+        function pickExamDay(key) {
+            examEditorDays[examEditorKey] = readExamRows();
+            showExamDay(key);
+        }
+
+        // 新的考試日：先照最近一份時程排好，改科目就好
+        function addExamDay(key) {
+            if (!isDateKey(key) || key < todayKey()) return;
+            examEditorDays[examEditorKey] = readExamRows();
+            if (!examEditorDays[key]) examEditorDays[key] = (examEditorDays[examEditorKey] || []).map(x => ({ ...x, n: '' }));
+            showExamDay(key);
+        }
+
+        function removeExamDay(key) {
+            examEditorDays[examEditorKey] = readExamRows();
+            delete examEditorDays[key];
+            showExamDay(examEditorKey === key ? '' : examEditorKey);
         }
 
         function openExamEditor() {
@@ -5782,9 +5862,12 @@
                 openTeacherAuthModal(openExamEditor, { allowHelper: true });
                 return;
             }
-            const items = [...examData().items].sort((a, b) => a.s.localeCompare(b.s));
-            document.getElementById('exam-rows').innerHTML = (items.length ? items : [{ s: '08:40', e: '09:20', n: '' }]).map(examRowHtml).join('');
-            examAdjustDraft = examData().adjust;
+            const e = examData();
+            const sorted = list => [...list].sort((a, b) => a.s.localeCompare(b.s));
+            examEditorDays = { '': sorted(e.items) };
+            Object.entries(e.days).filter(([k]) => k >= todayKey()).forEach(([k, v]) => { examEditorDays[k] = sorted(v); });
+            showExamDay(examEditorDays[todayKey()] ? todayKey() : '');
+            examAdjustDraft = e.adjust;
             renderExamAdjust();
             document.getElementById('modal-exam').classList.remove('hidden');
         }
@@ -5802,40 +5885,54 @@
                 showToast(`最多 ${EXAM_MAX} 節`, false);
                 return;
             }
-            const last = rows[rows.length - 1]?.querySelector('.exam-e').value;
+            const last = normalizeExamTime(rows[rows.length - 1]?.querySelector('.exam-e').value);
             const hhmm = m => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
-            const start = isHHMM(last) ? toMinutes(last) + 10 : 8 * 60 + 40;
+            const start = last ? toMinutes(last) + 10 : 8 * 60 + 40;
             document.getElementById('exam-rows').insertAdjacentHTML('beforeend', examRowHtml({ s: hhmm(start), e: hhmm(start + 40), n: '' }));
             document.querySelector('#exam-rows .exam-row:last-child .exam-n').focus();
         }
 
-        function saveExamSchedule() {
+        // 檢查一份時程；有錯就回傳哪一節、什麼錯
+        function checkExamRows(rows) {
             const items = [];
-            for (const row of document.querySelectorAll('#exam-rows .exam-row')) {
-                const s = row.querySelector('.exam-s').value;
-                const e = row.querySelector('.exam-e').value;
-                const n = row.querySelector('.exam-n').value.trim().slice(0, 10);
-                if (!s && !e && !n) continue;
-                if (!isHHMM(s) || !isHHMM(e) || s >= e) {
-                    window.soundEffect.playAlert();
-                    showToast('每一節的結束時間要比開始晚', false);
-                    return;
-                }
-                items.push({ s, e, n: n || '考試' });
+            for (let i = 0; i < rows.length; i++) {
+                const r = rows[i];
+                if (!r.s && !r.e && !r.n) continue;
+                const s = normalizeExamTime(r.s);
+                const e = normalizeExamTime(r.e);
+                if (!s || !e) return { row: i, msg: `第 ${i + 1} 行的時間看不懂，請用 24 小時制，例如 08:40、13:20` };
+                if (s >= e) return { row: i, msg: `第 ${i + 1} 行的結束時間要比開始晚（${s}–${e}）` };
+                items.push({ s, e, n: r.n || '考試', row: i });
             }
             items.sort((a, b) => a.s.localeCompare(b.s));
-            if (items.some((x, i) => i > 0 && x.s < items[i - 1].e)) {
-                window.soundEffect.playAlert();
-                showToast('有兩節的時間重疊了', false);
-                return;
+            const clash = items.find((x, i) => i > 0 && x.s < items[i - 1].e);
+            if (clash) return { row: clash.row, msg: `第 ${clash.row + 1} 行跟別節的時間重疊了` };
+            return { items: items.slice(0, EXAM_MAX).map(({ s, e, n }) => ({ s, e, n })) };
+        }
+
+        function saveExamSchedule() {
+            examEditorDays[examEditorKey] = readExamRows();
+            const result = {};
+            for (const key of ['', ...Object.keys(examEditorDays).filter(Boolean).sort()]) {
+                const check = checkExamRows(examEditorDays[key]);
+                if (check.msg) {
+                    showExamDay(key);
+                    document.querySelectorAll('#exam-rows .exam-row')[check.row]?.classList.add('bg-rose-100', 'ring-2', 'ring-rose-400');
+                    window.soundEffect.playAlert();
+                    showToast(`${key ? examDayLabel(key) + '：' : ''}${check.msg}`, false);
+                    return;
+                }
+                result[key] = check.items;
             }
+            const days = Object.fromEntries(Object.entries(result).filter(([k, v]) => k && k >= todayKey() && v.length));
             const d = window.state.daily || defaultDaily();
-            window.state.daily = { ...d, exam: { ...examData(), items: items.slice(0, EXAM_MAX), adjust: examAdjustDraftOr() } };
+            window.state.daily = { ...d, exam: { ...examData(), items: result[''], days, adjust: examAdjustDraftOr() } };
             window.syncDaily(true);
             closeExamEditor();
+            applyExamVisibility();
             renderExam();
             window.soundEffect.playSuccess();
-            showToast('考試時程已更新');
+            showToast(Object.keys(days).length ? `考試時程已更新（${Object.keys(days).sort().map(examDayLabel).join('、')} 會自動出現考試分頁）` : '考試時程已更新');
         }
 
         let morningRenderedDay = '';
@@ -6381,7 +6478,7 @@
                 ]),
                 page('📝', '考試', [
                     '在「設定後台」打開「<b>📝 開啟考試</b>」，上方多一個「考試」分頁；不用時關掉就看不到。',
-                    '按「<b>✏️ 時程</b>」一節一行填開始、結束時間和科目；按「＋ 再加一節」會自動接在後面（下課 10 分鐘、考 40 分鐘，可以改）。節和節中間自動顯示「<b>下課</b>」。',
+                    '按「<b>✏️ 時程</b>」一節一行填開始、結束時間（24 小時制，例如 13:20）和科目；期中考、期末考可以按「<b>＋ 指定日期</b>」先排好那幾天的時程，到了那天不用開也會自動出現考試分頁（設定後台也有「📅 指定考試日期和時程」）；按「＋ 再加一節」會自動接在後面（下課 10 分鐘、考 40 分鐘，可以改）。節和節中間自動顯示「<b>下課</b>」。',
                     '畫面只有<b>大時鐘</b>、現在這節還剩多久的<b>倒數條</b>（剩 15 分鐘變黃、10 分鐘變粉紅、5 分鐘變紅）和今天的時程，沒有其他字。按「⛶ 全螢幕」可以投影到整個畫面。',
                     '時鐘下面有<b>應到、實到、未到座號</b>：開了早自習就照到校打卡（沒打卡、請假都算未到）；點一下這一行可以自己點未到的座號（只算當天）。',
                     '時鐘會自動對準<b>網路時間</b>，不怕電腦時間不準；學校鐘聲有快慢時，在「✏️ 時程」的「<b>🔔 對齊鐘聲</b>」按 +／− 調幾秒，跟著鐘聲走。'
