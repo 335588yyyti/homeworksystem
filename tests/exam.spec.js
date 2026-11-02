@@ -138,3 +138,55 @@ test('倒數條顏色：剩 15 分鐘變黃、10 分鐘變粉紅、5 分鐘變�
     }
     expect(room.errors).toEqual([]);
 });
+
+test('考試時程用 24 小時制輸入：「1200」「1:20」都看得懂；錯的那一行會標紅並說是第幾行', async ({ browser }) => {
+    const room = await openDevice(browser, createCloud());
+    await room.evaluate(() => setExamEnabled(true));
+    await unlockTeacher(room, 'exam');
+    await room.click('text=✏️ 時程');
+    const row = (i, cls) => `#exam-rows .exam-row >> nth=${i} >> ${cls}`;
+    await room.fill(row(0, '.exam-s'), '1120');
+    await room.fill(row(0, '.exam-e'), '1200');
+    await room.click('text=＋ 再加一節');
+    await room.fill(row(1, '.exam-s'), '1:20');
+    await room.fill(row(1, '.exam-e'), '2:00');
+    await room.click('text=＋ 再加一節');
+    await room.fill(row(2, '.exam-s'), '15:00');
+    await room.fill(row(2, '.exam-e'), '14:00');
+    await room.click('#exam-save');
+    await expect(room.locator('#toast-msg')).toContainText('第 3 行的結束時間要比開始晚');
+    await expect(room.locator('#exam-rows .exam-row').nth(2)).toHaveClass(/ring-rose-400/);
+    await room.click('#exam-rows .exam-row >> nth=2 >> text=✕');
+    await room.click('#exam-save');
+    await expect(room.locator('#modal-exam')).toBeHidden();
+    expect(await room.evaluate(() => state.daily.exam.items.map((x) => `${x.s}-${x.e}`))).toEqual(['11:20-12:00', '13:20-14:00']);
+    expect(room.errors).toEqual([]);
+});
+
+test('指定考試日期：先排好那天的時程，到了那天不用開考試也會自動出現考試分頁', async ({ browser }) => {
+    const cloud = createCloud();
+    const room = await openDevice(browser, cloud);
+    await room.clock.setFixedTime(new Date(2026, 10, 2, 9, 0, 0));
+    await unlockTeacher(room, 'settings');
+    await expect(room.locator('#tab-exam')).toBeHidden();
+    await room.click('text=📅 指定考試日期和時程');
+    // 排 11/4 的期中考
+    await room.fill('#exam-day-add', '2026-11-04');
+    await room.dispatchEvent('#exam-day-add', 'change');
+    await expect(room.locator('#exam-days .exam-day').nth(1)).toContainText('11/4（三）');
+    await room.fill('#exam-rows .exam-row >> nth=0 >> .exam-s', '08:40');
+    await room.fill('#exam-rows .exam-row >> nth=0 >> .exam-e', '09:25');
+    await room.fill('#exam-rows .exam-row >> nth=0 >> .exam-n', '國語');
+    await room.click('#exam-save');
+    await expect(room.locator('#toast-msg')).toContainText('11/4（三） 會自動出現考試分頁');
+    await expect.poll(() => cloud.board('main').daily?.exam?.days?.['2026-11-04']?.[0]?.n, { timeout: 15000 }).toBe('國語');
+    // 今天還不是考試日：分頁不出現
+    await expect(room.locator('#tab-exam')).toBeHidden();
+    // 到了 11/4：分頁自動出現，顯示那天的時程
+    await room.clock.setFixedTime(new Date(2026, 10, 4, 9, 0, 0));
+    await room.evaluate(() => applyExamVisibility());
+    await expect(room.locator('#tab-exam')).toBeVisible();
+    await room.click('#tab-exam');
+    await expect(room.locator('#exam-name')).toHaveText('國語');
+    expect(room.errors).toEqual([]);
+});
