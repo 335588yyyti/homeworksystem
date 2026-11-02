@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=b71d1eed" rel="stylesheet">
+    <link href="assets/tailwind.css?v=1a7376b0" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -1143,12 +1143,12 @@
                     enabled: dd.exam?.enabled === true,
                     items: Array.isArray(dd.exam?.items) ? dd.exam.items
                         .filter(x => x && /^\d{2}:\d{2}$/.test(String(x.s)) && /^\d{2}:\d{2}$/.test(String(x.e)) && x.s < x.e)
-                        .map(x => ({ s: x.s, e: x.e, n: String(x.n || '').slice(0, 10) })).slice(0, 12) : [],
+                        .map(x => ({ s: x.s, e: x.e, n: String(x.n || '').slice(0, 16) })).slice(0, 12) : [],
                     // 指定日期的考試（期中考、期末考）：{ 'YYYY-MM-DD': [節] }，那幾天自動出現考試分頁
                     days: dd.exam?.days && typeof dd.exam.days === 'object' ? Object.fromEntries(Object.entries(dd.exam.days)
                         .filter(([k, v]) => /^\d{4}-\d{2}-\d{2}$/.test(k) && Array.isArray(v)).slice(0, 6)
                         .map(([k, v]) => [k, v.filter(x => x && /^\d{2}:\d{2}$/.test(String(x.s)) && /^\d{2}:\d{2}$/.test(String(x.e)) && x.s < x.e)
-                            .map(x => ({ s: x.s, e: x.e, n: String(x.n || '').slice(0, 10) })).slice(0, 12)])) : {},
+                            .map(x => ({ s: x.s, e: x.e, n: String(x.n || '').slice(0, 16) })).slice(0, 12)])) : {},
                     // 跟學校鐘聲對齊：時鐘要快（＋）或慢（－）幾秒
                     adjust: Number.isFinite(Number(dd.exam?.adjust)) ? Math.max(-900, Math.min(900, Math.round(Number(dd.exam.adjust)))) : 0,
                     // 老師自己點的未到座號（只算當天；沒點過就照早自習打卡）
@@ -2440,7 +2440,7 @@
 
     <!-- 編輯考試時程：一節一行，節和節中間自動是下課 -->
     <div id="modal-exam" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden" onpointerdown="this.dataset.downOnBackdrop = event.target === this ? '1' : ''" onclick="if (event.target === this && this.dataset.downOnBackdrop === '1') closeExamEditor()">
-        <div class="bg-white border-2 border-slate-200 rounded-3xl p-5 w-full max-w-md board-shadow flex flex-col max-h-full">
+        <div class="bg-white border-2 border-slate-200 rounded-3xl p-5 w-full max-w-2xl board-shadow flex flex-col max-h-full">
             <div class="text-center mb-3">
                 <div class="text-3xl mb-1">📝</div>
                 <h4 class="text-xl font-black text-slate-800">考試時程</h4>
@@ -5746,6 +5746,8 @@
                 const total = (toMinutes(cur.e) - toMinutes(cur.s)) * 60;
                 const left = toMinutes(cur.e) * 60 - sec;
                 nameEl.textContent = cur.n;
+                // 科目名稱比較長就縮小一點，整個顯示出來
+                nameEl.style.fontSize = cur.n.length > 6 ? 'clamp(2rem, 7vh, 4.5rem)' : 'clamp(2.5rem, 11vh, 7rem)';
                 nameEl.className = `font-black leading-none truncate ${cur.rest ? 'text-sky-300' : 'text-white'}`;
                 leftEl.textContent = fmt(left);
                 document.getElementById('exam-left-label').textContent = '剩餘時間';
@@ -5770,7 +5772,7 @@
                 const look = i === idx ? 'bg-amber-400 text-slate-900' : b.rest ? 'bg-white/5 text-sky-200' : 'bg-white/10 text-white';
                 return `<div class="exam-block flex-1 min-w-[8rem] max-w-[16rem] rounded-2xl px-3 py-2.5 font-black text-center ${look} ${past ? 'opacity-35' : ''}">
                     <div class="text-xl sm:text-2xl tabular-nums" style="font-family: Nunito, sans-serif">${b.s}–${b.e}</div>
-                    <div class="${b.rest ? 'text-2xl sm:text-3xl' : 'text-3xl sm:text-4xl'} leading-tight">${escapeHtml(b.n)}</div>
+                    <div class="${b.rest ? 'text-2xl sm:text-3xl' : b.n.length > 5 ? 'text-xl sm:text-2xl' : 'text-3xl sm:text-4xl'} leading-tight">${escapeHtml(b.n)}</div>
                 </div>`;
             }).join('');
             const tl = document.getElementById('exam-timeline');
@@ -5795,12 +5797,12 @@
 
         function examRowHtml(x) {
             const box = 'bg-slate-50 border-2 border-slate-200 rounded-lg px-1.5 py-1 font-black text-slate-800 focus:outline-none focus:border-amber-400';
-            const time = (cls, v, label) => `<input type="text" inputmode="numeric" maxlength="5" class="${cls} w-[4.5rem] text-center tabular-nums ${box}" value="${escapeHtml(v || '')}" placeholder="08:40" aria-label="${label}" onblur="const t = normalizeExamTime(this.value); if (t) this.value = t">`;
+            const time = (cls, v, label) => `<input type="text" inputmode="numeric" maxlength="5" class="${cls} w-[5.5rem] text-lg text-center tabular-nums ${box}" value="${escapeHtml(v || '')}" placeholder="08:40" aria-label="${label}" onblur="const t = normalizeExamTime(this.value); if (t) this.value = t">`;
             return `<div class="exam-row grid grid-cols-[auto_auto_auto_minmax(0,1fr)_auto] gap-1.5 items-center rounded-lg">
                 ${time('exam-s', x.s, '開始')}
                 <span class="text-slate-400 font-black">–</span>
                 ${time('exam-e', x.e, '結束')}
-                <input type="text" class="exam-n min-w-0 ${box}" maxlength="10" value="${escapeHtml(x.n || '')}" placeholder="例如：國語" aria-label="科目">
+                <input type="text" class="exam-n min-w-0 text-lg ${box}" maxlength="16" value="${escapeHtml(x.n || '')}" placeholder="例如：國語" aria-label="科目">
                 <button type="button" onclick="this.parentElement.remove()" class="text-slate-400 hover:text-rose-500 font-black px-1" aria-label="刪掉這節">✕</button>
             </div>`;
         }
@@ -5818,7 +5820,7 @@
             return [...document.querySelectorAll('#exam-rows .exam-row')].map(row => ({
                 s: row.querySelector('.exam-s').value.trim(),
                 e: row.querySelector('.exam-e').value.trim(),
-                n: row.querySelector('.exam-n').value.trim().slice(0, 10)
+                n: row.querySelector('.exam-n').value.trim().slice(0, 16)
             }));
         }
 
