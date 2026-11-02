@@ -3,8 +3,8 @@ const { test, expect } = require('@playwright/test');
 const { createCloud, openDevice } = require('./helpers');
 
 test('未訂正名單列出每位同學還沒訂正的作業，並在變動停止後自動更新', async ({ browser }) => {
-    // 要等好幾次 5 秒更新、再開第二台裝置，全部測試一起跑時會超過預設的 60 秒
-    test.setTimeout(120000);
+    // 要等好幾次 5 秒更新、再開第二台裝置，全部測試一起跑時會超過預設的時間；GitHub 的測試電腦很忙時 2 分鐘也不夠
+    test.setTimeout(180000);
     const cloud = createCloud();
     const page = await openDevice(browser, cloud);
     await page.evaluate(() => { startTeacherSession(); applyRoleUI('teacher'); });
