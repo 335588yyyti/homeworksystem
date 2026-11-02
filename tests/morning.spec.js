@@ -294,3 +294,18 @@ test('聯絡簿可以選哪天的作業、哪天收，也能先打好之後幾�
     await expect(room.locator('#contact-due-date')).toHaveValue(due);
     expect(room.errors).toEqual([]);
 });
+
+test('下午 3 點後存的是下一個上課日的聯絡簿：標題寫那天的日期和「明天的作業」，不會像是今天的', async ({ browser }) => {
+    const room = await openDevice(browser, createCloud());
+    await room.clock.setFixedTime(new Date(2026, 10, 2, 16, 0, 0)); // 週一下午 4 點
+    await room.evaluate(() => setMorningEnabled(true));
+    await unlockTeacher(room, 'morning');
+    await room.click('text=✏️ 編輯');
+    await expect(room.locator('#contact-for-date')).toHaveValue('2026-11-03');
+    await room.fill('#contact-input', '數習P.20');
+    await room.click('#modal-contact >> text=儲存');
+    await expect(room.locator('#contact-body')).toContainText('數習');
+    await expect(room.locator('#contact-date')).toContainText('11/3 週二');
+    await expect(room.locator('#contact-date')).toContainText('明天的作業');
+    expect(room.errors).toEqual([]);
+});

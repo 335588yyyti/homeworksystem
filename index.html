@@ -5239,8 +5239,12 @@
             const old = shown.key
                 ? (shown.key < contactRenderedFor && items.length ? `這是 ${md(shown.key)} 的作業` : '')
                 : (c.date && c.date !== today && (items.length || (c.tasks || []).length) ? `內容是 ${md(c.date)} 寫的` : '');
-            document.getElementById('contact-date').innerHTML = `（${md(today)}）`
-                + (old ? `<span class="ml-1 text-xs sm:text-sm font-bold text-amber-200/80 whitespace-nowrap">${old}</span>` : '');
+            // 下午 3 點後換成下一個上課日的作業：標題寫那天的日期，不會誤以為是今天的
+            const ahead = shown.key && shown.key > today;
+            const wd = key => '日一二三四五六'[fromDateKey(key).getDay()];
+            document.getElementById('contact-date').innerHTML = ahead
+                ? `（${md(shown.key)} 週${wd(shown.key)}）<span class="ml-1 text-xs sm:text-sm font-bold text-amber-200/80 whitespace-nowrap">${shown.key === toDateInputValue(new Date(Date.now() + 86400000)) ? '明天' : `週${wd(shown.key)}`}的作業</span>`
+                : `（${md(today)}）` + (old ? `<span class="ml-1 text-xs sm:text-sm font-bold text-amber-200/80 whitespace-nowrap">${old}</span>` : '');
             ['v', 'h'].forEach(k => {
                 document.getElementById(`contact-layout-${k}`).className = `px-3 py-1 rounded-lg text-sm font-black ${c.layout === k ? 'bg-amber-300 text-amber-900' : 'text-white/80 hover:text-white'}`;
             });
