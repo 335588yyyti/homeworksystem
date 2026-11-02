@@ -311,6 +311,7 @@ test('下午 3 點後存的是下一個上課日的聯絡簿：標題寫那天�
 });
 
 test('聯絡簿標題可以挑要顯示哪一天：下午 3 點後也能先顯示今天的，隔天恢復自動', async ({ browser }) => {
+    test.setTimeout(180000); // GitHub 的測試電腦很忙時，開裝置、等雲端就要很久
     const cloud = createCloud();
     const room = await openDevice(browser, cloud);
     await room.clock.setFixedTime(new Date(2026, 10, 2, 16, 0, 0)); // 週一下午 4 點
