@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=1a7376b0" rel="stylesheet">
+    <link href="assets/tailwind.css?v=60127c32" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -1172,7 +1172,10 @@
                         .filter(([k, v]) => /^\d{4}-\d{2}-\d{2}$/.test(k) && /^\d{4}-\d{2}-\d{2}$/.test(String(v))).slice(0, 10)) : {},
                     layout: cc.layout === 'h' ? 'h' : 'v',
                     // 早修任務也可以直式或橫式（預設橫式）
-                    taskLayout: cc.taskLayout === 'v' ? 'v' : 'h'
+                    taskLayout: cc.taskLayout === 'v' ? 'v' : 'h',
+                    // 老師今天自己挑要顯示哪一天的聯絡簿（只算當天，隔天恢復自動）
+                    pick: cc.pick && /^\d{4}-\d{2}-\d{2}$/.test(String(cc.pick.day)) && /^\d{4}-\d{2}-\d{2}$/.test(String(cc.pick.key))
+                        ? { day: cc.pick.day, key: cc.pick.key } : null
                 }
             };
 
@@ -3938,8 +3941,27 @@
             const history = c.history || {};
             const keys = Object.keys(history);
             if (keys.length === 0) return { key: '', items: c.items || [] };
+            // 老師今天挑了要顯示哪一天，就照老師挑的
+            const pick = c.pick;
+            if (pick && pick.day === toDateInputValue(now) && history[pick.key]) return { key: pick.key, items: history[pick.key], picked: true };
             const key = keys.filter(k => k <= contactAssignDate(now)).sort().pop();
             return key ? { key, items: history[key] } : { key: '', items: [] };
+        }
+
+        // 教室畫面要顯示哪一天的聯絡簿：選回自動的那份就恢復自動（下午 3 點換成下一個上課日）
+        function pickContactDay(key) {
+            if (!canEditBoard()) {
+                renderContact();
+                openTeacherAuthModal(() => pickContactDay(key), { allowHelper: true });
+                return;
+            }
+            const d = window.state.daily || defaultDaily();
+            const auto = contactShown({ ...d.contact, pick: null });
+            const pick = key === auto.key ? null : { day: todayKey(), key };
+            window.state.daily = { ...d, contact: { ...d.contact, pick } };
+            window.syncDaily(true);
+            renderContact();
+            window.soundEffect.playToggle();
         }
 
         function toDateInputValue(d) {
@@ -5239,8 +5261,18 @@
             const old = shown.key
                 ? (shown.key < contactRenderedFor && items.length ? `這是 ${md(shown.key)} 的作業` : '')
                 : (c.date && c.date !== today && (items.length || (c.tasks || []).length) ? `內容是 ${md(c.date)} 寫的` : '');
-            document.getElementById('contact-date').innerHTML = `（${md(today)}）`
-                + (old ? `<span class="ml-1 text-xs sm:text-sm font-bold text-amber-200/80 whitespace-nowrap">${old}</span>` : '');
+            // 標題的日期可以挑：要顯示哪一天的聯絡簿（下午 3 點後自動換成下一個上課日的，標題也寫那天）
+            const ahead = shown.key && shown.key > today;
+            const wd = key => '日一二三四五六'[fromDateKey(key).getDay()];
+            const tomorrow = toDateInputValue(new Date(Date.now() + 86400000));
+            const dayNote = ahead ? `${shown.key === tomorrow ? '明天' : `週${wd(shown.key)}`}的作業` : old;
+            const keys = Object.keys(c.history || {}).sort();
+            const label = key => `${md(key)} 週${wd(key)}${key === today ? '・今天' : key === tomorrow ? '・明天' : ''}`;
+            const picker = shown.key && keys.length > 1
+                ? `<select id="contact-day-pick" onchange="pickContactDay(this.value)" title="選要顯示哪一天的聯絡簿" class="bg-white/10 hover:bg-white/20 border border-white/30 rounded-lg px-1.5 py-0.5 font-black text-amber-100 cursor-pointer">${keys.map(k => `<option value="${k}" class="text-slate-800" ${k === shown.key ? 'selected' : ''}>${label(k)}</option>`).join('')}</select>`
+                : `（${md(shown.key && ahead ? shown.key : today)}${ahead ? ` 週${wd(shown.key)}` : ''}）`;
+            document.getElementById('contact-date').innerHTML = picker
+                + (dayNote && !picker.startsWith('<select') ? `<span class="ml-1 text-xs sm:text-sm font-bold text-amber-200/80 whitespace-nowrap">${dayNote}</span>` : '');
             ['v', 'h'].forEach(k => {
                 document.getElementById(`contact-layout-${k}`).className = `px-3 py-1 rounded-lg text-sm font-black ${c.layout === k ? 'bg-amber-300 text-amber-900' : 'text-white/80 hover:text-white'}`;
             });
@@ -5401,7 +5433,7 @@
 
         function fitContactVertical() {
             const c = (window.state.daily || defaultDaily()).contact;
-            fitVerticalCols(document.querySelector('#contact-body .contact-paper .contact-cols'), c.items);
+            fitVerticalCols(document.querySelector('#contact-body .contact-paper .contact-cols'), contactShown(c).items);
             fitVerticalCols(document.querySelector('#morning-task .task-cols'), c.tasks || []);
         }
 

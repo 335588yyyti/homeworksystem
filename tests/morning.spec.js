@@ -294,3 +294,47 @@ test('聯絡簿可以選哪天的作業、哪天收，也能先打好之後幾�
     await expect(room.locator('#contact-due-date')).toHaveValue(due);
     expect(room.errors).toEqual([]);
 });
+
+test('下午 3 點後存的是下一個上課日的聯絡簿：標題寫那天的日期和「明天的作業」，不會像是今天的', async ({ browser }) => {
+    const room = await openDevice(browser, createCloud());
+    await room.clock.setFixedTime(new Date(2026, 10, 2, 16, 0, 0)); // 週一下午 4 點
+    await room.evaluate(() => setMorningEnabled(true));
+    await unlockTeacher(room, 'morning');
+    await room.click('text=✏️ 編輯');
+    await expect(room.locator('#contact-for-date')).toHaveValue('2026-11-03');
+    await room.fill('#contact-input', '數習P.20');
+    await room.click('#modal-contact >> text=儲存');
+    await expect(room.locator('#contact-body')).toContainText('數習');
+    await expect(room.locator('#contact-date')).toContainText('11/3 週二');
+    await expect(room.locator('#contact-date')).toContainText('明天的作業');
+    expect(room.errors).toEqual([]);
+});
+
+test('聯絡簿標題可以挑要顯示哪一天：下午 3 點後也能先顯示今天的，隔天恢復自動', async ({ browser }) => {
+    test.setTimeout(180000); // GitHub 的測試電腦很忙時，開裝置、等雲端就要很久
+    const cloud = createCloud();
+    const room = await openDevice(browser, cloud);
+    await room.clock.setFixedTime(new Date(2026, 10, 2, 16, 0, 0)); // 週一下午 4 點
+    await room.evaluate(() => setMorningEnabled(true));
+    await unlockTeacher(room, 'morning');
+    await room.evaluate(() => {
+        state.daily = { ...state.daily, contact: { ...state.daily.contact, history: { '2026-11-02': ['國習P.48'], '2026-11-03': ['數習P.20'] } } };
+        syncDaily(true);
+        renderContact();
+    });
+    // 自動：下午 3 點後顯示明天的
+    const pick = room.locator('#contact-day-pick');
+    await expect(pick).toHaveValue('2026-11-03');
+    await expect(room.locator('#contact-body')).toContainText('數習');
+    // 老師挑今天的
+    await pick.selectOption('2026-11-02');
+    await expect(room.locator('#contact-body')).toContainText('國習');
+    // 直式每一欄的字也換成今天的
+    await expect(room.locator('#contact-body .contact-paper .txt-wrap').first()).toContainText('國');
+    await expect.poll(() => cloud.board('main').daily?.contact?.pick?.key, { timeout: 15000 }).toBe('2026-11-02');
+    // 隔天就恢復自動
+    await room.clock.setFixedTime(new Date(2026, 10, 3, 8, 0, 0));
+    await room.evaluate(() => renderContact());
+    await expect(room.locator('#contact-day-pick')).toHaveValue('2026-11-03');
+    expect(room.errors).toEqual([]);
+});
