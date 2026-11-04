@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=b16ec4cf" rel="stylesheet">
+    <link href="assets/tailwind.css?v=b43848d7" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -1749,12 +1749,12 @@
     </main>
 
     <!-- 考試：只有時鐘、現在這節、倒數條和今天的時程，不放其他字 -->
-    <main id="view-exam" class="w-full flex-1 min-h-0 overflow-y-auto lg:overflow-hidden hidden text-slate-800" style="background: repeating-conic-gradient(#dbeafe 0 25%, #eef5ff 0 50%) 0 0 / 120px 120px">
+    <main id="view-exam" class="w-full flex-1 min-h-0 overflow-y-auto lg:overflow-hidden hidden text-slate-800" style="background: repeating-conic-gradient(#c8ecd6 0 25%, #daf3e3 0 50%) 0 0 / 120px 120px">
         <div class="lg:h-full max-w-[1800px] mx-auto px-4 py-3 flex flex-col gap-2">
             <!-- 左邊：今日考程（考完打勾）；右邊：提醒標語、圓形／數字時鐘、應到實到、現在這節剩多久 -->
             <div class="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] gap-4">
-                <section class="flex flex-col min-h-0 rounded-3xl bg-white shadow-lg overflow-hidden order-2 lg:order-1">
-                    <h3 class="text-center font-black text-sky-800 text-3xl py-3 border-b-2 border-sky-100">今日考程</h3>
+                <section class="flex flex-col min-h-0 rounded-3xl bg-[#e4f5ea] border-2 border-emerald-200/70 shadow-lg overflow-hidden order-2 lg:order-1">
+                    <h3 class="text-center font-black text-sky-800 text-3xl py-3 border-b-2 border-emerald-200/70">今日考程</h3>
                     <div id="exam-timeline" class="flex-1 min-h-0 flex flex-col"></div>
                 </section>
                 <section class="flex flex-col gap-3 min-w-0 min-h-0 order-1 lg:order-2">
@@ -1766,9 +1766,9 @@
                         </div>
                     </div>
                     <div class="flex-1 min-h-0 flex gap-3">
-                        <div class="flex-1 min-w-0 bg-white rounded-3xl shadow-lg flex flex-col items-center justify-center gap-1 p-3">
+                        <div class="flex-1 min-w-0 bg-[#e4f5ea] border-2 border-emerald-200/70 rounded-3xl shadow-lg flex flex-col items-center justify-center gap-1 p-3">
                             <div id="exam-analog-box" class="w-full flex justify-center min-h-0"><svg id="exam-analog" viewBox="-110 -110 220 220" class="mx-auto" aria-hidden="true">
-                                    <circle r="106" fill="#fff" stroke="#6366f1" stroke-width="6"/>
+                                    <circle r="106" fill="#f1fbf4" stroke="#6366f1" stroke-width="6"/>
                                     <g stroke="#6366f1"><line x1="0.0" y1="-92.0" x2="0.0" y2="-98.0" stroke-width="3.5"/><line x1="9.9" y1="-94.5" x2="10.2" y2="-97.5" stroke-width="1.5"/><line x1="19.8" y1="-92.9" x2="20.4" y2="-95.9" stroke-width="1.5"/><line x1="29.4" y1="-90.4" x2="30.3" y2="-93.2" stroke-width="1.5"/><line x1="38.6" y1="-86.8" x2="39.9" y2="-89.5" stroke-width="1.5"/><line x1="46.0" y1="-79.7" x2="49.0" y2="-84.9" stroke-width="3.5"/><line x1="55.8" y1="-76.9" x2="57.6" y2="-79.3" stroke-width="1.5"/><line x1="63.6" y1="-70.6" x2="65.6" y2="-72.8" stroke-width="1.5"/><line x1="70.6" y1="-63.6" x2="72.8" y2="-65.6" stroke-width="1.5"/><line x1="76.9" y1="-55.8" x2="79.3" y2="-57.6" stroke-width="1.5"/><line x1="79.7" y1="-46.0" x2="84.9" y2="-49.0" stroke-width="3.5"/><line x1="86.8" y1="-38.6" x2="89.5" y2="-39.9" stroke-width="1.5"/><line x1="90.4" y1="-29.4" x2="93.2" y2="-30.3" stroke-width="1.5"/><line x1="92.9" y1="-19.8" x2="95.9" y2="-20.4" stroke-width="1.5"/><line x1="94.5" y1="-9.9" x2="97.5" y2="-10.2" stroke-width="1.5"/><line x1="92.0" y1="-0.0" x2="98.0" y2="-0.0" stroke-width="3.5"/><line x1="94.5" y1="9.9" x2="97.5" y2="10.2" stroke-width="1.5"/><line x1="92.9" y1="19.8" x2="95.9" y2="20.4" stroke-width="1.5"/><line x1="90.4" y1="29.4" x2="93.2" y2="30.3" stroke-width="1.5"/><line x1="86.8" y1="38.6" x2="89.5" y2="39.9" stroke-width="1.5"/><line x1="79.7" y1="46.0" x2="84.9" y2="49.0" stroke-width="3.5"/><line x1="76.9" y1="55.8" x2="79.3" y2="57.6" stroke-width="1.5"/><line x1="70.6" y1="63.6" x2="72.8" y2="65.6" stroke-width="1.5"/><line x1="63.6" y1="70.6" x2="65.6" y2="72.8" stroke-width="1.5"/><line x1="55.8" y1="76.9" x2="57.6" y2="79.3" stroke-width="1.5"/><line x1="46.0" y1="79.7" x2="49.0" y2="84.9" stroke-width="3.5"/><line x1="38.6" y1="86.8" x2="39.9" y2="89.5" stroke-width="1.5"/><line x1="29.4" y1="90.4" x2="30.3" y2="93.2" stroke-width="1.5"/><line x1="19.8" y1="92.9" x2="20.4" y2="95.9" stroke-width="1.5"/><line x1="9.9" y1="94.5" x2="10.2" y2="97.5" stroke-width="1.5"/><line x1="0.0" y1="92.0" x2="0.0" y2="98.0" stroke-width="3.5"/><line x1="-9.9" y1="94.5" x2="-10.2" y2="97.5" stroke-width="1.5"/><line x1="-19.8" y1="92.9" x2="-20.4" y2="95.9" stroke-width="1.5"/><line x1="-29.4" y1="90.4" x2="-30.3" y2="93.2" stroke-width="1.5"/><line x1="-38.6" y1="86.8" x2="-39.9" y2="89.5" stroke-width="1.5"/><line x1="-46.0" y1="79.7" x2="-49.0" y2="84.9" stroke-width="3.5"/><line x1="-55.8" y1="76.9" x2="-57.6" y2="79.3" stroke-width="1.5"/><line x1="-63.6" y1="70.6" x2="-65.6" y2="72.8" stroke-width="1.5"/><line x1="-70.6" y1="63.6" x2="-72.8" y2="65.6" stroke-width="1.5"/><line x1="-76.9" y1="55.8" x2="-79.3" y2="57.6" stroke-width="1.5"/><line x1="-79.7" y1="46.0" x2="-84.9" y2="49.0" stroke-width="3.5"/><line x1="-86.8" y1="38.6" x2="-89.5" y2="39.9" stroke-width="1.5"/><line x1="-90.4" y1="29.4" x2="-93.2" y2="30.3" stroke-width="1.5"/><line x1="-92.9" y1="19.8" x2="-95.9" y2="20.4" stroke-width="1.5"/><line x1="-94.5" y1="9.9" x2="-97.5" y2="10.2" stroke-width="1.5"/><line x1="-92.0" y1="0.0" x2="-98.0" y2="0.0" stroke-width="3.5"/><line x1="-94.5" y1="-9.9" x2="-97.5" y2="-10.2" stroke-width="1.5"/><line x1="-92.9" y1="-19.8" x2="-95.9" y2="-20.4" stroke-width="1.5"/><line x1="-90.4" y1="-29.4" x2="-93.2" y2="-30.3" stroke-width="1.5"/><line x1="-86.8" y1="-38.6" x2="-89.5" y2="-39.9" stroke-width="1.5"/><line x1="-79.7" y1="-46.0" x2="-84.9" y2="-49.0" stroke-width="3.5"/><line x1="-76.9" y1="-55.8" x2="-79.3" y2="-57.6" stroke-width="1.5"/><line x1="-70.6" y1="-63.6" x2="-72.8" y2="-65.6" stroke-width="1.5"/><line x1="-63.6" y1="-70.6" x2="-65.6" y2="-72.8" stroke-width="1.5"/><line x1="-55.8" y1="-76.9" x2="-57.6" y2="-79.3" stroke-width="1.5"/><line x1="-46.0" y1="-79.7" x2="-49.0" y2="-84.9" stroke-width="3.5"/><line x1="-38.6" y1="-86.8" x2="-39.9" y2="-89.5" stroke-width="1.5"/><line x1="-29.4" y1="-90.4" x2="-30.3" y2="-93.2" stroke-width="1.5"/><line x1="-19.8" y1="-92.9" x2="-20.4" y2="-95.9" stroke-width="1.5"/><line x1="-9.9" y1="-94.5" x2="-10.2" y2="-97.5" stroke-width="1.5"/></g>
                                     <g fill="#1e293b" font-size="17" font-weight="800" text-anchor="middle" font-family="Nunito, sans-serif"><text x="39.0" y="-61.5">1</text><text x="67.5" y="-33.0">2</text><text x="78.0" y="6.0">3</text><text x="67.5" y="45.0">4</text><text x="39.0" y="73.5">5</text><text x="0.0" y="84.0">6</text><text x="-39.0" y="73.5">7</text><text x="-67.5" y="45.0">8</text><text x="-78.0" y="6.0">9</text><text x="-67.5" y="-33.0">10</text><text x="-39.0" y="-61.5">11</text><text x="-0.0" y="-72.0">12</text></g>
                                     <line id="exam-hand-h" y1="10" y2="-50" stroke="#1e293b" stroke-width="7" stroke-linecap="round"/>
@@ -1785,7 +1785,7 @@
                             <span class="leading-tight">未到 <b id="exam-absent" class="tabular-nums text-rose-200" style="font-family: Nunito, sans-serif"></b></span>
                         </div>
                     </div>
-                    <div class="bg-white rounded-3xl shadow-lg px-5 py-3 flex flex-col gap-2">
+                    <div class="bg-[#e4f5ea] border-2 border-emerald-200/70 rounded-3xl shadow-lg px-5 py-3 flex flex-col gap-2">
                         <div class="flex items-baseline justify-between gap-4">
                             <div id="exam-name" class="font-black leading-none truncate" style="font-size: clamp(2rem, 7vh, 4rem)"></div>
                             <div class="flex items-baseline gap-2 flex-shrink-0">
@@ -5627,10 +5627,11 @@
             const d = new Date();
             const el = document.getElementById('morning-clock');
             if (el) el.textContent = [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2, '0')).join(':');
-            // 換日：打卡自動歸零
-            if (morningRenderedDay && morningRenderedDay !== todayKey()) renderMorning();
-            else if (contactRenderedFor && contactRenderedFor !== contactAssignDate(d)) renderContact();
+            // 換日：打卡自動歸零（先記下今天，renderMorning 裡又會呼叫這裡，才不會一直重畫停不下來）
+            const changedDay = morningRenderedDay && morningRenderedDay !== todayKey();
             morningRenderedDay = todayKey();
+            if (changedDay) renderMorning();
+            else if (contactRenderedFor && contactRenderedFor !== contactAssignDate(d)) renderContact();
         }
         // ---- 考試：時鐘、這節的倒數條、今天的時程（節和節中間自動是下課）----
         const EXAM_MAX = 12;
@@ -5869,7 +5870,7 @@
             const timeline = blocks.map((b, i) => {
                 const past = toMinutes(b.e) * 60 <= sec;
                 const look = i === idx ? 'bg-amber-100 ring-4 ring-inset ring-amber-400' : '';
-                return `<div class="exam-block flex items-center gap-3 px-4 border-b border-slate-100 font-black ${look} ${past ? 'text-slate-400' : ''}" style="flex: ${b.rest ? 0.55 : 1} 1 0; min-height: 0">
+                return `<div class="exam-block flex items-center gap-3 px-4 border-b border-emerald-200/60 font-black ${look} ${past ? 'text-slate-400' : ''}" style="flex: ${b.rest ? 0.55 : 1} 1 0; min-height: 0">
                     <span class="flex-shrink-0 text-center leading-none" style="font-size: ${b.rest ? `calc(${nameSize} * 0.7)` : `calc(${nameSize} * 1.2)`}; width: 1.3em">${b.rest ? '☕' : examIcon(b.n)}</span>
                     <div class="flex-1 min-w-0 leading-tight ${b.rest ? 'text-sky-500' : past ? '' : 'text-sky-900'}" style="font-size: ${b.rest ? `calc(${nameSize} * 0.7)` : b.n.length > 4 ? `calc(${nameSize} * 0.8)` : nameSize}">${escapeHtml(b.n)}</div>
                     <div class="text-center tabular-nums whitespace-nowrap ${b.rest ? 'text-sky-400' : ''}" style="font-family: Nunito, sans-serif; font-size: ${b.rest ? `calc(${nameSize} * 0.7)` : `calc(${nameSize} * 0.9)`}">${b.s}–${b.e}</div>
