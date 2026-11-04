@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=5f2a98b2" rel="stylesheet">
+    <link href="assets/tailwind.css?v=aae80260" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -1755,8 +1755,8 @@
             <!-- 左邊：今天的時程（每節一條進度條）；右邊：數字時鐘、應到實到、現在這節剩多久 -->
             <div class="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-5">
                 <section class="flex flex-col min-h-0 rounded-2xl border-2 border-white/15 overflow-hidden order-2 lg:order-1">
-                    <div class="grid grid-cols-[minmax(0,1.6fr)_auto_minmax(0,0.8fr)] gap-4 px-4 py-2 bg-white/10 font-black text-white/70 text-xl">
-                        <span>科目</span><span class="w-[8.5em] text-center">時間</span><span class="text-center">剩餘</span>
+                    <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-4 px-5 py-2 bg-white/10 font-black text-white/70 text-xl">
+                        <span>科目</span><span class="text-center">時間</span>
                     </div>
                     <div id="exam-timeline" class="flex-1 min-h-0 flex flex-col"></div>
                 </section>
@@ -5810,20 +5810,15 @@
                 range[1].textContent = next ? next.s : '';
             }
             document.getElementById('exam-bar-box').classList.toggle('invisible', blocks.length === 0);
-            // 左邊的時程：一節一行，每行一條進度條（考完是空的、還沒考是滿的、現在這節照剩多少）；節數多就把字縮小
+            // 左邊的時程：一節一行，現在這節用黃框標出、考完的變淡；節數多就把字縮小
             const many = blocks.length > 11 ? 2 : blocks.length > 7 ? 1 : 0;
             const nameSize = ['clamp(1.6rem, 5vh, 2.8rem)', 'clamp(1.3rem, 3.6vh, 2.1rem)', 'clamp(1rem, 2.5vh, 1.5rem)'][many];
             const timeline = blocks.map((b, i) => {
-                const total = (toMinutes(b.e) - toMinutes(b.s)) * 60;
-                const end = toMinutes(b.e) * 60;
-                const past = end <= sec;
-                const leftSec = i === idx ? end - sec : past ? 0 : total;
-                const color = i === idx ? examBarColor(leftSec, b.rest) : b.rest ? 'bg-sky-400/40' : 'bg-white/30';
+                const past = toMinutes(b.e) * 60 <= sec;
                 const look = i === idx ? 'bg-amber-400/15 ring-4 ring-inset ring-amber-400' : '';
-                return `<div class="exam-block grid grid-cols-[minmax(0,1.6fr)_auto_minmax(0,0.8fr)] items-center gap-4 px-4 border-b border-white/10 font-black ${look} ${past ? 'opacity-35' : ''}" style="flex: ${b.rest ? 0.55 : 1} 1 0; min-height: 0">
+                return `<div class="exam-block grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 px-5 border-b border-white/10 font-black ${look} ${past ? 'opacity-35' : ''}" style="flex: ${b.rest ? 0.55 : 1} 1 0; min-height: 0">
                     <div class="leading-tight ${b.rest ? 'text-sky-200' : ''}" style="font-size: ${b.rest ? `calc(${nameSize} * 0.7)` : b.n.length > 4 ? `calc(${nameSize} * 0.8)` : nameSize}">${escapeHtml(b.n)}</div>
-                    <div class="text-center tabular-nums whitespace-nowrap ${b.rest ? 'text-sky-200/80' : ''}" style="font-family: Nunito, sans-serif; font-size: ${b.rest ? `calc(${nameSize} * 0.6)` : `calc(${nameSize} * 0.75)`}">${b.s}–${b.e}</div>
-                    <div class="${b.rest ? 'h-2.5' : 'h-5'} bg-white/10 rounded-full overflow-hidden"><div class="h-full rounded-full ${color}" style="width: ${(leftSec / total) * 100}%"></div></div>
+                    <div class="text-center tabular-nums whitespace-nowrap ${b.rest ? 'text-sky-200/80' : ''}" style="font-family: Nunito, sans-serif; font-size: ${b.rest ? `calc(${nameSize} * 0.7)` : nameSize}">${b.s}–${b.e}</div>
                 </div>`;
             }).join('');
             const tl = document.getElementById('exam-timeline');
@@ -6532,7 +6527,7 @@
                 page('📝', '考試', [
                     '在「設定後台」打開「<b>📝 開啟考試</b>」，上方多一個「考試」分頁；不用時關掉就看不到。',
                     '按「<b>✏️ 時程</b>」一節一行填開始、結束時間（24 小時制，例如 13:20）和科目；期中考、期末考可以按「<b>＋ 指定日期</b>」先排好那幾天的時程，到了那天不用開也會自動出現考試分頁（設定後台也有「📅 指定考試日期和時程」）；按「＋ 再加一節」會自動接在後面（下課 10 分鐘、考 40 分鐘，可以改）。節和節中間自動顯示「<b>下課</b>」。',
-                    '畫面<b>左邊是今天的時程</b>（每節一條進度條，現在這節用黃框標出），<b>右邊是數字時鐘</b>和現在這節還剩多久的<b>倒數條</b>（剩 15 分鐘變黃、10 分鐘變粉紅、5 分鐘變紅），沒有其他字。按「⛶ 全螢幕」可以投影到整個畫面。',
+                    '畫面<b>左邊是今天的時程</b>（現在這節用黃框標出），<b>右邊是數字時鐘</b>和現在這節還剩多久的<b>倒數條</b>（剩 15 分鐘變黃、10 分鐘變粉紅、5 分鐘變紅），沒有其他字。按「⛶ 全螢幕」可以投影到整個畫面。',
                     '時鐘下面有<b>應到、實到、未到座號</b>：開了早自習就照到校打卡（沒打卡、請假都算未到）；點一下這一行可以自己點未到的座號（只算當天）。',
                     '時鐘會自動對準<b>網路時間</b>，不怕電腦時間不準；學校鐘聲有快慢時，在「✏️ 時程」的「<b>🔔 對齊鐘聲</b>」按 +／− 調幾秒，跟著鐘聲走。'
                 ]),
