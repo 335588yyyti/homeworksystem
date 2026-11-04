@@ -3,6 +3,7 @@ const { test, expect } = require('@playwright/test');
 const { createCloud, openDevice, unlockTeacher } = require('./helpers');
 
 test('電腦版設定頁分三欄（設定｜作業項目｜名冊），三欄底部對齊；平板兩欄', async ({ browser }) => {
+    test.setTimeout(240000); // 依序開三台裝置，GitHub 的測試電腦很忙時每台都要等很久
     for (const width of [1024, 1366, 1920]) {
         const page = await openDevice(browser, createCloud(), { viewport: { width, height: 1000 } });
         await unlockTeacher(page, 'settings');
