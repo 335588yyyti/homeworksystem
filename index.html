@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=81c2916c" rel="stylesheet">
+    <link href="assets/tailwind.css?v=b16ec4cf" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -1151,6 +1151,9 @@
                             .map(x => ({ s: x.s, e: x.e, n: String(x.n || '').slice(0, 16) })).slice(0, 12)])) : {},
                     // 跟學校鐘聲對齊：時鐘要快（＋）或慢（－）幾秒
                     adjust: Number.isFinite(Number(dd.exam?.adjust)) ? Math.max(-900, Math.min(900, Math.round(Number(dd.exam.adjust)))) : 0,
+                    // 時鐘樣式（兩個都要／圓形／數字）和上方的提醒標語（沒設過用預設，留白就不顯示）
+                    clock: ['both', 'analog', 'digital'].includes(dd.exam?.clock) ? dd.exam.clock : 'both',
+                    slogan: typeof dd.exam?.slogan === 'string' ? dd.exam.slogan.slice(0, 24) : null,
                     // 老師自己點的未到座號（只算當天；沒點過就照早自習打卡）
                     absent: dd.exam?.absent && typeof dd.exam.absent.date === 'string' && Array.isArray(dd.exam.absent.ids)
                         ? { date: dd.exam.absent.date, ids: dd.exam.absent.ids.map(Number).filter(Number.isFinite).slice(0, 40) } : null
@@ -1746,38 +1749,54 @@
     </main>
 
     <!-- 考試：只有時鐘、現在這節、倒數條和今天的時程，不放其他字 -->
-    <main id="view-exam" class="w-full flex-1 min-h-0 overflow-y-auto lg:overflow-hidden hidden bg-gradient-to-br from-sky-50 via-white to-amber-50 text-slate-800">
+    <main id="view-exam" class="w-full flex-1 min-h-0 overflow-y-auto lg:overflow-hidden hidden text-slate-800" style="background: repeating-conic-gradient(#dbeafe 0 25%, #eef5ff 0 50%) 0 0 / 120px 120px">
         <div class="lg:h-full max-w-[1800px] mx-auto px-4 py-3 flex flex-col gap-2">
-            <div class="flex items-center justify-end gap-2">
-                <button onclick="openExamEditor()" class="teacher-ui px-3 py-1.5 rounded-xl text-sm font-black bg-white hover:bg-sky-50 border border-sky-200 text-sky-700 shadow-sm">✏️ 時程</button>
-                <button onclick="toggleExamFullscreen()" class="px-3 py-1.5 rounded-xl text-sm font-black bg-white hover:bg-sky-50 border border-sky-200 text-sky-700 shadow-sm">⛶ 全螢幕</button>
-            </div>
-            <!-- 左邊：今天的時程（每節一條進度條）；右邊：數字時鐘、應到實到、現在這節剩多久 -->
-            <div class="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-5">
-                <section class="flex flex-col min-h-0 rounded-2xl border-2 border-sky-100 bg-white/80 shadow-md overflow-hidden order-2 lg:order-1">
-                    <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-4 px-5 py-2 bg-sky-100 font-black text-sky-800 text-xl">
-                        <span>科目</span><span class="text-center">時間</span>
-                    </div>
+            <!-- 左邊：今日考程（考完打勾）；右邊：提醒標語、圓形／數字時鐘、應到實到、現在這節剩多久 -->
+            <div class="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] gap-4">
+                <section class="flex flex-col min-h-0 rounded-3xl bg-white shadow-lg overflow-hidden order-2 lg:order-1">
+                    <h3 class="text-center font-black text-sky-800 text-3xl py-3 border-b-2 border-sky-100">今日考程</h3>
                     <div id="exam-timeline" class="flex-1 min-h-0 flex flex-col"></div>
                 </section>
-                <section class="flex flex-col justify-center gap-4 min-w-0 order-1 lg:order-2">
-                    <div id="exam-clock" class="text-center text-indigo-900 font-black tabular-nums leading-none tracking-wider" style="font-family: Nunito, sans-serif; font-size: min(9vw, 20vh)">--:--:--</div>
-                    <!-- 應到、實到、未到座號；老師點一下可以改未到 -->
-                    <div id="exam-attend" onclick="openExamAbsent()" class="flex flex-wrap items-baseline justify-center gap-x-6 gap-y-1 font-black text-2xl sm:text-3xl cursor-pointer select-none">
-                        <span>應到 <b id="exam-should" class="tabular-nums" style="font-family: Nunito, sans-serif"></b> 人</span>
-                        <span>實到 <b id="exam-present" class="tabular-nums text-emerald-600" style="font-family: Nunito, sans-serif"></b> 人</span>
-                        <span>未到 <b id="exam-absent" class="tabular-nums text-rose-500" style="font-family: Nunito, sans-serif"></b></span>
-                    </div>
-                    <div class="flex flex-col gap-3 mt-2">
-                        <div id="exam-name" class="font-black leading-none truncate text-center" style="font-size: clamp(2.5rem, 9vh, 5.5rem)"></div>
-                        <div class="flex items-baseline justify-center gap-3">
-                            <span id="exam-left-label" class="font-black text-slate-400 text-2xl sm:text-3xl whitespace-nowrap"></span>
-                            <div id="exam-left" class="font-black leading-none tabular-nums" style="font-family: Nunito, sans-serif; font-size: clamp(2.5rem, 9vh, 5.5rem)"></div>
+                <section class="flex flex-col gap-3 min-w-0 min-h-0 order-1 lg:order-2">
+                    <div class="flex items-start gap-2">
+                        <div id="exam-slogan" class="flex-1 min-w-0 bg-pink-200/90 rounded-2xl px-4 py-1.5 text-center font-black text-slate-800 truncate shadow-sm" style="font-size: clamp(1.6rem, 6.5vh, 3.2rem)"></div>
+                        <div class="flex flex-col gap-1.5 flex-shrink-0 ml-auto">
+                            <button onclick="openExamEditor()" class="teacher-ui px-3 py-1.5 rounded-xl text-sm font-black bg-white hover:bg-sky-50 border border-sky-200 text-sky-700 shadow-sm whitespace-nowrap">✏️ 時程</button>
+                            <button onclick="toggleExamFullscreen()" class="px-3 py-1.5 rounded-xl text-sm font-black bg-white hover:bg-sky-50 border border-sky-200 text-sky-700 shadow-sm whitespace-nowrap">⛶ 全螢幕</button>
                         </div>
-                        <div id="exam-bar-box" class="h-10 sm:h-12 bg-slate-200 rounded-full overflow-hidden">
+                    </div>
+                    <div class="flex-1 min-h-0 flex gap-3">
+                        <div class="flex-1 min-w-0 bg-white rounded-3xl shadow-lg flex flex-col items-center justify-center gap-1 p-3">
+                            <div id="exam-analog-box" class="w-full flex justify-center min-h-0"><svg id="exam-analog" viewBox="-110 -110 220 220" class="mx-auto" aria-hidden="true">
+                                    <circle r="106" fill="#fff" stroke="#6366f1" stroke-width="6"/>
+                                    <g stroke="#6366f1"><line x1="0.0" y1="-92.0" x2="0.0" y2="-98.0" stroke-width="3.5"/><line x1="9.9" y1="-94.5" x2="10.2" y2="-97.5" stroke-width="1.5"/><line x1="19.8" y1="-92.9" x2="20.4" y2="-95.9" stroke-width="1.5"/><line x1="29.4" y1="-90.4" x2="30.3" y2="-93.2" stroke-width="1.5"/><line x1="38.6" y1="-86.8" x2="39.9" y2="-89.5" stroke-width="1.5"/><line x1="46.0" y1="-79.7" x2="49.0" y2="-84.9" stroke-width="3.5"/><line x1="55.8" y1="-76.9" x2="57.6" y2="-79.3" stroke-width="1.5"/><line x1="63.6" y1="-70.6" x2="65.6" y2="-72.8" stroke-width="1.5"/><line x1="70.6" y1="-63.6" x2="72.8" y2="-65.6" stroke-width="1.5"/><line x1="76.9" y1="-55.8" x2="79.3" y2="-57.6" stroke-width="1.5"/><line x1="79.7" y1="-46.0" x2="84.9" y2="-49.0" stroke-width="3.5"/><line x1="86.8" y1="-38.6" x2="89.5" y2="-39.9" stroke-width="1.5"/><line x1="90.4" y1="-29.4" x2="93.2" y2="-30.3" stroke-width="1.5"/><line x1="92.9" y1="-19.8" x2="95.9" y2="-20.4" stroke-width="1.5"/><line x1="94.5" y1="-9.9" x2="97.5" y2="-10.2" stroke-width="1.5"/><line x1="92.0" y1="-0.0" x2="98.0" y2="-0.0" stroke-width="3.5"/><line x1="94.5" y1="9.9" x2="97.5" y2="10.2" stroke-width="1.5"/><line x1="92.9" y1="19.8" x2="95.9" y2="20.4" stroke-width="1.5"/><line x1="90.4" y1="29.4" x2="93.2" y2="30.3" stroke-width="1.5"/><line x1="86.8" y1="38.6" x2="89.5" y2="39.9" stroke-width="1.5"/><line x1="79.7" y1="46.0" x2="84.9" y2="49.0" stroke-width="3.5"/><line x1="76.9" y1="55.8" x2="79.3" y2="57.6" stroke-width="1.5"/><line x1="70.6" y1="63.6" x2="72.8" y2="65.6" stroke-width="1.5"/><line x1="63.6" y1="70.6" x2="65.6" y2="72.8" stroke-width="1.5"/><line x1="55.8" y1="76.9" x2="57.6" y2="79.3" stroke-width="1.5"/><line x1="46.0" y1="79.7" x2="49.0" y2="84.9" stroke-width="3.5"/><line x1="38.6" y1="86.8" x2="39.9" y2="89.5" stroke-width="1.5"/><line x1="29.4" y1="90.4" x2="30.3" y2="93.2" stroke-width="1.5"/><line x1="19.8" y1="92.9" x2="20.4" y2="95.9" stroke-width="1.5"/><line x1="9.9" y1="94.5" x2="10.2" y2="97.5" stroke-width="1.5"/><line x1="0.0" y1="92.0" x2="0.0" y2="98.0" stroke-width="3.5"/><line x1="-9.9" y1="94.5" x2="-10.2" y2="97.5" stroke-width="1.5"/><line x1="-19.8" y1="92.9" x2="-20.4" y2="95.9" stroke-width="1.5"/><line x1="-29.4" y1="90.4" x2="-30.3" y2="93.2" stroke-width="1.5"/><line x1="-38.6" y1="86.8" x2="-39.9" y2="89.5" stroke-width="1.5"/><line x1="-46.0" y1="79.7" x2="-49.0" y2="84.9" stroke-width="3.5"/><line x1="-55.8" y1="76.9" x2="-57.6" y2="79.3" stroke-width="1.5"/><line x1="-63.6" y1="70.6" x2="-65.6" y2="72.8" stroke-width="1.5"/><line x1="-70.6" y1="63.6" x2="-72.8" y2="65.6" stroke-width="1.5"/><line x1="-76.9" y1="55.8" x2="-79.3" y2="57.6" stroke-width="1.5"/><line x1="-79.7" y1="46.0" x2="-84.9" y2="49.0" stroke-width="3.5"/><line x1="-86.8" y1="38.6" x2="-89.5" y2="39.9" stroke-width="1.5"/><line x1="-90.4" y1="29.4" x2="-93.2" y2="30.3" stroke-width="1.5"/><line x1="-92.9" y1="19.8" x2="-95.9" y2="20.4" stroke-width="1.5"/><line x1="-94.5" y1="9.9" x2="-97.5" y2="10.2" stroke-width="1.5"/><line x1="-92.0" y1="0.0" x2="-98.0" y2="0.0" stroke-width="3.5"/><line x1="-94.5" y1="-9.9" x2="-97.5" y2="-10.2" stroke-width="1.5"/><line x1="-92.9" y1="-19.8" x2="-95.9" y2="-20.4" stroke-width="1.5"/><line x1="-90.4" y1="-29.4" x2="-93.2" y2="-30.3" stroke-width="1.5"/><line x1="-86.8" y1="-38.6" x2="-89.5" y2="-39.9" stroke-width="1.5"/><line x1="-79.7" y1="-46.0" x2="-84.9" y2="-49.0" stroke-width="3.5"/><line x1="-76.9" y1="-55.8" x2="-79.3" y2="-57.6" stroke-width="1.5"/><line x1="-70.6" y1="-63.6" x2="-72.8" y2="-65.6" stroke-width="1.5"/><line x1="-63.6" y1="-70.6" x2="-65.6" y2="-72.8" stroke-width="1.5"/><line x1="-55.8" y1="-76.9" x2="-57.6" y2="-79.3" stroke-width="1.5"/><line x1="-46.0" y1="-79.7" x2="-49.0" y2="-84.9" stroke-width="3.5"/><line x1="-38.6" y1="-86.8" x2="-39.9" y2="-89.5" stroke-width="1.5"/><line x1="-29.4" y1="-90.4" x2="-30.3" y2="-93.2" stroke-width="1.5"/><line x1="-19.8" y1="-92.9" x2="-20.4" y2="-95.9" stroke-width="1.5"/><line x1="-9.9" y1="-94.5" x2="-10.2" y2="-97.5" stroke-width="1.5"/></g>
+                                    <g fill="#1e293b" font-size="17" font-weight="800" text-anchor="middle" font-family="Nunito, sans-serif"><text x="39.0" y="-61.5">1</text><text x="67.5" y="-33.0">2</text><text x="78.0" y="6.0">3</text><text x="67.5" y="45.0">4</text><text x="39.0" y="73.5">5</text><text x="0.0" y="84.0">6</text><text x="-39.0" y="73.5">7</text><text x="-67.5" y="45.0">8</text><text x="-78.0" y="6.0">9</text><text x="-67.5" y="-33.0">10</text><text x="-39.0" y="-61.5">11</text><text x="-0.0" y="-72.0">12</text></g>
+                                    <line id="exam-hand-h" y1="10" y2="-50" stroke="#1e293b" stroke-width="7" stroke-linecap="round"/>
+                                    <line id="exam-hand-m" y1="12" y2="-78" stroke="#1e293b" stroke-width="4.5" stroke-linecap="round"/>
+                                    <line id="exam-hand-s" y1="16" y2="-86" stroke="#e11d48" stroke-width="2" stroke-linecap="round"/>
+                                    <circle r="5" fill="#1e293b"/>
+                                </svg></div>
+                            <div id="exam-clock" class="text-center text-indigo-900 font-black tabular-nums leading-none tracking-wider" style="font-family: Nunito, sans-serif">--:--:--</div>
+                        </div>
+                        <!-- 應到、實到、未到座號；老師點一下可以改未到 -->
+                        <div id="exam-attend" onclick="openExamAbsent()" class="w-[30%] max-w-[15rem] flex-shrink-0 self-center bg-emerald-800 text-white rounded-2xl shadow-lg px-4 py-3 flex flex-col gap-1 font-black text-2xl sm:text-3xl cursor-pointer select-none">
+                            <span>應到 <b id="exam-should" class="tabular-nums" style="font-family: Nunito, sans-serif"></b> 人</span>
+                            <span>實到 <b id="exam-present" class="tabular-nums text-emerald-200" style="font-family: Nunito, sans-serif"></b> 人</span>
+                            <span class="leading-tight">未到 <b id="exam-absent" class="tabular-nums text-rose-200" style="font-family: Nunito, sans-serif"></b></span>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-3xl shadow-lg px-5 py-3 flex flex-col gap-2">
+                        <div class="flex items-baseline justify-between gap-4">
+                            <div id="exam-name" class="font-black leading-none truncate" style="font-size: clamp(2rem, 7vh, 4rem)"></div>
+                            <div class="flex items-baseline gap-2 flex-shrink-0">
+                                <span id="exam-left-label" class="font-black text-slate-400 text-xl sm:text-2xl whitespace-nowrap"></span>
+                                <div id="exam-left" class="font-black leading-none tabular-nums" style="font-family: Nunito, sans-serif; font-size: clamp(2rem, 7vh, 4rem)"></div>
+                            </div>
+                        </div>
+                        <div id="exam-bar-box" class="h-8 sm:h-9 bg-slate-200 rounded-full overflow-hidden">
                             <div id="exam-bar" class="h-full rounded-full transition-[width] duration-1000 ease-linear" style="width: 0%"></div>
                         </div>
-                        <div id="exam-range" class="flex justify-between font-black text-slate-500 tabular-nums leading-none" style="font-family: Nunito, sans-serif; font-size: clamp(1.8rem, 6vh, 3.2rem)"><span></span><span></span></div>
+                        <div id="exam-range" class="flex justify-between font-black text-slate-500 tabular-nums leading-none" style="font-family: Nunito, sans-serif; font-size: clamp(1.4rem, 4vh, 2.2rem)"><span></span><span></span></div>
                     </div>
                 </section>
             </div>
@@ -2470,6 +2489,18 @@
                     </div>
                 </div>
                 <p class="text-xs font-bold text-slate-400 mt-1"><span id="exam-adjust-clock" class="tabular-nums text-slate-600"></span>・<span id="exam-net-status"></span>；學校鐘聲比較快就按 +，比較慢就按 −</p>
+            </div>
+            <!-- 時鐘樣式和提醒標語 -->
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-2 mb-3">
+                <span class="font-black text-slate-700">🕐 時鐘</span>
+                <div id="exam-clock-mode" class="flex bg-slate-100 rounded-lg p-0.5 text-sm font-black">
+                    <button type="button" data-mode="both" onclick="setExamClockDraft('both')" class="px-2.5 py-1 rounded-md">兩個都要</button>
+                    <button type="button" data-mode="analog" onclick="setExamClockDraft('analog')" class="px-2.5 py-1 rounded-md">圓形</button>
+                    <button type="button" data-mode="digital" onclick="setExamClockDraft('digital')" class="px-2.5 py-1 rounded-md">數字</button>
+                </div>
+                <label class="flex-1 min-w-[14rem] flex items-center gap-2 font-black text-slate-700">📣 標語
+                    <input type="text" id="exam-slogan-input" maxlength="24" placeholder="留白就不顯示" class="flex-1 min-w-0 bg-slate-50 border-2 border-slate-200 rounded-lg px-2 py-1 font-black text-slate-800 focus:outline-none focus:border-amber-400">
+                </label>
             </div>
             <!-- 平常用的時程，或指定日期（期中考、期末考）：那幾天自動出現考試分頁 -->
             <div id="exam-days" class="flex flex-wrap items-center gap-1.5 mb-2"></div>
@@ -5603,9 +5634,11 @@
         }
         // ---- 考試：時鐘、這節的倒數條、今天的時程（節和節中間自動是下課）----
         const EXAM_MAX = 12;
+        const EXAM_SLOGAN = '仔細作答，再次檢查！';
         function examData() {
             const e = (window.state.daily || {}).exam;
             return { enabled: e?.enabled === true, items: Array.isArray(e?.items) ? e.items : [], absent: e?.absent || null, adjust: Number(e?.adjust) || 0,
+                clock: ['analog', 'digital'].includes(e?.clock) ? e.clock : 'both', slogan: typeof e?.slogan === 'string' ? e.slogan : EXAM_SLOGAN,
                 days: e?.days && typeof e.days === 'object' ? e.days : {} };
         }
         // 今天考哪幾節：今天有指定日期就用那天的，不然開著考試就用平常的
@@ -5767,10 +5800,30 @@
         // 倒數條顏色：剩 15 分鐘變黃、10 分鐘粉紅、5 分鐘紅；下課是藍色
         const examBarColor = (left, rest) => rest ? 'bg-sky-400' : left <= 300 ? 'bg-red-500' : left <= 600 ? 'bg-pink-400' : left <= 900 ? 'bg-amber-400' : 'bg-emerald-400';
 
+        // 科目小圖示：照科目名稱自動配
+        const EXAM_ICONS = [[/國|閱讀|寫作|作文/, '📚'], [/數/, '🔢'], [/自然|科學|理化|生物/, '🌏'], [/社會|歷史|地理|公民/, '🗺️'], [/英/, '🔤'],
+            [/音樂/, '🎵'], [/美|藝/, '🎨'], [/體|健/, '🏃'], [/台|臺|本土|閩|客/, '🗣️'], [/電腦|資訊/, '💻']];
+        const examIcon = name => (EXAM_ICONS.find(([re]) => re.test(name)) || [null, '📝'])[1];
+
         function renderExam() {
             const now = examNow();
             const pad = n => String(n).padStart(2, '0');
             document.getElementById('exam-clock').textContent = [now.getHours(), now.getMinutes(), now.getSeconds()].map(pad).join(':');
+            // 圓形時鐘的指針
+            const rot = (id, deg) => document.getElementById(id)?.setAttribute('transform', `rotate(${deg})`);
+            rot('exam-hand-h', (now.getHours() % 12 + now.getMinutes() / 60) * 30);
+            rot('exam-hand-m', (now.getMinutes() + now.getSeconds() / 60) * 6);
+            rot('exam-hand-s', now.getSeconds() * 6);
+            // 兩個都要、只要圓形、只要數字
+            const mode = examClockDraft || examData().clock;
+            document.getElementById('exam-analog-box').classList.toggle('hidden', mode === 'digital');
+            document.getElementById('exam-clock').classList.toggle('hidden', mode === 'analog');
+            document.getElementById('exam-analog').style.height = mode === 'analog' ? 'min(46vh, 380px)' : 'min(30vh, 250px)';
+            document.getElementById('exam-clock').style.fontSize = mode === 'digital' ? 'min(7vw, 18vh)' : 'clamp(2.2rem, 7vh, 4rem)';
+            const slogan = examData().slogan;
+            const sloganEl = document.getElementById('exam-slogan');
+            sloganEl.textContent = slogan;
+            sloganEl.classList.toggle('invisible', !slogan);
             const absent = examAbsentIds();
             const students = window.state.students;
             document.getElementById('exam-should').textContent = students.length;
@@ -5790,7 +5843,7 @@
                 const left = toMinutes(cur.e) * 60 - sec;
                 nameEl.textContent = cur.n;
                 // 科目名稱比較長就縮小一點，整個顯示出來
-                nameEl.style.fontSize = cur.n.length > 6 ? 'clamp(2rem, 7vh, 4.5rem)' : 'clamp(2.5rem, 11vh, 7rem)';
+                nameEl.style.fontSize = cur.n.length > 6 ? 'clamp(1.4rem, 4vh, 2.4rem)' : cur.n.length > 3 ? 'clamp(1.6rem, 5vh, 3rem)' : 'clamp(2rem, 7vh, 4rem)';
                 nameEl.className = `font-black leading-none truncate text-center ${cur.rest ? 'text-sky-500' : 'text-slate-800'}`;
                 leftEl.textContent = fmt(left);
                 document.getElementById('exam-left-label').textContent = '剩餘時間';
@@ -5810,15 +5863,17 @@
                 range[1].textContent = next ? next.s : '';
             }
             document.getElementById('exam-bar-box').classList.toggle('invisible', blocks.length === 0);
-            // 左邊的時程：一節一行，現在這節用黃框標出、考完的變淡；節數多就把字縮小
+            // 左邊的今日考程：一節一行，前面是科目小圖示，現在這節用黃框標出、考完的打勾；節數多就把字縮小
             const many = blocks.length > 11 ? 2 : blocks.length > 7 ? 1 : 0;
-            const nameSize = ['clamp(1.6rem, 5vh, 2.8rem)', 'clamp(1.3rem, 3.6vh, 2.1rem)', 'clamp(1rem, 2.5vh, 1.5rem)'][many];
+            const nameSize = ['clamp(1.6rem, 5vh, 2.6rem)', 'clamp(1.3rem, 3.6vh, 2rem)', 'clamp(1rem, 2.5vh, 1.4rem)'][many];
             const timeline = blocks.map((b, i) => {
                 const past = toMinutes(b.e) * 60 <= sec;
                 const look = i === idx ? 'bg-amber-100 ring-4 ring-inset ring-amber-400' : '';
-                return `<div class="exam-block grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 px-5 border-b border-slate-100 font-black ${look} ${past ? 'opacity-35' : ''}" style="flex: ${b.rest ? 0.55 : 1} 1 0; min-height: 0">
-                    <div class="leading-tight ${b.rest ? 'text-sky-500' : ''}" style="font-size: ${b.rest ? `calc(${nameSize} * 0.7)` : b.n.length > 4 ? `calc(${nameSize} * 0.8)` : nameSize}">${escapeHtml(b.n)}</div>
-                    <div class="text-center tabular-nums whitespace-nowrap ${b.rest ? 'text-sky-400' : ''}" style="font-family: Nunito, sans-serif; font-size: ${b.rest ? `calc(${nameSize} * 0.7)` : nameSize}">${b.s}–${b.e}</div>
+                return `<div class="exam-block flex items-center gap-3 px-4 border-b border-slate-100 font-black ${look} ${past ? 'text-slate-400' : ''}" style="flex: ${b.rest ? 0.55 : 1} 1 0; min-height: 0">
+                    <span class="flex-shrink-0 text-center leading-none" style="font-size: ${b.rest ? `calc(${nameSize} * 0.7)` : `calc(${nameSize} * 1.2)`}; width: 1.3em">${b.rest ? '☕' : examIcon(b.n)}</span>
+                    <div class="flex-1 min-w-0 leading-tight ${b.rest ? 'text-sky-500' : past ? '' : 'text-sky-900'}" style="font-size: ${b.rest ? `calc(${nameSize} * 0.7)` : b.n.length > 4 ? `calc(${nameSize} * 0.8)` : nameSize}">${escapeHtml(b.n)}</div>
+                    <div class="text-center tabular-nums whitespace-nowrap ${b.rest ? 'text-sky-400' : ''}" style="font-family: Nunito, sans-serif; font-size: ${b.rest ? `calc(${nameSize} * 0.7)` : `calc(${nameSize} * 0.9)`}">${b.s}–${b.e}</div>
+                    <span class="flex-shrink-0 text-emerald-500 text-center" style="font-size: ${b.rest ? `calc(${nameSize} * 0.7)` : nameSize}; width: 1.1em">${past && !b.rest ? '✔' : ''}</span>
                 </div>`;
             }).join('');
             const tl = document.getElementById('exam-timeline');
@@ -5916,11 +5971,28 @@
             Object.entries(e.days).filter(([k]) => k >= todayKey()).forEach(([k, v]) => { examEditorDays[k] = sorted(v); });
             showExamDay(examEditorDays[todayKey()] ? todayKey() : '');
             examAdjustDraft = e.adjust;
+            examClockDraft = e.clock;
+            renderExamClockMode();
+            document.getElementById('exam-slogan-input').value = e.slogan;
             renderExamAdjust();
             document.getElementById('modal-exam').classList.remove('hidden');
         }
 
+        // 時鐘樣式：編輯時先預覽，按儲存才記住
+        let examClockDraft = null;
+        function setExamClockDraft(mode) {
+            examClockDraft = mode;
+            renderExamClockMode();
+            renderExam();
+        }
+        function renderExamClockMode() {
+            document.querySelectorAll('#exam-clock-mode button').forEach(btn => {
+                btn.className = `px-2.5 py-1 rounded-md ${btn.dataset.mode === (examClockDraft || examData().clock) ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`;
+            });
+        }
+
         function closeExamEditor() {
+            examClockDraft = null;
             examAdjustDraft = null;
             document.getElementById('modal-exam').classList.add('hidden');
             renderExam();
@@ -5974,7 +6046,8 @@
             }
             const days = Object.fromEntries(Object.entries(result).filter(([k, v]) => k && k >= todayKey() && v.length));
             const d = window.state.daily || defaultDaily();
-            window.state.daily = { ...d, exam: { ...examData(), items: result[''], days, adjust: examAdjustDraftOr() } };
+            window.state.daily = { ...d, exam: { ...examData(), items: result[''], days, adjust: examAdjustDraftOr(),
+                clock: examClockDraft || 'both', slogan: document.getElementById('exam-slogan-input').value.trim().slice(0, 24) } };
             window.syncDaily(true);
             closeExamEditor();
             applyExamVisibility();
@@ -6527,7 +6600,7 @@
                 page('📝', '考試', [
                     '在「設定後台」打開「<b>📝 開啟考試</b>」，上方多一個「考試」分頁；不用時關掉就看不到。',
                     '按「<b>✏️ 時程</b>」一節一行填開始、結束時間（24 小時制，例如 13:20）和科目；期中考、期末考可以按「<b>＋ 指定日期</b>」先排好那幾天的時程，到了那天不用開也會自動出現考試分頁（設定後台也有「📅 指定考試日期和時程」）；按「＋ 再加一節」會自動接在後面（下課 10 分鐘、考 40 分鐘，可以改）。節和節中間自動顯示「<b>下課</b>」。',
-                    '畫面<b>左邊是今天的時程</b>（現在這節用黃框標出），<b>右邊是數字時鐘</b>和現在這節還剩多久的<b>倒數條</b>（剩 15 分鐘變黃、10 分鐘變粉紅、5 分鐘變紅），沒有其他字。按「⛶ 全螢幕」可以投影到整個畫面。',
+                    '畫面<b>左邊是今日考程</b>（現在這節用黃框標出，考完的打勾），右邊上面是<b>提醒標語</b>，下面是<b>圓形時鐘和數字時鐘</b>（在「✏️ 時程」可以選兩個都要或只要一個，標語也能改或留白）和現在這節還剩多久的<b>倒數條</b>（剩 15 分鐘變黃、10 分鐘變粉紅、5 分鐘變紅），沒有其他字。按「⛶ 全螢幕」可以投影到整個畫面。',
                     '時鐘下面有<b>應到、實到、未到座號</b>：開了早自習就照到校打卡（沒打卡、請假都算未到）；點一下這一行可以自己點未到的座號（只算當天）。',
                     '時鐘會自動對準<b>網路時間</b>，不怕電腦時間不準；學校鐘聲有快慢時，在「✏️ 時程」的「<b>🔔 對齊鐘聲</b>」按 +／− 調幾秒，跟著鐘聲走。'
                 ]),
