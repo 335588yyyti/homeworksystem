@@ -190,3 +190,31 @@ test('指定考試日期：先排好那天的時程，到了那天不用開考�
     await expect(room.locator('#exam-name')).toHaveText('國語');
     expect(room.errors).toEqual([]);
 });
+
+test('考試時鐘可以選兩個都要／只要圓形／只要數字；上方標語可以改或留白不顯示', async ({ browser }) => {
+    const cloud = createCloud();
+    const room = await openDevice(browser, cloud);
+    await room.evaluate(() => setExamEnabled(true));
+    await unlockTeacher(room, 'exam');
+    await expect(room.locator('#exam-analog')).toBeVisible();
+    await expect(room.locator('#exam-clock')).toBeVisible();
+    await expect(room.locator('#exam-slogan')).toHaveText('仔細作答，再次檢查！');
+    await room.click('text=✏️ 時程');
+    await room.click('#exam-clock-mode >> text=圓形');
+    await expect(room.locator('#exam-clock')).toBeHidden();
+    await room.fill('#exam-slogan-input', '');
+    await room.fill('#exam-rows .exam-row >> nth=0 >> .exam-n', '國語');
+    await room.click('#exam-save');
+    await expect(room.locator('#exam-analog')).toBeVisible();
+    await expect(room.locator('#exam-clock')).toBeHidden();
+    await expect(room.locator('#exam-slogan')).toHaveClass(/invisible/);
+    await expect.poll(() => cloud.board('main').daily?.exam?.clock, { timeout: 15000 }).toBe('analog');
+    expect(cloud.board('main').daily.exam.slogan).toBe('');
+    // 只要數字
+    await room.click('text=✏️ 時程');
+    await room.click('#exam-clock-mode >> text=數字');
+    await room.click('#exam-save');
+    await expect(room.locator('#exam-analog-box')).toBeHidden();
+    await expect(room.locator('#exam-clock')).toBeVisible();
+    expect(room.errors).toEqual([]);
+});
