@@ -5627,9 +5627,10 @@
             const d = new Date();
             const el = document.getElementById('morning-clock');
             if (el) el.textContent = [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2, '0')).join(':');
-            // 換日：打卡自動歸零（先記下今天，renderMorning 裡又會呼叫這裡，才不會一直重畫停不下來）
-            const changedDay = morningRenderedDay && morningRenderedDay !== todayKey();
-            morningRenderedDay = todayKey();
+            // 換日：每天早上 6 點換一次（打卡歸零、日期換新），半夜不換；先記下這天，renderMorning 裡又會呼叫這裡，才不會一直重畫
+            const morningDay = toDateInputValue(new Date(d.getTime() - MORNING_ROLLOVER_HOUR * 3600000));
+            const changedDay = morningRenderedDay && morningRenderedDay !== morningDay;
+            morningRenderedDay = morningDay;
             if (changedDay) renderMorning();
             else if (contactRenderedFor && contactRenderedFor !== contactAssignDate(d)) renderContact();
         }
@@ -6058,6 +6059,7 @@
         }
 
         let morningRenderedDay = '';
+        const MORNING_ROLLOVER_HOUR = 6;
         function toggleMorningClock(on) {
             clearInterval(morningClockTimer);
             morningClockTimer = on ? setInterval(tickMorningClock, 1000) : null;

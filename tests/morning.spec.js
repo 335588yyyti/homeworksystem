@@ -339,13 +339,18 @@ test('聯絡簿標題可以挑要顯示哪一天：下午 3 點後也能先顯�
     expect(room.errors).toEqual([]);
 });
 
-test('早自習頁開著過了半夜：換日只重畫一次，不會卡住', async ({ browser }) => {
+test('早自習頁開著過夜：半夜不換，早上 6 點才換日，而且只重畫一次', async ({ browser }) => {
     const room = await openDevice(browser, createCloud());
     await room.clock.setFixedTime(new Date(2026, 10, 2, 23, 59, 58));
     await room.evaluate(() => setMorningEnabled(true));
     await unlockTeacher(room, 'morning');
     await room.evaluate(() => { window.__renders = 0; const orig = renderMorning; window.renderMorning = () => { window.__renders++; orig(); }; });
+    // 過了半夜：還不換
     await room.clock.setFixedTime(new Date(2026, 10, 3, 0, 0, 5));
+    await room.waitForTimeout(2500);
+    expect(await room.evaluate(() => window.__renders)).toBe(0);
+    // 早上 6 點：換成新的一天
+    await room.clock.setFixedTime(new Date(2026, 10, 3, 6, 0, 5));
     await expect(room.locator('#morning-date')).toContainText('11月3日', { timeout: 15000 });
     expect(await room.evaluate(() => window.__renders)).toBeLessThan(3);
     expect(room.errors).toEqual([]);
