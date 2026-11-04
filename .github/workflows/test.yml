@@ -6,8 +6,14 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  # 全部測試分成 3 份，3 台測試電腦同時跑，等待時間大約變成三分之一
+  shard:
+    name: 測試 ${{ matrix.shard }}/3
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v4
 
@@ -26,15 +32,24 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: 執行測試
-        run: npm test
+        run: npx playwright test --shard=${{ matrix.shard }}/3
 
       - name: 上傳測試報告
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.shard }}
           path: playwright-report
           retention-days: 7
+
+  # 3 份都通過才算通過（名稱維持 test，跟以前一樣）
+  test:
+    runs-on: ubuntu-latest
+    needs: shard
+    if: always()
+    steps:
+      - name: 確認 3 份測試都通過
+        run: test "${{ needs.shard.result }}" = "success"
 
   rules:
     name: 安全規則測試
