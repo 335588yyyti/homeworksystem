@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=5d554d08" rel="stylesheet">
+    <link href="assets/tailwind.css?v=499807fb" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -2505,7 +2505,19 @@
             <!-- 平常用的時程，或指定日期（期中考、期末考）：那幾天自動出現考試分頁 -->
             <div id="exam-days" class="flex flex-wrap items-center gap-1.5 mb-2"></div>
             <div id="exam-rows" class="flex flex-col gap-1.5 overflow-y-auto min-h-0"></div>
-            <button onclick="addExamRow()" class="self-start mt-2 text-sm font-black text-sky-700 hover:text-sky-900">＋ 再加一節</button>
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2">
+                <button onclick="addExamRow()" class="text-sm font-black text-sky-700 hover:text-sky-900">＋ 再加一節</button>
+                <button onclick="toggleExamPaste()" class="text-sm font-black text-emerald-700 hover:text-emerald-900">📋 貼上考程</button>
+            </div>
+            <!-- 貼上考程：一行一節，有日期的行會分成那一天 -->
+            <div id="exam-paste-box" class="hidden mt-2 bg-emerald-50 border-2 border-emerald-200 rounded-xl p-2.5">
+                <p class="text-xs font-bold text-slate-500 mb-1">把考程整段貼進來，一行一節，例如「08:40-09:20 國語」。寫了日期（例如「11/5」）的那一行以下會排到那一天；「下課」不用貼。</p>
+                <textarea id="exam-paste-input" rows="5" placeholder="11/5&#10;08:40-09:20 國語&#10;09:30-10:10 數學" class="w-full bg-white border-2 border-slate-200 rounded-lg px-2 py-1.5 font-black text-slate-800 focus:outline-none focus:border-emerald-400"></textarea>
+                <div class="flex items-center justify-between gap-2 mt-1.5">
+                    <span id="exam-paste-hint" class="text-xs font-bold text-slate-500"></span>
+                    <button onclick="applyExamPaste()" id="exam-paste-apply" class="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-black">填進時程</button>
+                </div>
+            </div>
             <div class="grid grid-cols-2 gap-2.5 mt-3">
                 <button onclick="closeExamEditor()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-base transition-all">取消</button>
                 <button id="exam-save" onclick="saveExamSchedule()" class="bg-amber-400 hover:bg-amber-500 text-slate-900 font-black py-2.5 rounded-xl text-base transition-all">儲存</button>
@@ -5936,6 +5948,63 @@
                 + (keys.length <= 6 ? `<label class="inline-flex items-center gap-1 text-sm font-black text-sky-700">＋ 指定日期<input type="date" id="exam-day-add" min="${todayKey()}" onchange="addExamDay(this.value)" class="bg-white border-2 border-slate-200 rounded-lg px-1 py-0.5 text-sm font-black text-slate-600" aria-label="指定考試日期"></label>` : '');
         }
 
+        // ---- 貼上考程：從文字找出每一節的時間和科目 ----
+        function toggleExamPaste() {
+            document.getElementById('exam-paste-box').classList.toggle('hidden');
+            document.getElementById('exam-paste-hint').textContent = '';
+            setTimeout(() => document.getElementById('exam-paste-input').focus(), 50);
+        }
+
+        // 回傳 { 日期或 '': [{ s, e, n }] }；沒寫日期的排到現在選的那份
+        function parseExamPaste(text) {
+            const today = new Date();
+            const out = {};
+            let key = examEditorKey;
+            const time = '(\\d{1,2}\\s*[:：.．]\\s*\\d{2}|\\d{3,4})';
+            const range = new RegExp(`${time}\\s*(?:[-~～－–—至到]|\\s)\\s*${time}`);
+            const dateKey = (month, day) => {
+                let year = today.getFullYear();
+                if (month < today.getMonth() + 1 - 6) year += 1;
+                return toDateInputValue(new Date(year, month - 1, day));
+            };
+            String(text).replace(/[０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0)).split(/\r?\n/).forEach(raw => {
+                let line = raw.trim();
+                if (!line) return;
+                // 日期：「11/5」「11月5日（三）」，可以自己一行，也可以寫在那節前面
+                const d = line.match(/^\D{0,4}?(\d{1,2})\s*[\/月]\s*(\d{1,2})\s*日?\s*(?:[（(]?\s*(?:星期|週|周)?\s*[一二三四五六日天]\s*[)）]?)?/);
+                if (d) {
+                    key = dateKey(Number(d[1]), Number(d[2]));
+                    line = line.slice(d[0].length).trim();
+                }
+                const m = line.match(range);
+                if (!m) return;
+                const s = normalizeExamTime(m[1].replace(/\s/g, ''));
+                const e = normalizeExamTime(m[2].replace(/\s/g, ''));
+                const name = (line.slice(0, m.index) + ' ' + line.slice(m.index + m[0].length))
+                    .replace(/第\s*[一二三四五六七八九十\d]+\s*節/g, '').replace(/[|｜,，、:：()（）\[\]【】]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 16);
+                if (!s || !e || /^(下課|休息|午休|午餐)$/.test(name)) return;
+                (out[key] = out[key] || []).push({ s, e, n: name });
+            });
+            return out;
+        }
+
+        function applyExamPaste() {
+            const parsed = parseExamPaste(document.getElementById('exam-paste-input').value);
+            const keys = Object.keys(parsed).filter(k => k === '' || k >= todayKey());
+            const hint = document.getElementById('exam-paste-hint');
+            if (keys.length === 0) {
+                hint.textContent = '找不到時間，請寫成「08:40-09:20 國語」這樣';
+                return;
+            }
+            examEditorDays[examEditorKey] = readExamRows();
+            keys.forEach(k => { examEditorDays[k] = parsed[k].slice(0, EXAM_MAX); });
+            showExamDay(keys.includes(examEditorKey) ? examEditorKey : keys[0]);
+            document.getElementById('exam-paste-input').value = '';
+            document.getElementById('exam-paste-box').classList.add('hidden');
+            const total = keys.reduce((n, k) => n + parsed[k].length, 0);
+            showToast(`已填好 ${total} 節${keys.filter(Boolean).length ? `（${keys.filter(Boolean).sort().map(examDayLabel).join('、')}）` : ''}，看一下沒問題再按「儲存」`);
+        }
+
         function showExamDay(key) {
             examEditorKey = key;
             const items = examEditorDays[key] || [];
@@ -6602,7 +6671,7 @@
                 ]),
                 page('📝', '考試', [
                     '在「設定後台」打開「<b>📝 開啟考試</b>」，上方多一個「考試」分頁；不用時關掉就看不到。',
-                    '按「<b>✏️ 時程</b>」一節一行填開始、結束時間（24 小時制，例如 13:20）和科目；期中考、期末考可以按「<b>＋ 指定日期</b>」先排好那幾天的時程，到了那天不用開也會自動出現考試分頁（設定後台也有「📅 指定考試日期和時程」）；按「＋ 再加一節」會自動接在後面（下課 10 分鐘、考 40 分鐘，可以改）。節和節中間自動顯示「<b>下課</b>」。',
+                    '按「<b>✏️ 時程</b>」一節一行填開始、結束時間（24 小時制，例如 13:20）和科目；期中考、期末考可以按「<b>＋ 指定日期</b>」先排好那幾天的時程，到了那天不用開也會自動出現考試分頁（設定後台也有「📅 指定考試日期和時程」）；也可以按「<b>📋 貼上考程</b>」把考程整段貼上，一行一節（例如「08:40-09:20 國語」），寫了日期的會自動分到那一天；按「＋ 再加一節」會自動接在後面（下課 10 分鐘、考 40 分鐘，可以改）。節和節中間自動顯示「<b>下課</b>」。',
                     '畫面<b>左邊是今日考程</b>（現在這節用黃框標出，考完的打勾），右邊上面是<b>提醒標語</b>，下面是<b>圓形時鐘和數字時鐘</b>（在「✏️ 時程」可以選兩個都要或只要一個，標語也能改或留白）和現在這節還剩多久的<b>倒數條</b>（剩 15 分鐘變黃、10 分鐘變粉紅、5 分鐘變紅），沒有其他字。按「⛶ 全螢幕」可以投影到整個畫面。',
                     '時鐘下面有<b>應到、實到、未到座號</b>：開了早自習就照到校打卡（沒打卡、請假都算未到）；點一下這一行可以自己點未到的座號（只算當天）。',
                     '時鐘會自動對準<b>網路時間</b>，不怕電腦時間不準；學校鐘聲有快慢時，在「✏️ 時程」的「<b>🔔 對齊鐘聲</b>」按 +／− 調幾秒，跟著鐘聲走。'

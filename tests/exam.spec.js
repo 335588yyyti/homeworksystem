@@ -218,3 +218,35 @@ test('考試時鐘可以選兩個都要／只要圓形／只要數字；上方�
     await expect(room.locator('#exam-clock')).toBeVisible();
     expect(room.errors).toEqual([]);
 });
+
+test('貼上考程：一行一節自動填好；有日期的分到那一天；下課不用貼', async ({ browser }) => {
+    const room = await openDevice(browser, createCloud());
+    await room.clock.setFixedTime(new Date(2026, 10, 2, 9, 0, 0));
+    await room.evaluate(() => setExamEnabled(true));
+    await unlockTeacher(room, 'exam');
+    await room.click('text=✏️ 時程');
+    await room.click('text=📋 貼上考程');
+    await room.fill('#exam-paste-input', [
+        '11/5（四）',
+        '第一節 08:40～09:20 國語',
+        '09:20-09:30 下課',
+        '0930-1010 閱讀與寫作',
+        '11/6 8:40-9:20 數學',
+        '１０：３０－１１：１０　自然',
+    ].join('\n'));
+    await room.click('#exam-paste-apply');
+    await expect(room.locator('#exam-days .exam-day')).toHaveCount(3);
+    await room.click('#exam-days >> text=11/5（四）');
+    await expect(room.locator('#exam-rows .exam-row')).toHaveCount(2);
+    await expect(room.locator('#exam-rows .exam-row >> nth=0 >> .exam-n')).toHaveValue('國語');
+    await expect(room.locator('#exam-rows .exam-row >> nth=1 >> .exam-s')).toHaveValue('09:30');
+    await expect(room.locator('#exam-rows .exam-row >> nth=1 >> .exam-n')).toHaveValue('閱讀與寫作');
+    await room.click('#exam-days >> text=11/6（五）');
+    await expect(room.locator('#exam-rows .exam-row >> nth=0 >> .exam-n')).toHaveValue('數學');
+    await expect(room.locator('#exam-rows .exam-row >> nth=1 >> .exam-s')).toHaveValue('10:30');
+    await room.click('#exam-save');
+    const days = await room.evaluate(() => state.daily.exam.days);
+    expect(days['2026-11-05'].map((x) => x.n)).toEqual(['國語', '閱讀與寫作']);
+    expect(days['2026-11-06'].map((x) => `${x.s}-${x.e} ${x.n}`)).toEqual(['08:40-09:20 數學', '10:30-11:10 自然']);
+    expect(room.errors).toEqual([]);
+});
