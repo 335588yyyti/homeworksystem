@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=499807fb" rel="stylesheet">
+    <link href="assets/tailwind.css?v=582581e5" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -1752,7 +1752,7 @@
     <main id="view-exam" class="w-full flex-1 min-h-0 overflow-y-auto lg:overflow-hidden hidden text-slate-800" style="background: repeating-conic-gradient(#c8ecd6 0 25%, #daf3e3 0 50%) 0 0 / 120px 120px">
         <div class="lg:h-full max-w-[1800px] mx-auto px-4 py-3 flex flex-col gap-2">
             <!-- 左半邊：今日考程（約 2/3 高）＋現在這節剩多久；右半邊：提醒標語、大時鐘、應到實到 -->
-            <div class="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div class="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-4">
                 <div class="flex flex-col gap-4 min-h-0 min-w-0 order-2 lg:order-1">
                     <section class="flex flex-col min-h-0 bg-[#e4f5ea] border-2 border-emerald-200/70 rounded-3xl shadow-lg overflow-hidden" style="flex: 2 1 0">
                         <h3 class="text-center font-black text-sky-800 text-2xl sm:text-3xl py-2 border-b-2 border-emerald-200/70">今日考程</h3>
@@ -5832,8 +5832,8 @@
             const mode = examClockDraft || examData().clock;
             document.getElementById('exam-analog-box').classList.toggle('hidden', mode === 'digital');
             document.getElementById('exam-clock').classList.toggle('hidden', mode === 'analog');
-            document.getElementById('exam-analog').style.height = mode === 'analog' ? 'min(54vh, 460px)' : 'min(43vh, 370px)';
-            document.getElementById('exam-clock').style.fontSize = mode === 'digital' ? 'min(8vw, 20vh)' : 'clamp(2.2rem, 7vh, 4rem)';
+            document.getElementById('exam-analog').style.height = mode === 'analog' ? 'min(58vh, 620px)' : 'min(46vh, 500px)';
+            document.getElementById('exam-clock').style.fontSize = mode === 'digital' ? 'min(10vw, 26vh)' : 'clamp(3rem, 11vh, 7.5rem)';
             const slogan = examData().slogan;
             const sloganEl = document.getElementById('exam-slogan');
             sloganEl.textContent = slogan;
