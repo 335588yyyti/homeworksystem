@@ -355,3 +355,29 @@ test('早自習頁開著過夜：半夜不換，早上 6 點才換日，而且�
     expect(await room.evaluate(() => window.__renders)).toBeLessThan(3);
     expect(room.errors).toEqual([]);
 });
+
+test('聯絡簿的說明（寫了「不用抄」或開頭打 *）不編號、字小一點；收作業也不會列出來', async ({ browser }) => {
+    const room = await openDevice(browser, createCloud());
+    await room.evaluate(() => setMorningEnabled(true));
+    await unlockTeacher(room, 'morning');
+    await room.click('text=✏️ 編輯');
+    const long = '週記說明（不用抄）：開學至今你觀察到為了班級主動付出的人，他的具體行為，並表達你的感謝';
+    await room.fill('#contact-input', `週記:感恩的心\n${long}\n品德學習單\n*明天穿運動服`);
+    await room.click('#modal-contact >> text=儲存');
+    await room.click('#contact-layout-h');
+    const lis = room.locator('#contact-body .contact-paper li');
+    await expect(lis).toHaveCount(4);
+    await expect(lis.nth(0)).toContainText('1.');
+    await expect(lis.nth(1)).toHaveClass(/contact-note/);
+    await expect(lis.nth(1)).toContainText('並表達你的感謝'); // 長的說明在同一行，不會被切斷
+    await expect(lis.nth(2)).toContainText('2.');
+    await expect(lis.nth(3)).toHaveClass(/contact-note/);
+    await expect(lis.nth(3)).not.toContainText('*');
+    // 直式：說明那一欄寫 ※，不佔號碼
+    await room.click('#contact-layout-v');
+    await expect(room.locator('#contact-body .contact-paper .contact-col .num')).toHaveText(['1', '※', '2', '※']);
+    // 收作業不列說明
+    const rows = await room.evaluate(() => contactShown(state.daily.contact).items.map((t) => parseContactLine(t, collectBases())).filter(Boolean).map((r) => r.base));
+    expect(rows).toEqual(['週記:感恩的心', '品德學習單']);
+    expect(room.errors).toEqual([]);
+});

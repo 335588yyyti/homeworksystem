@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=582581e5" rel="stylesheet">
+    <link href="assets/tailwind.css?v=03adc5bf" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -69,6 +69,7 @@
         .task-cols .contact-col .txt { color: #be123c; }
         .task-cols { min-height: 200px; }
         /* 太長的一項接到左邊下一行繼續寫（像手寫聯絡簿） */
+        .contact-col.contact-note .txt { color: #64748b; }
         .contact-col .txt-wrap { display: flex; flex-direction: row-reverse; justify-content: center; }
         .contact-col .txt .hz { font-family: Nunito, sans-serif; font-size: 0.8em; padding: 0.1em 0; }
         /* ---- 潔牙站 ---- */
@@ -1160,16 +1161,16 @@
                 },
                 contact: {
                     date: typeof cc.date === 'string' ? cc.date : '',
-                    items: Array.isArray(cc.items) ? cc.items.map(String).map(t => t.slice(0, 40)).filter(t => t.trim()).slice(0, DAILY_ITEMS_MAX) : [],
-                    tasks: Array.isArray(cc.tasks) ? cc.tasks.map(String).map(t => t.slice(0, 40)).filter(t => t.trim()).slice(0, DAILY_ITEMS_MAX) : [],
+                    items: Array.isArray(cc.items) ? cc.items.map(String).map(t => t.slice(0, 80)).filter(t => t.trim()).slice(0, DAILY_ITEMS_MAX) : [],
+                    tasks: Array.isArray(cc.tasks) ? cc.tasks.map(String).map(t => t.slice(0, 80)).filter(t => t.trim()).slice(0, DAILY_ITEMS_MAX) : [],
                     // 前一次（前一天）寫的聯絡簿：早上「收作業」照這份先列好項目
-                    prevItems: Array.isArray(cc.prevItems) ? cc.prevItems.map(String).map(t => t.slice(0, 40)).filter(t => t.trim()).slice(0, DAILY_ITEMS_MAX) : [],
+                    prevItems: Array.isArray(cc.prevItems) ? cc.prevItems.map(String).map(t => t.slice(0, 80)).filter(t => t.trim()).slice(0, DAILY_ITEMS_MAX) : [],
                     prevDate: typeof cc.prevDate === 'string' ? cc.prevDate : '',
                     // 每一份聯絡簿是哪一天出的作業（下午 3 點後寫的算下一個上課日）：{ 'YYYY-MM-DD': [項目] }，留近三天＋先打好的幾天
                     history: cc.history && typeof cc.history === 'object' ? Object.fromEntries(Object.entries(cc.history)
                         .filter(([k, v]) => /^\d{4}-\d{2}-\d{2}$/.test(k) && Array.isArray(v))
                         .sort((a, b) => b[0].localeCompare(a[0])).slice(0, 10)
-                        .map(([k, v]) => [k, v.map(String).map(t => t.slice(0, 40)).filter(t => t.trim()).slice(0, DAILY_ITEMS_MAX)])) : {},
+                        .map(([k, v]) => [k, v.map(String).map(t => t.slice(0, 80)).filter(t => t.trim()).slice(0, DAILY_ITEMS_MAX)])) : {},
                     // 老師自己改過「哪天收」的：{ 出作業那天: 收作業那天 }（沒改的就是下一個上課日收）
                     due: cc.due && typeof cc.due === 'object' ? Object.fromEntries(Object.entries(cc.due)
                         .filter(([k, v]) => /^\d{4}-\d{2}-\d{2}$/.test(k) && /^\d{4}-\d{2}-\d{2}$/.test(String(v))).slice(0, 10)) : {},
@@ -2444,7 +2445,7 @@
             <div class="text-center mb-3">
                 <div class="text-3xl mb-1">📒</div>
                 <h4 class="text-xl font-black text-slate-800">編輯早修任務和聯絡簿</h4>
-                <p class="text-sm text-slate-500 mt-0.5">一行一項（各最多 10 項，每項最多 40 字）</p>
+                <p class="text-sm text-slate-500 mt-0.5">一行一項（各最多 10 項，每項最多 80 字）；寫了「不用抄」或開頭打「*」的是說明，不會編號</p>
             </div>
             <div class="overflow-y-auto min-h-0 flex flex-col gap-1">
                 <label for="task-input" class="text-base font-black text-amber-700">⭐ 早修任務 <span class="text-sm font-bold text-slate-400">例如「訂正國卷 L.3」，不用可以空白</span></label>
@@ -3726,7 +3727,7 @@
         // 「數練p.28-p.30」→ 名稱「數練」、頁數「p.28-p.30」；認得以前用過的作業名稱
         function parseContactLine(text, bases) {
             const raw = String(text).replace(/^\s*\d+\s*[.、．)）]\s*/, '').trim();
-            if (!raw || /^[*＊※]/.test(raw)) return null; // 星號開頭是公告，不是作業
+            if (!raw || isContactNote(raw)) return null; // 星號開頭是公告、寫了「不用抄」的是說明，不是作業
             // 聯絡簿寫了「訂簽」的才要簽名；「訂簽」兩個字不放進名稱和頁數
             const needSign = /訂簽|簽名/.test(raw);
             const t = raw.replace(/[（(]?\s*(訂簽|簽名)\s*[)）]?/g, ' ').replace(/\s+/g, ' ').trim();
@@ -3988,6 +3989,12 @@
         }
 
         // 教室現在要顯示哪一份：下午 3 點前是今天的，3 點後是下一個上課日的；那天還沒寫就先顯示前一份
+        // 聯絡簿的說明（寫了「不用抄」或開頭打 * ※）：不編號、字小一點，收作業也略過
+        const isContactNote = t => /^\s*[*＊※]/.test(t) || /不用抄/.test(t);
+        const contactClean = t => t.replace(/^\s*\d+\s*[.、．)）]\s*/, '').replace(/^\s*[*＊※]\s*/, '') || t;
+        // 每一項的編號（說明是 null，不佔號碼）
+        const contactNumbers = items => { let n = 0; return items.map(t => isContactNote(t) ? null : ++n); };
+
         function contactShown(c, now = new Date()) {
             const history = c.history || {};
             const keys = Object.keys(history);
@@ -5336,7 +5343,8 @@
             const vertical = c.layout !== 'h';
             const split = loadContactSplit();
             // 老師自己打的「1.」「2、」編號拿掉，避免變成「1. 1.國卷」
-            const clean = t => t.replace(/^\s*\d+\s*[.、．)）]\s*/, '') || t;
+            const clean = contactClean;
+            const nums = contactNumbers(items);
             // 早修任務：黃色便利貼，放在聯絡簿左邊；沒拖曳過分隔線時，直式自動補滿聯絡簿旁邊的空白
             const noteSize = items.length === 0 ? 'lg:flex-1' : (split ? 'split' : (vertical ? 'lg:flex-1' : 'split'));
             const taskVertical = c.taskLayout === 'v';
@@ -5361,16 +5369,20 @@
                 </div>`;
             let paper = '';
             if (items.length > 0 && !vertical) {
-                paper = `<ol class="contact-paper contact-list flex-1 min-w-0 lg:overflow-hidden p-4 sm:p-6 flex flex-col gap-[0.25em] text-2xl sm:text-4xl">${items.map((t, i) => `
+                paper = `<ol class="contact-paper contact-list flex-1 min-w-0 lg:overflow-hidden p-4 sm:p-6 flex flex-col gap-[0.25em] text-2xl sm:text-4xl">${items.map((t, i) => nums[i] === null ? `
+                    <li class="contact-note flex gap-[0.4em] items-baseline border-b-2 border-dashed border-amber-200 pb-[0.2em] leading-snug">
+                        <span class="w-[1.8em] flex-shrink-0"></span>
+                        <span class="text-[0.7em] font-bold text-slate-500 break-all">${escapeHtml(clean(t))}</span>
+                    </li>` : `
                     <li class="flex gap-[0.4em] items-baseline border-b-2 border-dashed border-amber-200 pb-[0.2em] leading-snug">
-                        <span class="text-[0.8em] font-black text-amber-600 w-[1.8em] flex-shrink-0 text-right" style="font-family: Nunito, sans-serif">${i + 1}.</span>
+                        <span class="text-[0.8em] font-black text-amber-600 w-[1.8em] flex-shrink-0 text-right" style="font-family: Nunito, sans-serif">${nums[i]}.</span>
                         <span class="font-black text-slate-800 break-all">${escapeHtml(clean(t))}</span>
                     </li>`).join('')}</ol>`;
             } else if (items.length > 0) {
                 // 直式：由右往左一項一欄
                 paper = `<div class="contact-paper p-2 overflow-x-auto max-w-full ${tasks.length && !split ? 'lg:flex-shrink-0' : 'flex-1 min-w-0'}"><div class="contact-cols">${items.map((t, i) => `
-                <div class="contact-col">
-                    <div class="num text-xl sm:text-2xl" style="font-family: Nunito, sans-serif">${i + 1}</div>
+                <div class="contact-col${nums[i] === null ? ' contact-note' : ''}">
+                    <div class="num text-xl sm:text-2xl" style="font-family: Nunito, sans-serif">${nums[i] === null ? '※' : nums[i]}</div>
                     <div class="txt-wrap"><div class="txt">${contactTextHtml(clean(t))}</div></div>
                 </div>`).join('')}</div></div>`;
             }
@@ -5454,7 +5466,7 @@
         // 直式：一項一欄；字的大小以大約 9 個字一行來算，更長的項目接到左邊下一行，不會讓全部的字都變小
         function fitVerticalCols(cols, rawItems) {
             if (!cols) return;
-            const items = rawItems.map(t => t.replace(/^\s*\d+\s*[.、．)）]\s*/, '') || t);
+            const items = rawItems.map(contactClean);
             // 一個中文字一格；一串英文數字（例如 P.48）也算一格
             const tokens = items.map(t => t.match(/[A-Za-z0-9.\-~,]+|./gu) || []);
             const num = cols.querySelector('.num');
@@ -5595,7 +5607,7 @@
         }
 
         function saveContact() {
-            const lines = id => document.getElementById(id).value.split('\n').map(t => t.trim().slice(0, 40)).filter(Boolean).slice(0, DAILY_ITEMS_MAX);
+            const lines = id => document.getElementById(id).value.split('\n').map(t => t.trim().slice(0, 80)).filter(Boolean).slice(0, DAILY_ITEMS_MAX);
             const d = window.state.daily || defaultDaily();
             const now = new Date();
             const cur = contactAssignDate(now);
