@@ -292,6 +292,8 @@
             }
         }
         /* 家長查詢頁：只顯示查詢區，隱藏看板與教師功能 */
+        /* 版權那一行：個別查詢頁只有家長打開時才顯示（老師在後台查詢時不佔位置） */
+        body:not(.parent-mode) #view-parent .about-footer { display: none; }
         .parent-mode .teacher-ui {
             display: none !important;
         }
