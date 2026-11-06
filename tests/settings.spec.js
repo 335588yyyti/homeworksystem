@@ -83,3 +83,24 @@ test('切換班級時新班級的教師密碼為 8888，原班級不受影響', 
     expect(cloud.board('main').teacherPin).toBe('1234');
     expect(await page.evaluate(() => state.isTeacherUnlocked)).toBe(false);
 });
+
+test('設定後台和家長頁最下面有版權，點「關於與版權」看得到署名、隱私說明和套件授權', async ({ browser }) => {
+    const cloud = createCloud();
+    const page = await openDevice(browser, cloud);
+    await unlockTeacher(page, 'settings');
+    const footer = page.locator('#view-settings .about-footer');
+    await expect(footer).toContainText('© 2026 昌平國小 盧映廷老師');
+    await footer.locator('text=關於與版權').click();
+    await expect(page.locator('#modal-about')).toBeVisible();
+    await expect(page.locator('#modal-about')).toContainText('僅供教學使用');
+    await expect(page.locator('#modal-about')).toContainText('不記錄學生姓名');
+    await expect(page.locator('#modal-about')).toContainText('Tailwind CSS');
+    await page.click('#modal-about >> text=關閉');
+    await expect(page.locator('#modal-about')).toBeHidden();
+
+    const code = await page.evaluate(() => state.students[0].parentCode);
+    const parent = await openDevice(browser, cloud, { query: '?p=' + code, viewport: { width: 390, height: 844 } });
+    await expect(parent.locator('#view-parent .about-footer')).toContainText('盧映廷老師', { timeout: 20000 });
+    expect(page.errors).toEqual([]);
+    expect(parent.errors).toEqual([]);
+});

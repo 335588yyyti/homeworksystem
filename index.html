@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=03adc5bf" rel="stylesheet">
+    <link href="assets/tailwind.css?v=e4d94f8a" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -292,6 +292,8 @@
             }
         }
         /* 家長查詢頁：只顯示查詢區，隱藏看板與教師功能 */
+        /* 版權那一行：個別查詢頁只有家長打開時才顯示（老師在後台查詢時不佔位置） */
+        body:not(.parent-mode) #view-parent .about-footer { display: none; }
         .parent-mode .teacher-ui {
             display: none !important;
         }
@@ -1936,6 +1938,8 @@
                 </div>
             </div>
         </div>
+            <!-- 版權（點一下看關於與版權） -->
+        <p class="about-footer text-center text-xs font-bold text-slate-400 py-3">© 2026 昌平國小 盧映廷老師・<button type="button" onclick="openAbout()" class="underline underline-offset-2 hover:text-slate-600">關於與版權</button></p>
     </main>
 
     <!-- 設定後台分頁 -->
@@ -2253,6 +2257,8 @@
             </div>
 
         </div>
+            <!-- 版權（點一下看關於與版權） -->
+        <p class="about-footer text-center text-xs font-bold text-slate-400 py-3">© 2026 昌平國小 盧映廷老師・<button type="button" onclick="openAbout()" class="underline underline-offset-2 hover:text-slate-600">關於與版權</button></p>
     </main>
 
     <!-- 未訂正名單（全螢幕，方便投影給全班看） -->
@@ -2538,6 +2544,40 @@
                 <button onclick="closeExamAbsent()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-base transition-all">取消</button>
                 <button id="exam-absent-save" onclick="saveExamAbsent()" class="bg-amber-400 hover:bg-amber-500 text-slate-900 font-black py-2.5 rounded-xl text-base transition-all">儲存</button>
             </div>
+        </div>
+    </div>
+
+    <!-- 關於與版權 -->
+    <div id="modal-about" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden" onclick="if (event.target === this) closeAbout()">
+        <div class="bg-white border-2 border-slate-200 rounded-3xl p-5 w-full max-w-lg board-shadow flex flex-col max-h-full">
+            <h4 class="text-xl font-black text-slate-800 text-center mb-3">關於與版權</h4>
+            <div class="overflow-y-auto min-h-0 flex flex-col gap-3 text-sm text-slate-600 leading-relaxed">
+                <section>
+                    <h5 class="font-black text-slate-800 mb-0.5">下課檢查站</h5>
+                    <p>© 2026 昌平國小 盧映廷老師。僅供教學使用；轉載、改作請先取得同意。</p>
+                </section>
+                <section>
+                    <h5 class="font-black text-slate-800 mb-0.5">隱私說明</h5>
+                    <ul class="list-disc pl-5">
+                        <li>只用座號，不記錄學生姓名。</li>
+                        <li>記錄的內容：作業訂正與缺交、到校時間、潔牙、聯絡簿和考試時程。</li>
+                        <li>家長要用孩子專屬的查詢碼，才看得到自己孩子的紀錄，看不到其他同學。</li>
+                        <li>資料存在 Google Firebase 雲端，只用在這個班級看板，不做其他用途。</li>
+                    </ul>
+                </section>
+                <section>
+                    <h5 class="font-black text-slate-800 mb-0.5">使用的字型與套件</h5>
+                    <ul class="list-disc pl-5">
+                        <li>Font Awesome Free 圖示（CC BY 4.0／SIL OFL 1.1／MIT）</li>
+                        <li>Nunito 字型（SIL Open Font License 1.1）</li>
+                        <li>霞鶩文楷 LXGW WenKai TC 字型（SIL Open Font License 1.1）</li>
+                        <li>Tailwind CSS（MIT License）</li>
+                        <li>qrcode.js（MIT License）</li>
+                        <li>Google Firebase（雲端存檔）</li>
+                    </ul>
+                </section>
+            </div>
+            <button onclick="closeAbout()" class="mt-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-base transition-all">關閉</button>
         </div>
     </div>
 
@@ -6137,6 +6177,13 @@
             renderExam();
             window.soundEffect.playSuccess();
             showToast(Object.keys(days).length ? `考試時程已更新（${Object.keys(days).sort().map(examDayLabel).join('、')} 會自動出現考試分頁）` : '考試時程已更新');
+        }
+
+        function openAbout() {
+            document.getElementById('modal-about').classList.remove('hidden');
+        }
+        function closeAbout() {
+            document.getElementById('modal-about').classList.add('hidden');
         }
 
         let morningRenderedDay = '';
