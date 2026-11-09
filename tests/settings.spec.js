@@ -89,7 +89,7 @@ test('設定後台和家長頁最下面有版權，點「關於與版權」看�
     const page = await openDevice(browser, cloud);
     await unlockTeacher(page, 'settings');
     const footer = page.locator('#view-settings .about-footer');
-    await expect(footer).toContainText('© 2026 昌平國小 盧映廷老師');
+    await expect(footer).toContainText('© 2026 昌平國小 盧老師');
     await footer.locator('text=關於與版權').click();
     await expect(page.locator('#modal-about')).toBeVisible();
     await expect(page.locator('#modal-about')).toContainText('僅供教學使用');
@@ -100,7 +100,7 @@ test('設定後台和家長頁最下面有版權，點「關於與版權」看�
 
     const code = await page.evaluate(() => state.students[0].parentCode);
     const parent = await openDevice(browser, cloud, { query: '?p=' + code, viewport: { width: 390, height: 844 } });
-    await expect(parent.locator('#view-parent .about-footer')).toContainText('盧映廷老師', { timeout: 20000 });
+    await expect(parent.locator('#view-parent .about-footer')).toContainText('盧老師', { timeout: 20000 });
     expect(page.errors).toEqual([]);
     expect(parent.errors).toEqual([]);
 });

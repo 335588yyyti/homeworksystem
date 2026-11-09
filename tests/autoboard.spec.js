@@ -79,8 +79,7 @@ test('一樣多人要訂正時，日期較近的放看板、較舊的換到下�
     await expect.poll(() => cloud.board('main')?.assignments?.includes('國習｜10/28 p.9'), { timeout: 15000 }).toBe(true);
     // 老師把看板上 10/20 那項的 2 號改成綠燈：剩 2 人，跟下方 10/28 一樣多，日期較近的換上看板
     await page.click('#mark-mode-fix');
-    await page.click('#btn-slot-0-student-2');
-    await page.click('#btn-slot-0-student-2'); // 紅 → 缺交 → 綠
+    await page.click('#btn-slot-0-student-2'); // 改作業：紅 → 綠
     await expect.poll(() => page.evaluate(() => state.slots[0].assignment), { timeout: 15000 }).toBe('國習｜10/28 p.9');
     expect(page.errors).toEqual([]);
 });

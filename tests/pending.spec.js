@@ -28,8 +28,7 @@ test('未訂正名單列出每位同學還沒訂正的作業，並在變動停�
     const r = await page.evaluate(() => ({ counts: window.__counts.map((c) => c.text).filter(Boolean), waited: window.__counts.find((c) => c.text)?.at - window.__lastTap }));
     expect(r.counts[0]).toBe('3');
     expect(r.waited).toBeGreaterThanOrEqual(4900);
-    // 20 號改回來（教師登記：紅燈 → 缺交 → 綠燈）
-    await page.click('#btn-slot-3-student-20');
+    // 20 號改回來（改作業：紅燈 → 綠燈）
     await page.click('#btn-slot-3-student-20');
     await page.click('#pending-list-button');
     await expect(page.locator('#modal-pending-list')).toBeVisible();
@@ -46,8 +45,7 @@ test('未訂正名單列出每位同學還沒訂正的作業，並在變動停�
     // 另一台裝置（老師手機）消掉 12 號，名單等 5 秒後更新
     const phone = await openDevice(browser, cloud);
     await phone.evaluate(() => { startTeacherSession(); applyRoleUI('teacher'); });
-    await phone.click('#btn-slot-1-student-12');
-    await phone.click('#btn-slot-1-student-12');
+    await phone.click('#btn-slot-1-student-12'); // 改作業：紅 → 綠
     await page.waitForTimeout(2000);
     await expect(cards).toHaveCount(2); // 還在等 5 秒
     // 手機等 5 秒才上傳，教室電腦收到後再等 5 秒更新名單
@@ -58,7 +56,6 @@ test('未訂正名單列出每位同學還沒訂正的作業，並在變動停�
     await page.keyboard.press('Escape');
     await expect(page.locator('#modal-pending-list')).toBeHidden();
     for (const id of ['#btn-slot-0-student-3', '#btn-slot-2-student-3']) {
-        await page.click(id);
         await page.click(id);
     }
     await page.click('#pending-list-button'); // 打開時立刻顯示最新名單，不用等
