@@ -1463,6 +1463,17 @@
 
         // 其他老師打開「分享全新看板」的連結（網址帶 ?new）：自動建立一個全新的空白班級
         const NEW_BOARD_REQUESTED = !window.IS_PARENT_MODE && new URLSearchParams(location.search).has('new');
+        // 這台裝置第一次打開、還沒有班級（沒存班級代碼、也沒有本機紀錄）：一樣先問「已經有班級嗎？」，
+        // 不會落到大家共用的 main。以前就在用 main 的裝置有本機紀錄，照舊不受影響
+        const FIRST_VISIT = !window.IS_PARENT_MODE && (() => {
+            try {
+                return !localStorage.getItem(CLASS_CODE_KEY)
+                    && !localStorage.getItem('checkpoint_local_backup_v3') && !localStorage.getItem('checkpoint_local_backup_v2');
+            } catch (e) {
+                return false;
+            }
+        })();
+        const ASK_NEW_BOARD = NEW_BOARD_REQUESTED || FIRST_VISIT;
         let newBoardCreated = false;
         let joinedBoardCode = '';
 
@@ -1552,8 +1563,8 @@
                     return;
                 }
 
-                if (NEW_BOARD_REQUESTED) await createFreshBoardFromLink();
-                await connectBoard(NEW_BOARD_REQUESTED);
+                if (ASK_NEW_BOARD) await createFreshBoardFromLink();
+                await connectBoard(ASK_NEW_BOARD);
                 if (window.consumeNewBoardNotice()) setTimeout(() => window.showNewBoardWelcome(), 300);
                 else if (joinedBoardCode) showToast(`已接回班級【${joinedBoardCode}】`);
             } catch (err) {

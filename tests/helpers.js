@@ -117,6 +117,12 @@ async function openDevice(browser, cloud, opts = {}) {
         return null;
     });
     await context.addInitScript(() => { window.__firebase_config = '{}'; });
+    // 測試的裝置預設用 main 班級（像一台已經在用的教室電腦）；freshDevice 是第一次打開、還沒有班級的新裝置
+    if (!opts.freshDevice) {
+        await context.addInitScript(() => {
+            try { if (!location.search.includes('new') && !localStorage.getItem('checkpoint_class_code')) localStorage.setItem('checkpoint_class_code', 'main'); } catch (e) {}
+        });
+    }
     await context.route('**/*', (route) => {
         const url = route.request().url();
         if (url.startsWith(BASE_URL)) {

@@ -191,3 +191,17 @@ test('打開全新看板連結時，已經有班級的老師可以輸入班級�
     // 沒有另外建立新班級
     expect(Object.keys(cloud.store).filter((k) => /checkpoint_boards\/class/.test(k))).toEqual([]);
 });
+
+test('第一次打開網站、還沒有班級的新電腦：先問「已經有班級嗎？」，建立全新班級，不會落到共用的 main', async ({ browser }) => {
+    const cloud = createCloud();
+    const page = await openDevice(browser, cloud, { freshDevice: true });
+    await expect(page.locator('#modal-new-board-choice')).toBeVisible();
+    await expect(page.locator('#new-board-keep')).toBeHidden();
+    await page.click('#new-board-create');
+    await expect(page.locator('#cloud-sync-status')).toContainText('已連線', { timeout: 20000 });
+    const code = await page.evaluate(() => getClassCode());
+    expect(code).not.toBe('main');
+    await expect.poll(() => !!cloud.board(code), { timeout: 15000 }).toBe(true);
+    expect(cloud.board('main')).toBeFalsy();
+    expect(page.errors).toEqual([]);
+});
