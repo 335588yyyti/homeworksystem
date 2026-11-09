@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=eae15508" rel="stylesheet">
+    <link href="assets/tailwind.css?v=2a4d02ae" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -1950,7 +1950,7 @@
             </div>
         </div>
             <!-- 版權（點一下看關於與版權） -->
-        <p class="about-footer text-center text-xs font-bold text-slate-400 py-3">© 2026 昌平國小 盧映廷老師・<button type="button" onclick="openAbout()" class="underline underline-offset-2 hover:text-slate-600">關於與版權</button></p>
+        <p class="about-footer text-center text-xs font-bold text-slate-400 py-3">© 2026 昌平國小 盧老師・<button type="button" onclick="openAbout()" class="underline underline-offset-2 hover:text-slate-600">關於與版權</button></p>
     </main>
 
     <!-- 設定後台分頁 -->
@@ -2269,7 +2269,7 @@
 
         </div>
             <!-- 版權（點一下看關於與版權） -->
-        <p class="about-footer text-center text-xs font-bold text-slate-400 py-3">© 2026 昌平國小 盧映廷老師・<button type="button" onclick="openAbout()" class="underline underline-offset-2 hover:text-slate-600">關於與版權</button></p>
+        <p class="about-footer text-center text-xs font-bold text-slate-400 py-3">© 2026 昌平國小 盧老師・<button type="button" onclick="openAbout()" class="underline underline-offset-2 hover:text-slate-600">關於與版權</button></p>
     </main>
 
     <!-- 未訂正名單（全螢幕，方便投影給全班看） -->
@@ -2565,7 +2565,7 @@
             <div class="overflow-y-auto min-h-0 flex flex-col gap-3 text-sm text-slate-600 leading-relaxed">
                 <section>
                     <h5 class="font-black text-slate-800 mb-0.5">下課檢查站</h5>
-                    <p>© 2026 昌平國小 盧映廷老師。僅供教學使用；轉載、改作請先取得同意。</p>
+                    <p>© 2026 昌平國小 盧老師。僅供教學使用；轉載、改作請先取得同意。</p>
                 </section>
                 <section>
                     <h5 class="font-black text-slate-800 mb-0.5">隱私說明</h5>
@@ -2696,6 +2696,12 @@
     </div>
 
     <!-- Toast 通知浮動提示 -->
+    <!-- 網站有新版本時提醒重新整理（不擋畫面，按了才重新整理） -->
+    <div id="update-banner" class="hidden fixed top-2 left-1/2 -translate-x-1/2 z-[70] items-center gap-3 bg-sky-600 text-white pl-4 pr-2 py-2 rounded-2xl shadow-xl border-2 border-white/70 text-base font-black whitespace-nowrap">
+        <span>🔄 版本已更新，請重新整理</span>
+        <button type="button" id="update-reload" onclick="location.reload()" class="bg-white text-sky-700 hover:bg-sky-50 px-3 py-1 rounded-xl">重新整理</button>
+        <button type="button" onclick="dismissUpdateBanner()" class="text-white/80 hover:text-white px-1.5" title="先不要" aria-label="先不要">✕</button>
+    </div>
     <div id="toast" class="fixed bottom-5 right-5 bg-slate-900 text-white px-4 py-2.5 rounded-xl shadow-lg border border-slate-800 flex items-center gap-2 z-50 transform translate-y-16 opacity-0 transition-all duration-300 pointer-events-none text-xs font-bold">
         <i class="fa-solid fa-circle-check text-emerald-400"></i>
         <span id="toast-msg">通知訊息</span>
@@ -4115,7 +4121,10 @@
                 startAsAllMissing(name);
             }
             closeNewOnBoard();
-            if (isTeacherMode()) window.state.markMode = 'missing';
+            if (isTeacherMode() && isMissing(name, window.state.students[0]?.id)) {
+                window.state.markMode = 'missing';
+                applyRoleUI(window.state.userRole);
+            }
             const replaced = window.state.slots[index].assignment;
             applyAssignmentToSlot(index, name);
             showToast(`第 ${index + 1} 框的【${replaced}】已換成新作業【${name}】`);
@@ -7186,6 +7195,43 @@
             renderSettingsStudents();
             window.syncStateToCloud();
             showToast(`已移除座號：【${name}】`);
+        }
+
+        // ---- 新版本提醒 ----
+        // 網站更新後，開著的看板還是舊版：每 10 分鐘（和切回這個分頁時）問一下網頁有沒有換過，換了就提醒重新整理
+        const UPDATE_CHECK_MS = 10 * 60 * 1000;
+        let pageStamp = null;
+        let updateDismissed = false;
+        async function readPageStamp() {
+            const res = await fetch(location.pathname + '?v=' + Date.now(), { method: 'HEAD', cache: 'no-store' });
+            if (!res.ok) return null;
+            return res.headers.get('etag') || res.headers.get('last-modified');
+        }
+        window.checkForUpdate = async function() {
+            if (updateDismissed || !navigator.onLine) return;
+            try {
+                const stamp = await readPageStamp();
+                if (!stamp) return;
+                if (pageStamp === null) { pageStamp = stamp; return; }
+                if (stamp !== pageStamp) showUpdateBanner();
+            } catch (e) {}
+        };
+        function showUpdateBanner() {
+            const el = document.getElementById('update-banner');
+            el.classList.remove('hidden');
+            el.classList.add('flex');
+        }
+        function dismissUpdateBanner() {
+            // 先不要：這次開著的期間不再提醒（下次打開網頁就是新版）
+            updateDismissed = true;
+            const el = document.getElementById('update-banner');
+            el.classList.add('hidden');
+            el.classList.remove('flex');
+        }
+        if (location.protocol.startsWith('http')) {
+            window.checkForUpdate();
+            setInterval(window.checkForUpdate, UPDATE_CHECK_MS);
+            document.addEventListener('visibilitychange', () => { if (!document.hidden) window.checkForUpdate(); });
         }
     </script>
 </body>

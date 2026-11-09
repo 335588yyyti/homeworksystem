@@ -1,4 +1,4 @@
-// 早上收作業：照前一天的聯絡簿列好項目、一次放上看板；清點缺交模式；考卷簽名另成一項
+// 早上收作業：照前一天的聯絡簿列好項目、一次放上看板（全班先是缺交）；清點有交模式；考卷簽名另成一項
 const { test, expect } = require('@playwright/test');
 const { createCloud, openDevice } = require('./helpers');
 
@@ -15,7 +15,7 @@ async function yesterdayContact(page, items) {
     }, items);
 }
 
-test('收作業：照前一天的聯絡簿列好項目，勾選後一次放上看板，自動切到清點缺交', async ({ browser }) => {
+test('收作業：照前一天的聯絡簿列好項目，勾選後一次放上看板，全班先是缺交，自動切到清點有交', async ({ browser }) => {
     const cloud = createCloud();
     const page = await openDevice(browser, cloud);
     await teacherMode(page);
@@ -40,29 +40,48 @@ test('收作業：照前一天的聯絡簿列好項目，勾選後一次放上�
     expect(slots).toContain(`字詞單｜${md} L6`);
     expect(slots).toContain(`數練｜${md} p.28-p.30`);
     expect(slots.some((s) => s.startsWith('考國'))).toBe(false);
-    await expect(page.locator('#role-status-text')).toContainText('清點缺交');
+    await expect(page.locator('#role-status-text')).toContainText('清點有交');
+    // 新放上的作業全班先是缺交（橘燈）；簽名項目照舊先全綠
+    const fresh = await page.evaluate((name) => state.students.every((st) => isMissing(name, st.id)), `國卷｜${md} L5`);
+    expect(fresh).toBe(true);
+    const signFresh = await page.evaluate((name) => state.students.every((st) => isFinished(name, st.id)), `簽名｜國卷 ${md} L5`);
+    expect(signFresh).toBe(true);
     await expect.poll(() => cloud.board('main').slots.map((s) => s.assignment), { timeout: 15000 }).toContain(`國卷｜${md} L5`);
     expect(page.errors).toEqual([]);
 });
 
-test('清點缺交：點一下變缺交、再點一下取消；改作業維持原本的 綠 → 紅 → 缺交 → 綠', async ({ browser }) => {
+test('新作業全班先缺交；清點有交：橘 → 紅、再點改回缺交；改作業：紅 → 綠、再點改回紅', async ({ browser }) => {
     const page = await openDevice(browser, createCloud());
     await teacherMode(page);
-    await page.evaluate(() => { state.slots[0].assignment = state.assignments[0]; renderDashboard(); });
-    await page.click('#mark-mode-missing');
+    await page.click('#new-on-board-button');
+    await page.fill('#new-on-board-name', '國語考卷');
+    await page.fill('#new-on-board-date', '');
+    await page.selectOption('#new-on-board-slot', '0');
+    await page.press('#new-on-board-name', 'Enter');
+    await expect(page.locator('#modal-new-on-board')).toBeHidden();
+    await expect(page.locator('#role-status-text')).toContainText('清點有交');
     const seat = page.locator('#btn-slot-0-student-4');
-    await seat.click();
     await expect(seat).toHaveClass(/seat-missing/);
-    await seat.click();
-    await expect(seat).not.toHaveClass(/seat-missing|seat-pending/);
+    await expect(page.locator('#btn-slot-0-student-5')).toHaveClass(/seat-missing/);
 
-    await page.click('#mark-mode-fix');
+    // 清點：有交的變紅燈，再點一下改回缺交
     await seat.click();
     await expect(seat).toHaveClass(/seat-pending/);
     await seat.click();
     await expect(seat).toHaveClass(/seat-missing/);
     await seat.click();
+    await expect(seat).toHaveClass(/seat-pending/);
+
+    // 改作業：不用訂正的點成綠燈，再點一下改回紅燈
+    await page.click('#mark-mode-fix');
+    await seat.click();
     await expect(seat).not.toHaveClass(/seat-missing|seat-pending/);
+    await seat.click();
+    await expect(seat).toHaveClass(/seat-pending/);
+    // 還是缺交的：改作業時點一下＝補交（變紅燈）
+    await page.locator('#btn-slot-0-student-5').click();
+    await expect(page.locator('#btn-slot-0-student-5')).toHaveClass(/seat-pending/);
+    expect(page.errors).toEqual([]);
 });
 
 test('考卷簽名項目：沒簽是紫色「簽」，學生簽好自己點掉；家長頁另外寫「考卷沒簽名」', async ({ browser }) => {
