@@ -1691,9 +1691,9 @@
             <button id="bulk-missing-button" onclick="openBulkMissing()" class="teacher-ui flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white text-orange-600 hover:bg-orange-50 border-2 border-white/80 text-sm sm:text-base font-black whitespace-nowrap shadow-sm transition-colors" title="請假或缺交好幾項作業的同學：選座號、勾選作業，一次登記缺交">
                 <span class="text-lg leading-none">🟠</span><span class="hidden sm:inline">登記缺交</span><span class="sm:hidden">缺交</span>
             </button>
-            <!-- 教師登記分兩種：早上清點缺交、改完作業登記訂正 -->
+            <!-- 教師登記分兩種：早上清點有交（橘→紅）、改完作業把不用訂正的點綠（紅→綠） -->
             <div id="mark-mode" class="hidden flex-shrink-0 items-center bg-black/25 rounded-xl p-0.5 border border-white/20">
-                <button id="mark-mode-missing" onclick="setMarkMode('missing')" class="px-2 py-1 rounded-lg text-xs sm:text-sm font-black whitespace-nowrap">📥 清點缺交</button>
+                <button id="mark-mode-missing" onclick="setMarkMode('missing')" class="px-2 py-1 rounded-lg text-xs sm:text-sm font-black whitespace-nowrap">📥 清點有交</button>
                 <button id="mark-mode-fix" onclick="setMarkMode('fix')" class="px-2 py-1 rounded-lg text-xs sm:text-sm font-black whitespace-nowrap">✏️ 改作業</button>
             </div>
             <div id="role-status-indicator" class="teacher-ui hidden sm:flex text-xs font-black px-3 py-1 rounded-xl bg-black/25 text-white/95 border border-white/20 flex-shrink-0 items-center gap-1.5 whitespace-nowrap">
@@ -2634,7 +2634,7 @@
             </div>
             <div id="collect-rows" class="flex flex-col gap-1.5 overflow-y-auto min-h-0 flex-1 py-1 pr-1"></div>
             <button onclick="addCollectRow()" class="self-start mt-1 text-sm font-black text-sky-700 hover:text-sky-900">＋ 再加一項</button>
-            <p class="text-xs font-bold text-slate-400 mt-1">勾「收」的會放上看板（先換掉全班已完成的框）；勾「✍️簽名」會另外多一個簽名項目。放好後自動切到「清點缺交」，點沒交的座號就好。</p>
+            <p class="text-xs font-bold text-slate-400 mt-1">勾「收」的會放上看板（先換掉全班已完成的框）；勾「✍️簽名」會另外多一個簽名項目。放上後全班先是橘色缺交，自動切到「清點有交」：點有交的座號變紅色；改完再切「改作業」，把不用訂正的點成綠色。</p>
             <div class="grid grid-cols-2 gap-2.5 mt-3">
                 <button onclick="closeCollect()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-base transition-all">取消</button>
                 <button id="collect-confirm" onclick="confirmCollect()" class="bg-sky-500 hover:bg-sky-600 text-white font-black py-2.5 rounded-xl text-base transition-all">放上看板</button>
@@ -2796,6 +2796,14 @@
 
         function isMissing(assignment, studentId) {
             return getStudentStatus(assignment, studentId) === STATUS_MISSING;
+        }
+
+        // 新作業：全班先是缺交（橘燈），清點時點有交的座號變紅燈，改完再把不用訂正的點成綠燈
+        // 簽名項目照舊：先全綠，點沒簽的變紫色
+        function startAsAllMissing(assignment) {
+            window.state.assignmentStatuses[assignment] = {};
+            if (isSignItem(assignment)) return;
+            window.state.students.forEach(st => { window.state.assignmentStatuses[assignment][st.id] = STATUS_MISSING; });
         }
 
         function countMissing(assignment) {
@@ -3045,9 +3053,9 @@
             const counting = window.state.markMode === 'missing';
             if (indicatorText) {
                 indicatorText.textContent = role === 'student' ? "學生自主消單模式"
-                    : `${helperActive ? '小幫手' : '教師'}登記中・${counting ? '清點缺交 (點一下＝缺交)' : '改作業 (點擊標記紅燈)'}`;
+                    : `${helperActive ? '小幫手' : '教師'}登記中・${counting ? '清點有交 (橘→紅)' : '改作業 (紅→綠)'}`;
             }
-            // 登記模式時旁邊已經有「清點缺交／改作業」按鈕，不用再顯示文字說明（騰出標語列的空間）
+            // 登記模式時旁邊已經有「清點有交／改作業」按鈕，不用再顯示文字說明（騰出標語列的空間）
             document.getElementById('role-status-indicator').classList.toggle('sm:flex', role !== 'teacher');
             const markMode = document.getElementById('mark-mode');
             markMode.classList.toggle('hidden', role !== 'teacher');
@@ -3060,12 +3068,12 @@
             renderOffBoard();
         }
 
-        // 清點缺交 ⇄ 改作業（只記在這台電腦，不用存雲端）
+        // 清點有交 ⇄ 改作業（只記在這台電腦，不用存雲端）
         function setMarkMode(mode) {
             window.state.markMode = mode === 'missing' ? 'missing' : 'fix';
             window.soundEffect.playToggle();
             applyRoleUI(window.state.userRole);
-            showToast(mode === 'missing' ? '清點缺交：點沒交作業的座號（變橘色），再點一次取消' : '改作業：點座號 綠 → 紅（訂正）→ 橘（缺交）→ 綠');
+            showToast(mode === 'missing' ? '清點有交：點有交作業的座號（橘 → 紅），沒交的維持橘色缺交' : '改作業：點不用訂正的座號（紅 → 綠），要訂正的維持紅色');
         }
 
         function setRole(role) {
@@ -3884,7 +3892,7 @@
             }
             toAdd.forEach(n => {
                 window.state.assignments.push(n);
-                delete window.state.assignmentStatuses[n];
+                startAsAllMissing(n);
             });
             // 先換掉全班已完成的框（從後面的框開始），換不下的留在作業清單
             const free = window.state.slots.map((s, i) => i).filter(i => countPending(window.state.slots[i].assignment) === 0);
@@ -3899,7 +3907,7 @@
             const left = fresh.length - placed.length;
             showToast(left > 0
                 ? `已放上 ${placed.length} 項；看板沒有空框了，另外 ${left} 項先放在作業清單（可以到設定後台調成更多框）`
-                : `已放上 ${placed.length} 項作業${isTeacherMode() ? '，現在點沒交的座號就好' : ''}`);
+                : `已放上 ${placed.length} 項作業${isTeacherMode() ? '，全班先是橘色缺交，點有交的座號變紅色' : ''}`);
         }
 
         function openBulkMissing() {
@@ -4103,10 +4111,11 @@
                     return;
                 }
                 window.state.assignments.push(name);
-                // 同名作業若曾被刪除，不沿用舊的紅燈紀錄
-                delete window.state.assignmentStatuses[name];
+                // 同名作業若曾被刪除，不沿用舊的紅燈紀錄；新作業全班先是缺交
+                startAsAllMissing(name);
             }
             closeNewOnBoard();
+            if (isTeacherMode()) window.state.markMode = 'missing';
             const replaced = window.state.slots[index].assignment;
             applyAssignmentToSlot(index, name);
             showToast(`第 ${index + 1} 框的【${replaced}】已換成新作業【${name}】`);
@@ -4126,19 +4135,22 @@
 
             const sign = isSignItem(assignment);
             if (isTeacherMode()) {
-                // 清點缺交（早上收作業）：綠 ⇄ 橘（缺交）；簽名項目一律 綠 ⇄ 紫（沒簽）
-                // 改作業（原本的方式）：綠 → 紅（要訂正）→ 橘（缺交）→ 綠
-                if (sign || window.state.markMode === 'missing') {
+                // 簽名項目一律 綠 ⇄ 紫（沒簽）
+                // 清點交作業：橘（缺交）→ 紅（有交、待改）；再點一次改回缺交
+                // 改作業：紅 → 綠（不用訂正），再點一次改回紅；還是缺交的點一下＝補交（變紅）
+                if (sign) {
                     nextStatus = currentStatus === STATUS_MISSING ? true : STATUS_MISSING;
+                } else if (window.state.markMode === 'missing') {
+                    nextStatus = currentStatus === STATUS_MISSING ? false : STATUS_MISSING;
                 } else {
-                    nextStatus = currentStatus === true ? false : (currentStatus === STATUS_MISSING ? true : STATUS_MISSING);
+                    nextStatus = currentStatus === false ? true : false;
                 }
                 if (nextStatus === true) {
                     window.soundEffect.playSuccess();
-                    showToast(`座號 ${seat} 已改回綠燈【${assignment}】`);
+                    showToast(`座號 ${seat} 不用訂正【${assignment}】`);
                 } else {
                     window.soundEffect.playAlert();
-                    showToast(nextStatus === STATUS_MISSING ? `座號 ${seat} ${sign ? '還沒簽名' : '已登記缺交'}【${assignment}】` : `座號 ${seat} 已登記需訂正【${assignment}】`);
+                    showToast(nextStatus === STATUS_MISSING ? `座號 ${seat} ${sign ? '還沒簽名' : '改回缺交'}【${assignment}】` : (currentStatus === STATUS_MISSING ? `座號 ${seat} 有交【${assignment}】` : `座號 ${seat} 要訂正【${assignment}】`));
                 }
             } else {
                 if (sign && currentStatus === STATUS_MISSING) {
@@ -4774,8 +4786,8 @@
             }
             window.soundEffect.playSuccess();
             window.state.assignments.push(val);
-            // 同名作業若曾被刪除，不沿用舊的紅燈紀錄
-            delete window.state.assignmentStatuses[val];
+            // 同名作業若曾被刪除，不沿用舊的紅燈紀錄；新作業全班先是缺交
+            startAsAllMissing(val);
             input.value = '';
             renderSettingsAssignments();
             window.syncStateToCloud();
@@ -6698,13 +6710,13 @@
                 first,
                 page('🔴', '老師登記需要訂正的同學', [
                     '按右上角「<b>教師登記</b>」，輸入教師密碼。',
-                    '標語列右邊可以切換兩種登記：「<b>✏️ 改作業</b>」點座號依序切換 <b class="text-rose-600">紅燈</b>＝要訂正 → <b class="text-orange-600">橘燈（缺）</b>＝缺交 → <b class="text-emerald-600">綠燈</b>＝完成；「<b>📥 清點缺交</b>」點一下就是缺交，再點一下取消。',
+                    '新作業放上看板時，全班先是 <b class="text-orange-600">橘燈（缺）</b>＝缺交。「<b>📥 清點有交</b>」點有交的座號 → 變 <b class="text-rose-600">紅燈</b>；改完作業切到「<b>✏️ 改作業</b>」，把不用訂正的點成 <b class="text-emerald-600">綠燈</b>（再點一下改回紅燈）。',
                     '請假的同學缺好幾項作業：按標語列的「<b>🟠 登記缺交</b>」，輸入座號、勾選沒交的作業，一次登記。',
                     '卡片上的「<b>✓ 全部完成</b>」可以把整項作業一次變綠燈（只有老師能用）；全班完成後會出現「<b>換下一項</b>」，換上還有人沒訂正的作業。',
                     '一段時間沒有操作會自動上鎖，回到學生消單模式；上鎖時間可在設定後台選 1.5／3／5／10 分鐘。'
                 ]),
                 page('📝', '出新作業、追蹤舊作業', [
-                    '早上收作業按「<b>📥 收作業</b>」：照前一天的聯絡簿先列好（考試預告不勾、星號公告不列），寫了「<b>訂簽</b>」的會多一個<b class="text-violet-600">簽名項目</b>（沒簽是紫色「簽」，學生簽好自己點掉）；按「放上看板」後點沒交的座號就好。',
+                    '早上收作業按「<b>📥 收作業</b>」：照前一天的聯絡簿先列好（考試預告不勾、星號公告不列），寫了「<b>訂簽</b>」的會多一個<b class="text-violet-600">簽名項目</b>（沒簽是紫色「簽」，學生簽好自己點掉）；按「放上看板」後全班先是橘色缺交，點有交的座號變紅色。',
                     '按標語列的「<b>➕ 新增並放上看板</b>」，點作業名稱（例如國習）；<b>作業日期</b>預設前一個上課日，可以改；<b>頁數或單元</b>可留白。',
                     '同一本作業的每一次分開記錄，例如「國習｜10/16 p.23」和「國習｜10/17」。點作業框的名稱可以換作業，換下來的紀錄都會保留。',
                                         '換下看板後還有人沒完成，會排在看板最下面的「<b>📌 已換下看板、還沒完成</b>」，訂正完由<b>老師或小幫手</b>點掉（點錯 5 秒內可以復原）。',
