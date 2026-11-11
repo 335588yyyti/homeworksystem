@@ -28,8 +28,15 @@ jobs:
       - name: 確認 assets/tailwind.css 是最新的（改了 index.html 的 class 要執行 npm run build:css）
         run: npm run check:css
 
+      # Ubuntu 套件伺服器偶爾連不上：失敗就等一分鐘再試，最多 3 次
       - name: 安裝測試用瀏覽器
-        run: npx playwright install --with-deps chromium
+        run: |
+          for i in 1 2 3; do
+            npx playwright install --with-deps chromium && exit 0
+            echo "第 $i 次安裝失敗，60 秒後再試"
+            sleep 60
+          done
+          exit 1
 
       - name: 執行測試
         run: npx playwright test --shard=${{ matrix.shard }}/3
