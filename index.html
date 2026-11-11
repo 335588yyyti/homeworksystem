@@ -4056,6 +4056,8 @@
         // 教室現在要顯示哪一份：下午 3 點前是今天的，3 點後是下一個上課日的；那天還沒寫就先顯示前一份
         // 聯絡簿的說明（寫了「不用抄」或開頭打 * ※）：不編號、字小一點，收作業也略過
         const isContactNote = t => /^\s*[*＊※]/.test(t) || /不用抄/.test(t);
+        // 開頭打 * 的是「需要提醒的人再抄」：前面畫三角形 ▲（寫了「不用抄」的說明不畫）
+        const isContactOptional = t => /^\s*[*＊※]/.test(t) && !/不用抄/.test(t);
         const contactClean = t => t.replace(/^\s*\d+\s*[.、．)）]\s*/, '').replace(/^\s*[*＊※]\s*/, '') || t;
         // 每一項的編號（說明是 null，不佔號碼）
         const contactNumbers = items => { let n = 0; return items.map(t => isContactNote(t) ? null : ++n); };
@@ -5443,7 +5445,7 @@
             if (items.length > 0 && !vertical) {
                 paper = `<ol class="contact-paper contact-list flex-1 min-w-0 lg:overflow-hidden p-4 sm:p-6 flex flex-col gap-[0.25em] text-2xl sm:text-4xl">${items.map((t, i) => nums[i] === null ? `
                     <li class="contact-note flex gap-[0.4em] items-baseline border-b-2 border-dashed border-amber-200 pb-[0.2em] leading-snug">
-                        <span class="w-[1.8em] flex-shrink-0"></span>
+                        <span class="w-[1.8em] flex-shrink-0 text-right text-[0.7em] font-black text-amber-500">${isContactOptional(t) ? '▲' : ''}</span>
                         <span class="text-[0.7em] font-bold text-slate-500 break-all">${escapeHtml(clean(t))}</span>
                     </li>` : `
                     <li class="flex gap-[0.4em] items-baseline border-b-2 border-dashed border-amber-200 pb-[0.2em] leading-snug">
@@ -5454,7 +5456,7 @@
                 // 直式：由右往左一項一欄
                 paper = `<div class="contact-paper p-2 overflow-x-auto max-w-full ${tasks.length && !split ? 'lg:flex-shrink-0' : 'flex-1 min-w-0'}"><div class="contact-cols">${items.map((t, i) => `
                 <div class="contact-col${nums[i] === null ? ' contact-note' : ''}">
-                    <div class="num text-xl sm:text-2xl" style="font-family: Nunito, sans-serif">${nums[i] === null ? '※' : nums[i]}</div>
+                    <div class="num text-xl sm:text-2xl" style="font-family: Nunito, sans-serif">${nums[i] === null ? (isContactOptional(t) ? '▲' : '※') : nums[i]}</div>
                     <div class="txt-wrap"><div class="txt">${contactTextHtml(clean(t))}</div></div>
                 </div>`).join('')}</div></div>`;
             }

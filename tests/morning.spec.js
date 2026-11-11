@@ -373,9 +373,11 @@ test('聯絡簿的說明（寫了「不用抄」或開頭打 *）不編號、字
     await expect(lis.nth(2)).toContainText('2.');
     await expect(lis.nth(3)).toHaveClass(/contact-note/);
     await expect(lis.nth(3)).not.toContainText('*');
-    // 直式：說明那一欄寫 ※，不佔號碼
+    await expect(lis.nth(3)).toContainText('▲'); // 開頭打 * 的：需要提醒的人再抄，前面畫三角形
+    await expect(lis.nth(1)).not.toContainText('▲');
+    // 直式：說明那一欄寫 ※、* 那一欄畫 ▲，都不佔號碼
     await room.click('#contact-layout-v');
-    await expect(room.locator('#contact-body .contact-paper .contact-col .num')).toHaveText(['1', '※', '2', '※']);
+    await expect(room.locator('#contact-body .contact-paper .contact-col .num')).toHaveText(['1', '※', '2', '▲']);
     // 收作業不列說明
     const rows = await room.evaluate(() => contactShown(state.daily.contact).items.map((t) => parseContactLine(t, collectBases())).filter(Boolean).map((r) => r.base));
     expect(rows).toEqual(['週記:感恩的心', '品德學習單']);
