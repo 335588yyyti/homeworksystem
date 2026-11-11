@@ -209,6 +209,8 @@ test('早修任務也可以切換直式，另一台跟著變，格子不會超�
 test('早修任務・聯絡簿的標題每天顯示今天的日期；內容是前幾天的作業會小字提醒', async ({ browser }) => {
     const cloud = createCloud();
     const room = await openDevice(browser, cloud);
+    // 固定在上課日早上：下午三點以後標題會換成明天的日期
+    await room.clock.setFixedTime(new Date(2026, 10, 2, 10, 0, 0));
     await room.evaluate(() => setMorningEnabled(true));
     await unlockTeacher(room, 'morning');
     await room.click('text=✏️ 編輯');
@@ -381,5 +383,22 @@ test('聯絡簿的說明（寫了「不用抄」或開頭打 *）不編號、字
     // 收作業不列說明
     const rows = await room.evaluate(() => contactShown(state.daily.contact).items.map((t) => parseContactLine(t, collectBases())).filter(Boolean).map((r) => r.base));
     expect(rows).toEqual(['週記:感恩的心', '品德學習單']);
+    expect(room.errors).toEqual([]);
+});
+
+test('聯絡簿橫式：太長的一項自己把字縮小，擠在同一行', async ({ browser }) => {
+    const room = await openDevice(browser, createCloud(), { viewport: { width: 1366, height: 768 } });
+    await room.evaluate(() => setMorningEnabled(true));
+    await unlockTeacher(room, 'morning');
+    await room.click('text=✏️ 編輯');
+    await room.fill('#contact-input', '週記：期中考反思+期末考自我複習計畫表\n考L7聽考');
+    await room.click('#modal-contact >> text=儲存');
+    await room.click('#contact-layout-h');
+    await expect(room.locator('#contact-body .contact-list li')).toHaveCount(2);
+    await expect.poll(() => room.evaluate(() => {
+        const [a, b] = [...document.querySelectorAll('#contact-body .contact-list li > span:last-child')];
+        const lineH = (el) => parseFloat(getComputedStyle(el).fontSize) * 1.6;
+        return a.getBoundingClientRect().height < lineH(a) && parseFloat(getComputedStyle(a).fontSize) < parseFloat(getComputedStyle(b).fontSize);
+    })).toBe(true);
     expect(room.errors).toEqual([]);
 });

@@ -5532,9 +5532,31 @@
             // 先排聯絡簿（直式時寬度會跟著字變），再把便利貼的字放到剛好
             fitContactVertical();
             const list = document.querySelector('#contact-body .contact-list');
-            if (list) fitTextToBox(list, list, 18, 80);
+            if (list) {
+                list.querySelectorAll('li > span:last-child').forEach(span => { span.style.fontSize = ''; });
+                fitTextToBox(list, list, 18, 80);
+                fitContactLines(list);
+            }
             const note = document.getElementById('morning-task');
             if (note?.querySelector('.task-list')) fitTextToBox(note, note.querySelector('.task-list'), 16, 64);
+        }
+
+        // 橫式：太長的一項自己把字縮小，盡量擠在同一行（最小縮到原本的 45%，再長才換行）
+        function fitContactLines(list) {
+            list.querySelectorAll('li').forEach(li => {
+                const span = li.lastElementChild;
+                if (!span) return;
+                span.style.fontSize = '';
+                span.style.whiteSpace = 'nowrap';
+                const avail = li.clientWidth - (span.offsetLeft - li.offsetLeft);
+                const natural = span.scrollWidth;
+                if (avail > 0 && natural > avail) {
+                    const base = parseFloat(getComputedStyle(span).fontSize);
+                    const size = Math.max(base * 0.45, Math.floor(base * avail / natural * 0.98));
+                    span.style.fontSize = size + 'px';
+                }
+                span.style.whiteSpace = '';
+            });
         }
 
         // 直式：一項一欄；字的大小以大約 9 個字一行來算，更長的項目接到左邊下一行，不會讓全部的字都變小
