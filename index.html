@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=1edfe889" rel="stylesheet">
+    <link href="assets/tailwind.css?v=a2efd1cb" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -1179,6 +1179,11 @@
                     layout: cc.layout === 'h' ? 'h' : 'v',
                     // 早修任務也可以直式或橫式（預設橫式）
                     taskLayout: cc.taskLayout === 'v' ? 'v' : 'h',
+                    // 每週固定的作業：{ 星期幾(1～5): [項目] }，那天的聯絡簿自動加在最後
+                    fixed: cc.fixed && typeof cc.fixed === 'object' ? Object.fromEntries(Object.entries(cc.fixed)
+                        .filter(([k, v]) => /^[1-5]$/.test(k) && Array.isArray(v))
+                        .map(([k, v]) => [k, v.map(String).map(t => t.trim().slice(0, 80)).filter(Boolean).slice(0, 5)])
+                        .filter(([, v]) => v.length)) : {},
                     // 老師今天自己挑要顯示哪一天的聯絡簿（只算當天，隔天恢復自動）
                     pick: cc.pick && /^\d{4}-\d{2}-\d{2}$/.test(String(cc.pick.day)) && /^\d{4}-\d{2}-\d{2}$/.test(String(cc.pick.key))
                         ? { day: cc.pick.day, key: cc.pick.key } : null
@@ -2466,7 +2471,7 @@
             </div>
             <div class="overflow-y-auto min-h-0 flex flex-col gap-1">
                 <label for="task-input" class="text-base font-black text-amber-700">⭐ 早修任務 <span class="text-sm font-bold text-slate-400">例如「訂正國卷 L.3」，不用可以空白</span></label>
-                <textarea id="task-input" oninput="saveContactDraft()" rows="3" class="w-full bg-amber-50 border-2 border-amber-200 rounded-xl px-3 py-2 text-lg font-black text-slate-800 focus:outline-none focus:border-amber-400 leading-relaxed"></textarea>
+                <textarea id="task-input" oninput="saveContactDraft()" rows="3" class="flex-shrink-0 w-full bg-amber-50 border-2 border-amber-200 rounded-xl px-3 py-2 text-lg font-black text-slate-800 focus:outline-none focus:border-amber-400 leading-relaxed"></textarea>
                 <!-- 這份聯絡簿是哪天的作業、哪天收；可以先打好之後幾天的 -->
                 <div class="flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-2 text-base font-black text-emerald-800">
                     <span>📒 聯絡簿：</span>
@@ -2477,7 +2482,25 @@
                 </div>
                 <p class="text-xs font-bold text-slate-400"><span id="contact-date-hint"></span> <button type="button" id="contact-copy-prev" onclick="copyPrevContact()" class="text-emerald-700 hover:text-emerald-900 underline underline-offset-2 hidden">帶入上一份</button></p>
                 <label for="contact-input" class="text-base font-black text-emerald-800 mt-1">聯絡簿內容 <span class="text-sm font-bold text-slate-400">例如「國習 P.48」「帶水彩」</span></label>
-                <textarea id="contact-input" oninput="saveContactDraft()" rows="6" class="w-full bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2 text-lg font-black text-slate-800 focus:outline-none focus:border-amber-400 leading-relaxed"></textarea>
+                <textarea id="contact-input" oninput="saveContactDraft()" rows="6" class="flex-shrink-0 w-full bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2 text-lg font-black text-slate-800 focus:outline-none focus:border-amber-400 leading-relaxed"></textarea>
+                <p id="contact-fixed-hint" class="text-sm font-black text-sky-700"></p>
+                <!-- 每週固定的作業：那天的聯絡簿自動加在最後 -->
+                <details id="contact-fixed" class="mt-1 bg-sky-50 border-2 border-sky-100 rounded-xl px-3 py-2">
+                    <summary class="cursor-pointer text-base font-black text-sky-800">🔁 每週固定作業 <span class="text-sm font-bold text-slate-400">例如每週二「完成書法作業」</span></summary>
+                    <p class="text-xs font-bold text-slate-400 mt-1">寫在星期幾，那天的聯絡簿就自動加在最後；多項用「、」分開</p>
+                    <div class="grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1 mt-1">
+                        <label for="contact-fixed-1" class="text-sm font-black text-sky-800">週一</label>
+                        <input type="text" id="contact-fixed-1" data-day="1" maxlength="120" oninput="fillContactFixedHint()" class="bg-white border-2 border-slate-200 rounded-lg px-2 py-1 text-base font-black text-slate-800 focus:outline-none focus:border-sky-400">
+                        <label for="contact-fixed-2" class="text-sm font-black text-sky-800">週二</label>
+                        <input type="text" id="contact-fixed-2" data-day="2" maxlength="120" oninput="fillContactFixedHint()" class="bg-white border-2 border-slate-200 rounded-lg px-2 py-1 text-base font-black text-slate-800 focus:outline-none focus:border-sky-400">
+                        <label for="contact-fixed-3" class="text-sm font-black text-sky-800">週三</label>
+                        <input type="text" id="contact-fixed-3" data-day="3" maxlength="120" oninput="fillContactFixedHint()" class="bg-white border-2 border-slate-200 rounded-lg px-2 py-1 text-base font-black text-slate-800 focus:outline-none focus:border-sky-400">
+                        <label for="contact-fixed-4" class="text-sm font-black text-sky-800">週四</label>
+                        <input type="text" id="contact-fixed-4" data-day="4" maxlength="120" oninput="fillContactFixedHint()" class="bg-white border-2 border-slate-200 rounded-lg px-2 py-1 text-base font-black text-slate-800 focus:outline-none focus:border-sky-400">
+                        <label for="contact-fixed-5" class="text-sm font-black text-sky-800">週五</label>
+                        <input type="text" id="contact-fixed-5" data-day="5" maxlength="120" oninput="fillContactFixedHint()" class="bg-white border-2 border-slate-200 rounded-lg px-2 py-1 text-base font-black text-slate-800 focus:outline-none focus:border-sky-400">
+                    </div>
+                </details>
             </div>
             <div class="grid grid-cols-2 gap-2.5 mt-3">
                 <button onclick="try { localStorage.removeItem(CONTACT_DRAFT_KEY); } catch (e) {} closeContactEditor()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-base transition-all">取消</button>
@@ -3777,10 +3800,10 @@
             const history = c.history || {};
             const past = Object.keys(history).filter(k => k < day).sort();
             const due = past.filter(k => contactDueDate(c, k) === day);
-            if (due.length) return due.map(date => ({ date, items: history[date] }));
+            if (due.length) return due.map(date => ({ date, items: contactItemsFor(c, date, history[date]) }));
             // 該收的那天沒收到（例如放假）：用最近一份已經到期的
             const late = past.filter(k => contactDueDate(c, k) < day).pop();
-            if (late) return [{ date: late, items: history[late] }];
+            if (late) return [{ date: late, items: contactItemsFor(c, late, history[late]) }];
             if (past.length) return [];
             // 還沒有紀錄（剛上線）：沿用舊的做法
             const target = toDateInputValue(previousSchoolDay(now));
@@ -3857,8 +3880,9 @@
         // 改作業日期：換成那天出的作業（只記得最近三天）
         function loadCollectDate(date) {
             if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
-            const items = ((window.state.daily || defaultDaily()).contact.history || {})[date];
-            fillCollectRows([{ date, items: items || [] }], `沒有 ${shortDate(date)} 出的作業紀錄（只記得最近三天），請自己填`);
+            const c = (window.state.daily || defaultDaily()).contact;
+            const items = (c.history || {})[date];
+            fillCollectRows([{ date, items: items ? contactItemsFor(c, date, items) : [] }], `沒有 ${shortDate(date)} 出的作業紀錄（只記得最近三天），請自己填`);
         }
 
         function addCollectRow() {
@@ -4062,15 +4086,30 @@
         // 每一項的編號（說明是 null，不佔號碼）
         const contactNumbers = items => { let n = 0; return items.map(t => isContactNote(t) ? null : ++n); };
 
+        // 每週固定的作業（例如每週二「完成書法作業」）：那天的聯絡簿自動加在最後，老師自己已經寫了就不重複
+        const WEEKDAY_NAMES = ['日', '一', '二', '三', '四', '五', '六'];
+        function contactFixedFor(c, key) {
+            return isDateKey(key) ? ((c.fixed || {})[fromDateKey(key).getDay()] || []) : [];
+        }
+        function contactItemsFor(c, key, items) {
+            const own = items || [];
+            const have = new Set(own.map(t => contactClean(t).replace(/\s+/g, '')));
+            const add = contactFixedFor(c, key).filter(t => !have.has(contactClean(t).replace(/\s+/g, '')));
+            // 加在作業的最後、最後面的說明（例如 * 開頭的提醒）之前
+            let at = own.length;
+            while (at > 0 && isContactNote(own[at - 1])) at--;
+            return [...own.slice(0, at), ...add, ...own.slice(at)];
+        }
+
         function contactShown(c, now = new Date()) {
             const history = c.history || {};
             const keys = Object.keys(history);
             if (keys.length === 0) return { key: '', items: c.items || [] };
             // 老師今天挑了要顯示哪一天，就照老師挑的
             const pick = c.pick;
-            if (pick && pick.day === toDateInputValue(now) && history[pick.key]) return { key: pick.key, items: history[pick.key], picked: true };
+            if (pick && pick.day === toDateInputValue(now) && history[pick.key]) return { key: pick.key, items: contactItemsFor(c, pick.key, history[pick.key]), picked: true };
             const key = keys.filter(k => k <= contactAssignDate(now)).sort().pop();
-            return key ? { key, items: history[key] } : { key: '', items: [] };
+            return key ? { key, items: contactItemsFor(c, key, history[key]) } : { key: '', items: [] };
         }
 
         // 教室畫面要顯示哪一天的聯絡簿：選回自動的那份就恢復自動（下午 3 點換成下一個上課日）
@@ -5632,6 +5671,22 @@
             } catch (e) {}
         }
 
+        // 固定作業：週一～週五各一格，多項用「、」分開
+        function readFixedInputs() {
+            const fixed = {};
+            document.querySelectorAll('#contact-fixed input[data-day]').forEach(input => {
+                const items = input.value.split(/[、,，;；\n]/).map(t => t.trim().slice(0, 80)).filter(Boolean).slice(0, 5);
+                if (items.length) fixed[input.dataset.day] = items;
+            });
+            return fixed;
+        }
+
+        function fillContactFixedHint() {
+            const date = document.getElementById('contact-for-date').value;
+            const fixed = contactFixedFor({ fixed: readFixedInputs() }, date);
+            document.getElementById('contact-fixed-hint').textContent = fixed.length ? `🔁 週${WEEKDAY_NAMES[fromDateKey(date).getDay()]}固定會自動加上：${fixed.join('、')}` : '';
+        }
+
         function openContactEditor() {
             if (!canEditBoard()) {
                 openTeacherAuthModal(openContactEditor, { allowHelper: true });
@@ -5643,6 +5698,7 @@
             forInput.min = toDateInputValue(previousSchoolDay(previousSchoolDay(previousSchoolDay(now))));
             forInput.max = contactAheadLimit(now);
             document.getElementById('task-input').value = c.tasks.join('\n');
+            document.querySelectorAll('#contact-fixed input[data-day]').forEach(input => { input.value = ((c.fixed || {})[input.dataset.day] || []).join('、'); });
             fillContactDate(contactAssignDate(now));
             // 上次打到一半沒儲存（例如視窗被關掉、網頁重新整理）：把打好的內容拿回來
             let draft = null;
@@ -5671,6 +5727,7 @@
             dueInput.min = toDateInputValue(new Date(fromDateKey(date).getTime() + 86400000));
             dueInput.value = contactDueDate(c, date);
             document.getElementById('contact-input').value = items.join('\n');
+            fillContactFixedHint();
             const cur = contactAssignDate(now);
             document.getElementById('contact-date-hint').textContent = date === cur
                 ? (now.getHours() >= CONTACT_NEXT_DAY_HOUR ? '下午 3 點後寫的算下一個上課日的作業。' : '今天的作業。') + '可以改日期先打好之後幾天的。'
@@ -5728,7 +5785,7 @@
             const keptDue = Object.fromEntries(Object.entries(due).filter(([k]) => k in keptHistory));
             const keepPrev = d.contact.date && d.contact.date !== todayKey() && d.contact.items.length > 0;
             const prev = keepPrev ? { prevItems: d.contact.items, prevDate: d.contact.date } : {};
-            const contact = { ...d.contact, ...prev, history: keptHistory, due: keptDue, tasks: lines('task-input'), date: todayKey() };
+            const contact = { ...d.contact, ...prev, history: keptHistory, due: keptDue, fixed: readFixedInputs(), tasks: lines('task-input'), date: todayKey() };
             contact.items = contactShown(contact, now).items;
             window.state.daily = { ...d, contact };
             try { localStorage.removeItem(CONTACT_DRAFT_KEY); } catch (e) {}
