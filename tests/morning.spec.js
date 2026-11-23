@@ -403,7 +403,7 @@ test('聯絡簿橫式：太長的一項自己把字縮小，擠在同一行', as
     expect(room.errors).toEqual([]);
 });
 
-test('聯絡簿每週固定作業：設定週二「完成書法作業」，週二的聯絡簿自動加在最後，收作業也會列出來', async ({ browser }) => {
+test('聯絡簿每週固定作業：打那天的聯絡簿時自動帶入，可以改寫或刪掉，收作業照存的內容', async ({ browser }) => {
     const cloud = createCloud();
     const room = await openDevice(browser, cloud, { viewport: { width: 1366, height: 768 } });
     // 2026-11-10 是星期二，早上
@@ -412,29 +412,31 @@ test('聯絡簿每週固定作業：設定週二「完成書法作業」，週�
     await unlockTeacher(room, 'morning');
     await room.click('text=✏️ 編輯');
     await expect(room.locator('#contact-for-date')).toHaveValue('2026-11-10');
-    await room.click('#contact-fixed summary');
-    await room.fill('#contact-fixed-2', '完成書法作業');
-    await expect(room.locator('#contact-fixed-hint')).toContainText('週二固定會自動加上：完成書法作業');
     await room.fill('#contact-input', '國習P.48\n*帶水彩');
+    await room.click('#contact-fixed summary');
+    await room.fill('#contact-fixed-2', '英、完成書法作業');
+    await room.dispatchEvent('#contact-fixed-2', 'change');
+    // 帶進聯絡簿內容：放在作業最後、* 提醒之前
+    await expect(room.locator('#contact-input')).toHaveValue('國習P.48\n英\n完成書法作業\n*帶水彩');
+    await expect(room.locator('#contact-fixed-hint')).toContainText('已帶入週二固定作業：英、完成書法作業');
+    // 老師把「英」改成今天的內容
+    await room.fill('#contact-input', '國習P.48\n英U3句子英*2 中*1\n完成書法作業\n*帶水彩');
     await room.click('#modal-contact >> text=儲存');
     await room.click('#contact-layout-h');
     const lis = room.locator('#contact-body .contact-paper li');
-    await expect(lis).toHaveCount(3);
-    // 加在作業最後、* 提醒之前
-    await expect(lis.nth(1)).toContainText('2.');
-    await expect(lis.nth(1)).toContainText('完成書法作業');
-    await expect(lis.nth(2)).toContainText('帶水彩');
-    await expect.poll(() => cloud.board('main').daily?.contact?.fixed, { timeout: 15000 }).toEqual({ 2: ['完成書法作業'] });
-    // 自己已經寫了就不重複
-    expect(await room.evaluate(() => contactItemsFor(state.daily.contact, '2026-11-10', ['完成書法作業']))).toEqual(['完成書法作業']);
-    // 週三不會加
-    expect(await room.evaluate(() => contactItemsFor(state.daily.contact, '2026-11-11', ['數習']))).toEqual(['數習']);
-    // 隔天（週三）收作業：列出週二的固定作業
-    await room.clock.setFixedTime(new Date(2026, 10, 11, 8, 0, 0));
-    const bases = await room.evaluate(() => collectSources().flatMap((src) => src.items));
-    expect(bases).toContain('完成書法作業');
-    // 再打開編輯：設定還在
+    await expect(lis).toHaveCount(4);
+    await expect(lis.nth(1)).toContainText('英U3句子');
+    await expect(lis.nth(2)).toContainText('完成書法作業');
+    await expect.poll(() => cloud.board('main').daily?.contact?.fixed, { timeout: 15000 }).toEqual({ 2: ['英', '完成書法作業'] });
+    // 再打開編輯：改寫過的「英U3…」不會再多帶一個「英」
     await room.click('text=✏️ 編輯');
-    await expect(room.locator('#contact-fixed-2')).toHaveValue('完成書法作業');
+    await expect(room.locator('#contact-input')).toHaveValue('國習P.48\n英U3句子英*2 中*1\n完成書法作業\n*帶水彩');
+    await expect(room.locator('#contact-fixed-2')).toHaveValue('英、完成書法作業');
+    // 那天不用：刪掉後存起來，教室畫面就不會出現
+    await room.fill('#contact-input', '國習P.48');
+    await room.click('#modal-contact >> text=儲存');
+    await expect(lis).toHaveCount(1);
+    // 週三沒有固定作業
+    expect(await room.evaluate(() => contactItemsFor(state.daily.contact, '2026-11-11', ['數習']))).toEqual(['數習']);
     expect(room.errors).toEqual([]);
 });
