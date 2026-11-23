@@ -1184,8 +1184,11 @@
                         .filter(([k, v]) => /^[1-5]$/.test(k) && Array.isArray(v))
                         .map(([k, v]) => [k, v.map(String).map(t => t.trim().slice(0, 80)).filter(Boolean).slice(0, 5)])
                         .filter(([, v]) => v.length)) : {},
-                    // 固定作業裡「#數字」（例如「品德學習單#4」）是哪一週的號碼（那週的星期一），之後每週自動加 1
-                    fixedWeek: /^\d{4}-\d{2}-\d{2}$/.test(String(cc.fixedWeek)) ? cc.fixedWeek : '',
+                    // 固定作業裡「#數字」（例如「品德學習單#4」）的號碼是下一次要用的；這裡記每一項最近一次真的用到的那天和號碼
+                    // { '5|品德學習單': { date: 'YYYY-MM-DD', n: 4 } }，同一天重新儲存不會重複加
+                    fixedUsed: cc.fixedUsed && typeof cc.fixedUsed === 'object' ? Object.fromEntries(Object.entries(cc.fixedUsed)
+                        .filter(([k, v]) => /^[1-5]\|/.test(k) && v && /^\d{4}-\d{2}-\d{2}$/.test(String(v.date)) && Number.isFinite(Number(v.n)))
+                        .slice(0, 25).map(([k, v]) => [k.slice(0, 82), { date: v.date, n: Math.max(0, Math.round(Number(v.n))) }])) : {},
                     // 老師今天自己挑要顯示哪一天的聯絡簿（只算當天，隔天恢復自動）
                     pick: cc.pick && /^\d{4}-\d{2}-\d{2}$/.test(String(cc.pick.day)) && /^\d{4}-\d{2}-\d{2}$/.test(String(cc.pick.key))
                         ? { day: cc.pick.day, key: cc.pick.key } : null
@@ -2489,7 +2492,7 @@
                 <!-- 每週固定的作業：那天的聯絡簿自動加在最後 -->
                 <details id="contact-fixed" class="mt-1 bg-sky-50 border-2 border-sky-100 rounded-xl px-3 py-2">
                     <summary class="cursor-pointer text-base font-black text-sky-800">🔁 每週固定作業 <span class="text-sm font-bold text-slate-400">例如每週二「完成書法作業」</span></summary>
-                    <p class="text-xs font-bold text-slate-400 mt-1">寫在星期幾，打那天的聯絡簿時就自動帶入，可以再改（例如「英」改成「英U3句子」）；多項用「、」分開；數字前加「#」（例如「品德學習單#4」）每週自動加 1</p>
+                    <p class="text-xs font-bold text-slate-400 mt-1">寫在星期幾，打那天的聯絡簿時就自動帶入，可以再改（例如「英」改成「英U3句子」）；多項用「、」分開；數字前加「#」（例如「品德學習單#4」），那天有用到下次就自動加 1，刪掉沒用就不加</p>
                     <div class="grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1 mt-1">
                         <label for="contact-fixed-1" class="text-sm font-black text-sky-800">週一</label>
                         <input type="text" id="contact-fixed-1" data-day="1" maxlength="120" onchange="applyContactFixed(); saveContactDraft()" class="bg-white border-2 border-slate-200 rounded-lg px-2 py-1 text-base font-black text-slate-800 focus:outline-none focus:border-sky-400">
@@ -4089,25 +4092,54 @@
 
         // 每週固定的作業（例如每週二「英」）：打開編輯那天的聯絡簿時自動帶入，老師可以直接改（例如改成「英U3句子」）或刪掉
         const WEEKDAY_NAMES = ['日', '一', '二', '三', '四', '五', '六'];
-        // 那一週的星期一（'YYYY-MM-DD'）
-        function weekMonday(key) {
-            const d = fromDateKey(key);
-            d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-            return toDateInputValue(d);
-        }
-        // 從 fromKey 那週到 toKey 那週隔了幾週
-        function weeksBetween(fromKey, toKey) {
-            if (!isDateKey(fromKey) || !isDateKey(toKey)) return 0;
-            return Math.round((fromDateKey(weekMonday(toKey)) - fromDateKey(weekMonday(fromKey))) / (7 * 86400000));
-        }
-        // 「品德學習單#4」：隔幾週號碼就加幾（keepMark 時保留 #，給設定的格子用）
-        function fixedNumbered(t, weeks, keepMark = false) {
-            return t.replace(/#\s*(\d+)/, (m, n) => (keepMark ? '#' : '') + Math.max(0, Number(n) + weeks));
+        // 「品德學習單#4」：# 後面是下一次要用的號碼。那天的聯絡簿真的有這一項才往上加，那週刪掉沒用就不加
+        const FIXED_NUM_RE = /#\s*(\d+)/;
+        const fixedUsedKey = (day, t) => `${day}|${contactClean(t.split('#')[0]).replace(/\s+/g, '')}`;
+        function fixedNumberFor(c, day, t, key) {
+            const m = t.match(FIXED_NUM_RE);
+            if (!m) return null;
+            const used = (c.fixedUsed || {})[fixedUsedKey(day, t)];
+            // 已經用過的那天再打開：還是那天的號碼
+            return used && used.date === key ? used.n : Number(m[1]);
         }
         function contactFixedFor(c, key) {
             if (!isDateKey(key)) return [];
-            const weeks = weeksBetween(c.fixedWeek || key, key);
-            return ((c.fixed || {})[fromDateKey(key).getDay()] || []).map(t => fixedNumbered(t, weeks));
+            const day = fromDateKey(key).getDay();
+            return ((c.fixed || {})[day] || []).map(t => {
+                const n = fixedNumberFor(c, day, t, key);
+                return n === null ? t : t.replace(FIXED_NUM_RE, String(n));
+            });
+        }
+        // 存聯絡簿時：有用到「品德學習單4」就記下來，下次號碼變 5；那天刪掉了就退回原本的號碼
+        function updateFixedUsed(c, key, items) {
+            const fixed = { ...(c.fixed || {}) };
+            const usedMap = { ...(c.fixedUsed || {}) };
+            if (!isDateKey(key)) return { fixed, fixedUsed: usedMap };
+            const day = fromDateKey(key).getDay();
+            const lines = items.map(t => contactClean(t).replace(/\s+/g, ''));
+            fixed[day] = (fixed[day] || []).map(t => {
+                const m = t.match(FIXED_NUM_RE);
+                if (!m) return t;
+                const k = fixedUsedKey(day, t);
+                const prefix = k.slice(2);
+                const prev = usedMap[k];
+                const hit = prefix && lines.map(l => l.startsWith(prefix) ? l.slice(prefix.length).match(/^\d+/) : null).find(Boolean);
+                if (hit) {
+                    const n = Number(hit[0]);
+                    if (!prev || prev.date !== key || prev.n !== n) {
+                        usedMap[k] = { date: key, n };
+                        return t.replace(FIXED_NUM_RE, '#' + (n + 1));
+                    }
+                    return t;
+                }
+                if (prev && prev.date === key) {
+                    // 那天原本有用、後來刪掉了：號碼退回去
+                    delete usedMap[k];
+                    return t.replace(FIXED_NUM_RE, '#' + prev.n);
+                }
+                return t;
+            });
+            return { fixed, fixedUsed: usedMap };
         }
         function contactItemsFor(c, key, items) {
             const own = items || [];
@@ -5705,7 +5737,7 @@
             const date = document.getElementById('contact-for-date').value;
             const box = document.getElementById('contact-input');
             const own = box.value.split('\n').map(t => t.trim()).filter(Boolean);
-            const fixedNow = { fixed: readFixedInputs(), fixedWeek: weekMonday(todayKey()) };
+            const fixedNow = { fixed: readFixedInputs(), fixedUsed: (window.state.daily || defaultDaily()).contact.fixedUsed || {} };
             const merged = contactItemsFor(fixedNow, date, own);
             const added = merged.length - own.length;
             if (added > 0) box.value = merged.join('\n');
@@ -5726,9 +5758,8 @@
             forInput.min = toDateInputValue(previousSchoolDay(previousSchoolDay(previousSchoolDay(now))));
             forInput.max = contactAheadLimit(now);
             document.getElementById('task-input').value = c.tasks.join('\n');
-            // 設定的格子顯示這一週的號碼（例如上週存「品德學習單#4」，這週打開是 #5）
-            const fixedWeeks = weeksBetween(c.fixedWeek || todayKey(), todayKey());
-            document.querySelectorAll('#contact-fixed input[data-day]').forEach(input => { input.value = ((c.fixed || {})[input.dataset.day] || []).map(t => fixedNumbered(t, fixedWeeks, true)).join('、'); });
+            // 設定的格子顯示下一次要用的號碼
+            document.querySelectorAll('#contact-fixed input[data-day]').forEach(input => { input.value = ((c.fixed || {})[input.dataset.day] || []).join('、'); });
             fillContactDate(contactAssignDate(now));
             // 上次打到一半沒儲存（例如視窗被關掉、網頁重新整理）：把打好的內容拿回來
             let draft = null;
@@ -5816,7 +5847,7 @@
             const keptDue = Object.fromEntries(Object.entries(due).filter(([k]) => k in keptHistory));
             const keepPrev = d.contact.date && d.contact.date !== todayKey() && d.contact.items.length > 0;
             const prev = keepPrev ? { prevItems: d.contact.items, prevDate: d.contact.date } : {};
-            const contact = { ...d.contact, ...prev, history: keptHistory, due: keptDue, fixed: readFixedInputs(), fixedWeek: weekMonday(todayKey()), tasks: lines('task-input'), date: todayKey() };
+            const contact = { ...d.contact, ...prev, history: keptHistory, due: keptDue, ...updateFixedUsed({ fixed: readFixedInputs(), fixedUsed: d.contact.fixedUsed }, forDate, items), tasks: lines('task-input'), date: todayKey() };
             contact.items = contactShown(contact, now).items;
             window.state.daily = { ...d, contact };
             try { localStorage.removeItem(CONTACT_DRAFT_KEY); } catch (e) {}
@@ -6870,7 +6901,7 @@
                     '老師或小幫手在<b>教師登記</b>模式點座號，可以切換「未到 → 已到 → 請假」。打卡紀錄<b>每天自動歸零</b>。',
                     '按「<b>✏️ 編輯</b>」寫<b>早修任務</b>（黃色便利貼）和<b>聯絡簿</b>，一行一項，不用自己打「1.」編號。聯絡簿上面可以選<b>這是哪天的作業、哪天收</b>（預設下午 3 點後寫的算下一個上課日、隔一個上課日收），也可以<b>先打好之後 5 個上課日</b>的，到時候教室畫面會自動換上。聯絡簿右上角、早修任務標題旁邊都可以各自切換<b>直式</b>（由右往左一項一欄，太長自動接下一行）或<b>橫式</b>（條列）；字會自動放大到剛好填滿。',
                     '聯絡簿開頭打「<b>*</b>」的項目不編號，前面畫 <b class="text-amber-500">▲</b>，代表<b>需要提醒的人再抄</b>；寫了「不用抄」的是說明。橫式時太長的一項會<b>自動縮小字</b>，盡量擠在同一行。',
-                    '<b>🔁 每週固定作業</b>：在「✏️ 編輯」最下面打開，週一到週五各一格（例如週二填「完成書法作業」，多項用「、」分開）。打那天的聯絡簿時會<b>自動帶入</b>，可以直接改（例如「英」改成「英U3句子」），那天不用就刪掉。數字前加「<b>#</b>」（例如「品德學習單#4」），號碼會<b>每週自動加 1</b>。',
+                    '<b>🔁 每週固定作業</b>：在「✏️ 編輯」最下面打開，週一到週五各一格（例如週二填「完成書法作業」，多項用「、」分開）。打那天的聯絡簿時會<b>自動帶入</b>，可以直接改（例如「英」改成「英U3句子」），那天不用就刪掉。數字前加「<b>#</b>」（例如「品德學習單#4」），那天聯絡簿有用到，下次號碼<b>自動加 1</b>；那週沒發、刪掉了就不加。',
                     '早修任務和聯絡簿中間的<b>小白線可以左右拖曳</b>，調整兩邊寬度，這台電腦會記住。',
                     '家長頁會顯示孩子「<b>今日到教室</b>」的時間，每天到了遲到時間（例如 8:00）才統一更新，<b>那時教室的看板要開著</b>。聯絡簿不會給家長看。'
                 ]),

@@ -257,6 +257,8 @@ test('編輯聯絡簿打到一半：點到旁邊不會關掉；視窗被關掉�
 test('聯絡簿可以選哪天的作業、哪天收，也能先打好之後幾天的；到那天教室畫面自動換上', async ({ browser }) => {
     const cloud = createCloud();
     const room = await openDevice(browser, cloud);
+    // 固定在上課日早上：時間剛好跨過下午 3 點時，預設的作業日期會換成下一個上課日
+    await room.clock.setFixedTime(new Date(2026, 10, 2, 10, 0, 0));
     await room.evaluate(() => setMorningEnabled(true));
     await unlockTeacher(room, 'morning');
     await room.click('text=✏️ 編輯');
@@ -441,7 +443,7 @@ test('聯絡簿每週固定作業：打那天的聯絡簿時自動帶入，可�
     expect(room.errors).toEqual([]);
 });
 
-test('每週固定作業的「#數字」每週自動加 1：這週品德學習單4，下週自動變 5', async ({ browser }) => {
+test('每週固定作業的「#數字」：那天有用到下次加 1，那週刪掉沒用就不加', async ({ browser }) => {
     const cloud = createCloud();
     const room = await openDevice(browser, cloud, { viewport: { width: 1366, height: 768 } });
     // 2026-11-27 是星期五，早上
@@ -455,13 +457,32 @@ test('每週固定作業的「#數字」每週自動加 1：這週品德學習�
     await expect(room.locator('#contact-input')).toHaveValue('品德學習單4\n英');
     await room.click('#modal-contact >> text=儲存');
     await expect(room.locator('#contact-body')).toContainText('品德學習單4');
-    await expect.poll(() => cloud.board('main').daily?.contact?.fixedWeek, { timeout: 15000 }).toBe('2026-11-23');
-    // 先打好下週五的：號碼是 5
-    expect(await room.evaluate(() => contactFixedFor(state.daily.contact, '2026-12-04'))).toEqual(['品德學習單5', '英']);
-    // 到了下週：打開編輯，設定的格子顯示 #5，帶入「品德學習單5」
+    await expect.poll(() => cloud.board('main').daily?.contact?.fixed?.[5], { timeout: 15000 }).toEqual(['品德學習單#5', '英']);
+    // 同一天再打開、再存：還是 4，不會一直加
+    await room.click('text=✏️ 編輯');
+    await expect(room.locator('#contact-input')).toHaveValue('品德學習單4\n英');
+    await expect(room.locator('#contact-fixed-5')).toHaveValue('品德學習單#5、英');
+    await room.click('#modal-contact >> text=儲存');
+    await room.waitForTimeout(500);
+    expect(await room.evaluate(() => state.daily.contact.fixed[5])).toEqual(['品德學習單#5', '英']);
+
+    // 下週五（12/4）：帶入 5；那週沒發，刪掉後儲存 → 號碼不加
     await room.clock.setFixedTime(new Date(2026, 11, 4, 9, 0, 0));
     await room.click('text=✏️ 編輯');
-    await expect(room.locator('#contact-fixed-5')).toHaveValue('品德學習單#5、英');
     await expect(room.locator('#contact-input')).toHaveValue('品德學習單5\n英');
+    await room.fill('#contact-input', '英');
+    await room.click('#modal-contact >> text=儲存');
+    await room.waitForTimeout(500);
+    expect(await room.evaluate(() => state.daily.contact.fixed[5])).toEqual(['品德學習單#5', '英']);
+
+    // 再下週五（12/11）：還是 5
+    await room.clock.setFixedTime(new Date(2026, 11, 11, 9, 0, 0));
+    await room.click('text=✏️ 編輯');
+    await expect(room.locator('#contact-input')).toHaveValue('品德學習單5\n英');
+    // 老師自己改成 6（例如補發）：存起來後下次是 7
+    await room.fill('#contact-input', '品德學習單6\n英');
+    await room.click('#modal-contact >> text=儲存');
+    await room.waitForTimeout(500);
+    expect(await room.evaluate(() => state.daily.contact.fixed[5])).toEqual(['品德學習單#7', '英']);
     expect(room.errors).toEqual([]);
 });
