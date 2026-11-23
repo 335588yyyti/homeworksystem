@@ -9,7 +9,8 @@ jobs:
   # 全部測試分成 3 份，3 台測試電腦同時跑，等待時間大約變成三分之一
   shard:
     name: 測試 ${{ matrix.shard }}/3
-    runs-on: ubuntu-latest
+    # 固定用 Ubuntu 24.04：ubuntu-latest 換成 26.04 後，目前的 Playwright 還不支援，裝不了測試用瀏覽器
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -51,7 +52,7 @@ jobs:
 
   # 3 份都通過才算通過（名稱維持 test，跟以前一樣）
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: shard
     if: always()
     steps:
@@ -60,7 +61,7 @@ jobs:
 
   rules:
     name: 安全規則測試
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: tests/rules
