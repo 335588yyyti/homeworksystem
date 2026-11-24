@@ -29,13 +29,17 @@ test('國語課次：{L}、{甲乙}、{國習頁}帶進聯絡簿，每週一自�
     await expect(room.locator('#contact-input')).toHaveValue('預習L9+padlet\n甲本L9生造\n帶直笛');
     await room.click('#modal-contact >> text=儲存');
     await expect(room.locator('#contact-body')).toContainText('甲本L9生造');
-    await expect.poll(() => cloud.board('main').daily?.contact?.lesson, { timeout: 15000 }).toEqual({ n: 9, week: '2026-11-23' });
+    await expect.poll(() => cloud.board('main').daily?.contact?.lesson, { timeout: 15000 }).toEqual({ tag: 'L9', week: '2026-11-23' });
     // 國習頁：L9 起始頁 70 →「P.70–P.71」；下週 L10 → 78
-    expect(await room.evaluate(() => contactFixedFor(state.daily.contact, '2026-11-24'))).toEqual(['國重L9', '國習P.70–P.71']);
-    expect(await room.evaluate(() => contactFixedFor(state.daily.contact, '2026-12-01'))).toEqual(['國重L10', '國習P.78–P.79']);
+    expect(await room.evaluate(() => contactFixedFor(state.daily.contact, '2026-11-24'))).toEqual(['國重L9', '國習P.70–71']);
+    expect(await room.evaluate(() => contactFixedFor(state.daily.contact, '2026-12-01'))).toEqual(['國重L10', '國習P.78–79']);
     expect(await room.evaluate(() => contactFixedFor(state.daily.contact, '2026-12-02'))).toEqual(['乙本L10詞', '閱讀1', '完成書法作業']);
-    // 表裡沒有的課：空著讓老師填
-    expect(await room.evaluate(() => contactFixedFor(state.daily.contact, '2027-01-26'))).toEqual(['國重L18', '國習']);
+    // L12 的下一週是閱讀階梯二（{甲乙} 空著、國習 P.102–103），不是 L13
+    expect(await room.evaluate(() => contactFixedFor(state.daily.contact, '2026-12-15'))).toEqual(['國重L12', '國習P.94–95']);
+    expect(await room.evaluate(() => contactFixedFor(state.daily.contact, '2026-12-21'))).toEqual(['預習閱讀階梯二+padlet', '本閱讀階梯二生造', '帶直笛']);
+    expect(await room.evaluate(() => contactFixedFor(state.daily.contact, '2026-12-22'))).toEqual(['國重閱讀階梯二', '國習P.102–103']);
+    // 表裡沒有的課（例如自己填 L3）：照課次往下數，國習頁空著讓老師填
+    expect(await room.evaluate(() => contactFixedFor({ ...state.daily.contact, lesson: { tag: 'L3', week: '2026-11-23' } }, '2026-12-01'))).toEqual(['國重L4', '國習']);
 
     // 下週一打開：課次自動變 10
     await room.clock.setFixedTime(new Date(2026, 10, 30, 9, 0, 0));
@@ -50,8 +54,8 @@ test('國語課次：{L}、{甲乙}、{國習頁}帶進聯絡簿，每週一自�
     await expect(room.locator('#contact-input')).toHaveValue('預習閱讀階梯二+padlet\n本閱讀階梯二生造\n帶直笛');
     await room.click('#modal-contact >> text=儲存');
     await room.waitForTimeout(300);
-    expect(await room.evaluate(() => contactFixedFor(state.daily.contact, '2026-12-01'))).toEqual(['國重閱讀階梯二', '國習P.102–P.103']);
-    expect(await room.evaluate(() => contactFixedFor(state.daily.contact, '2026-12-08'))).toEqual(['國重閱讀階梯二', '國習P.102–P.103']);
+    expect(await room.evaluate(() => contactFixedFor(state.daily.contact, '2026-12-01'))).toEqual(['國重閱讀階梯二', '國習P.102–103']);
+    expect(await room.evaluate(() => contactFixedFor(state.daily.contact, '2026-12-08'))).toEqual(['國重閱讀階梯二', '國習P.102–103']);
     expect(room.errors).toEqual([]);
 });
 
@@ -171,7 +175,7 @@ test('課本進度設定可以改表格（下學期換書），格式不對會�
     await expect(room.locator('#modal-books')).toBeHidden();
     await expect.poll(() => cloud.board('main').daily?.contact?.books?.shuxi, { timeout: 15000 }).toEqual([{ name: 'U1', start: 2, end: 11 }, { name: 'U2', start: 12, end: 23 }]);
     expect(cloud.board('main').daily.contact.books.bage).toEqual({ U1: 2, U2: 3 });
-    expect(cloud.board('main').daily.contact.books.guoxi).toEqual({ L1: 4, L2: 10 });
+    expect(cloud.board('main').daily.contact.books.guoxi).toEqual([{ name: 'L1', start: 4 }, { name: 'L2', start: 10 }]);
     // 恢復預設
     await room.click('#settings-books-button');
     await room.click('text=↩️ 表格恢復預設');
@@ -271,5 +275,32 @@ test('發到 BAND：老師看預覽、輸入發布密碼送出，成功後標記
     await expect(room.locator('#modal-band')).toBeHidden();
     expect(posts.length).toBe(count + 1);
     expect(posts.at(-1).force).toBe(true);
+    expect(room.errors).toEqual([]);
+});
+
+test('早上提醒發到 BAND：老師登記時還沒發就閃動「今天還沒發」，小幫手看不到，下午 3 點後不提醒', async ({ browser }) => {
+    const cloud = createCloud();
+    const room = await openEditorAt(browser, cloud, new Date(2026, 10, 24, 7, 30, 0));
+    // 還沒設定 BAND：不提醒
+    await room.evaluate(() => { startTeacherSession(); applyRoleUI('teacher'); });
+    await expect(room.locator('#band-publish-btn')).toHaveText('📣 發到BAND');
+    await expect(room.locator('#band-publish-btn')).not.toHaveClass(/band-remind/);
+    // 設定好 BAND、今天還沒發：閃動提醒
+    await room.evaluate(() => { state.daily = { ...state.daily, contact: { ...state.daily.contact, bandUrl: 'https://script.google.com/macros/s/TEST/exec' } }; renderContact(); });
+    await expect(room.locator('#band-publish-btn')).toHaveClass(/band-remind/);
+    await expect(room.locator('#band-publish-btn')).toContainText('今天還沒發');
+    // 小幫手：看不到按鈕
+    await room.evaluate(() => { state.isTeacherUnlocked = false; state.helperEnabled = true; startHelperSession(); applyRoleUI('teacher'); });
+    await expect(room.locator('#band-publish-btn')).toBeHidden();
+    // 下午 3 點後（聯絡簿換成明天的）：不提醒
+    await room.evaluate(() => { startTeacherSession(); applyRoleUI('teacher'); });
+    await expect(room.locator('#band-publish-btn')).toHaveClass(/band-remind/);
+    await room.clock.setFixedTime(new Date(2026, 10, 24, 15, 5, 0));
+    await room.evaluate(() => renderContact());
+    await expect(room.locator('#band-publish-btn')).not.toHaveClass(/band-remind/);
+    // 發過了：顯示今日已發布
+    await room.clock.setFixedTime(new Date(2026, 10, 24, 8, 0, 0));
+    await room.evaluate(() => { state.daily = { ...state.daily, contact: { ...state.daily.contact, bandPosted: { date: '2026-11-24', key: '2026-11-24', at: 1 } } }; renderContact(); });
+    await expect(room.locator('#band-publish-btn')).toHaveText('✅ 今日已發布');
     expect(room.errors).toEqual([]);
 });

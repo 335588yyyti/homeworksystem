@@ -40,6 +40,11 @@ test('看板「新增並放上看板」：預設換掉全班已完成的框，�
     await expect(page.locator('#modal-teacher-auth')).toBeVisible();
     await page.fill('#teacher-password-input', '8888');
     await page.press('#teacher-password-input', 'Enter');
+    // 還是預設密碼：先改密碼，改好才繼續打開「新增並放上看板」
+    await expect(page.locator('#modal-force-pin')).toBeVisible();
+    await page.fill('#force-pin-new', '2468');
+    await page.fill('#force-pin-confirm', '2468');
+    await page.press('#force-pin-confirm', 'Enter');
     await expect(page.locator('#modal-new-on-board')).toBeVisible();
     expect(await page.inputValue('#new-on-board-slot')).toBe('1'); // 第 2 框（全班已完成）
     await expect(page.locator('#new-on-board-hint')).toContainText('全班已完成');
@@ -69,7 +74,7 @@ test('看板「新增並放上看板」：預設換掉全班已完成的框，�
     await expect(page.locator('#modal-new-on-board')).toBeVisible();
 });
 
-test('驗證視窗提示預設密碼 8888；第一次進設定後台必須先改密碼', async ({ browser }) => {
+test('驗證視窗提示預設密碼 8888；用 8888 登記時必須先改密碼，不改就不能登記', async ({ browser }) => {
     const cloud = createCloud();
     const page = await openDevice(browser, cloud);
     await page.click('#role-teacher');
@@ -77,15 +82,17 @@ test('驗證視窗提示預設密碼 8888；第一次進設定後台必須先改
     await page.fill('#teacher-password-input', '8888');
     await page.press('#teacher-password-input', 'Enter');
 
-    // 進設定後台：跳出強制改密碼，按「先不要」回到看板
-    await page.click('#tab-settings');
+    // 一登記就要求改密碼；按「先不要」：回到學生消單，不能登記
     await expect(page.locator('#modal-force-pin')).toBeVisible();
     await page.click('#modal-force-pin button:has-text("先不要")');
     await expect(page.locator('#modal-force-pin')).toBeHidden();
-    await expect(page.locator('#view-dashboard')).toBeVisible();
+    await expect(page.locator('#toast-msg')).toContainText('改好密碼才能登記');
+    expect(await page.evaluate(() => [state.userRole, canEditBoard()])).toEqual(['student', false]);
 
-    // 再進一次：不能沿用 8888、兩次要一致
-    await page.click('#tab-settings');
+    // 再登記一次：不能沿用 8888、兩次要一致
+    await page.click('#role-teacher');
+    await page.fill('#teacher-password-input', '8888');
+    await page.press('#teacher-password-input', 'Enter');
     await page.fill('#force-pin-new', '8888');
     await page.fill('#force-pin-confirm', '8888');
     await page.press('#force-pin-confirm', 'Enter');
@@ -97,14 +104,31 @@ test('驗證視窗提示預設密碼 8888；第一次進設定後台必須先改
     await page.fill('#force-pin-confirm', '2468');
     await page.press('#force-pin-confirm', 'Enter');
     await expect(page.locator('#modal-force-pin')).toBeHidden();
-    await expect(page.locator('#view-settings')).toBeVisible();
-    await expect(page.locator('#pin-default-warning')).toBeHidden();
+    await expect(page.locator('#role-status-text')).toContainText('教師登記中');
     await expect.poll(() => cloud.board('main').teacherPin).toBe('2468');
+
+    // 進設定後台不會再要求改
+    await page.click('#tab-settings');
+    await expect(page.locator('#view-settings')).toBeVisible();
+    await expect(page.locator('#modal-force-pin')).toBeHidden();
+    await expect(page.locator('#pin-default-warning')).toBeHidden();
 
     // 改過之後：不再提示預設密碼，也不再強制
     await page.evaluate(() => lockTeacherSession());
     await page.click('#role-teacher');
     await expect(page.locator('#auth-default-hint')).toBeHidden();
+    await page.fill('#teacher-password-input', '2468');
+    await page.press('#teacher-password-input', 'Enter');
+    await expect(page.locator('#modal-force-pin')).toBeHidden();
+});
+
+test('還是預設密碼時進設定後台也要先改（舊的解鎖方式）', async ({ browser }) => {
+    const page = await openDevice(browser, createCloud());
+    await page.evaluate(() => { startTeacherSession(); applyRoleUI('teacher'); });
+    await page.click('#tab-settings');
+    await expect(page.locator('#modal-force-pin')).toBeVisible();
+    await page.click('#modal-force-pin button:has-text("先不要")');
+    await expect(page.locator('#view-dashboard')).toBeVisible();
 });
 
 test('家長頁可以加到手機主畫面（有圖示與 manifest），老師的頁面不會', async ({ browser }) => {
