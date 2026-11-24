@@ -2,6 +2,14 @@
 const { test, expect } = require('@playwright/test');
 const { createCloud, openDevice, unlockTeacher } = require('./helpers');
 
+// 開啟早自習，並等這次存檔送到雲端、再傳回來（免得舊的雲端資料晚到，蓋掉接下來的修改）
+async function enableMorning(room) {
+    const before = room.writes.length;
+    await room.evaluate(() => setMorningEnabled(true));
+    await expect.poll(() => room.writes.length > before, { timeout: 15000 }).toBe(true);
+    await room.waitForTimeout(400);
+}
+
 test('早自習預設關閉；打開後學生點座號打卡、老師可切換已到／請假、其他裝置同步', async ({ browser }) => {
     test.setTimeout(120000);
     const cloud = createCloud();
@@ -44,7 +52,7 @@ test('聯絡簿：老師編輯後直式一項一欄、可切換橫式，另一�
     const cloud = createCloud();
     const room = await openDevice(browser, cloud);
     const phone = await openDevice(browser, cloud, { viewport: { width: 390, height: 844 } });
-    await room.evaluate(() => setMorningEnabled(true));
+    await enableMorning(room);
     await unlockTeacher(room, 'morning');
     await room.click('text=✏️ 編輯');
     await room.fill('#task-input', '訂正國卷 L.3\n英習 P.13');
@@ -150,7 +158,7 @@ test('隔天遲到時間以前，家長頁的內容和前一天一樣（不會�
 test('早修任務和聯絡簿中間的線可以拖曳，這台電腦會記住；自己打的編號不會重複；字會放大填滿', async ({ browser }) => {
     const cloud = createCloud();
     const room = await openDevice(browser, cloud, { viewport: { width: 1536, height: 730 } });
-    await room.evaluate(() => setMorningEnabled(true));
+    await enableMorning(room);
     await unlockTeacher(room, 'morning');
     await room.click('text=✏️ 編輯');
     await room.fill('#task-input', '完成訂正');
@@ -184,7 +192,7 @@ test('早修任務也可以切換直式，另一台跟著變，格子不會超�
     const cloud = createCloud();
     const room = await openDevice(browser, cloud, { viewport: { width: 1920, height: 1080 } });
     const other = await openDevice(browser, cloud);
-    await room.evaluate(() => setMorningEnabled(true));
+    await enableMorning(room);
     await unlockTeacher(room, 'morning');
     await room.click('text=✏️ 編輯');
     await room.fill('#task-input', '打卡，8：00換成訂正頁面\n完成訂正\n完成訂正的人，整理考卷\n都好了請複習國L5第一節要考');
@@ -211,7 +219,7 @@ test('早修任務・聯絡簿的標題每天顯示今天的日期；內容是�
     const room = await openDevice(browser, cloud);
     // 固定在上課日早上：下午三點以後標題會換成明天的日期
     await room.clock.setFixedTime(new Date(2026, 10, 2, 10, 0, 0));
-    await room.evaluate(() => setMorningEnabled(true));
+    await enableMorning(room);
     await unlockTeacher(room, 'morning');
     await room.click('text=✏️ 編輯');
     await room.fill('#contact-input', '國卷L5');
@@ -229,7 +237,7 @@ test('早修任務・聯絡簿的標題每天顯示今天的日期；內容是�
 test('編輯聯絡簿打到一半：點到旁邊不會關掉；視窗被關掉或重新整理後，打好的內容會拿回來', async ({ browser }) => {
     const cloud = createCloud();
     const room = await openDevice(browser, cloud);
-    await room.evaluate(() => setMorningEnabled(true));
+    await enableMorning(room);
     const { unlockTeacher } = require('./helpers');
     await unlockTeacher(room, 'morning');
     await room.click('text=✏️ 編輯');
@@ -259,7 +267,7 @@ test('聯絡簿可以選哪天的作業、哪天收，也能先打好之後幾�
     const room = await openDevice(browser, cloud);
     // 固定在上課日早上：時間剛好跨過下午 3 點時，預設的作業日期會換成下一個上課日
     await room.clock.setFixedTime(new Date(2026, 10, 2, 10, 0, 0));
-    await room.evaluate(() => setMorningEnabled(true));
+    await enableMorning(room);
     await unlockTeacher(room, 'morning');
     await room.click('text=✏️ 編輯');
     const cur = await room.inputValue('#contact-for-date');
@@ -302,7 +310,7 @@ test('聯絡簿可以選哪天的作業、哪天收，也能先打好之後幾�
 test('下午 3 點後存的是下一個上課日的聯絡簿：標題寫那天的日期和「明天的作業」，不會像是今天的', async ({ browser }) => {
     const room = await openDevice(browser, createCloud());
     await room.clock.setFixedTime(new Date(2026, 10, 2, 16, 0, 0)); // 週一下午 4 點
-    await room.evaluate(() => setMorningEnabled(true));
+    await enableMorning(room);
     await unlockTeacher(room, 'morning');
     await room.click('text=✏️ 編輯');
     await expect(room.locator('#contact-for-date')).toHaveValue('2026-11-03');
@@ -319,7 +327,7 @@ test('聯絡簿標題可以挑要顯示哪一天：下午 3 點後也能先顯�
     const cloud = createCloud();
     const room = await openDevice(browser, cloud);
     await room.clock.setFixedTime(new Date(2026, 10, 2, 16, 0, 0)); // 週一下午 4 點
-    await room.evaluate(() => setMorningEnabled(true));
+    await enableMorning(room);
     await unlockTeacher(room, 'morning');
     await room.evaluate(() => {
         state.daily = { ...state.daily, contact: { ...state.daily.contact, history: { '2026-11-02': ['國習P.48'], '2026-11-03': ['數習P.20'] } } };
@@ -346,7 +354,7 @@ test('聯絡簿標題可以挑要顯示哪一天：下午 3 點後也能先顯�
 test('早自習頁開著過夜：半夜不換，早上 6 點才換日，而且只重畫一次', async ({ browser }) => {
     const room = await openDevice(browser, createCloud());
     await room.clock.setFixedTime(new Date(2026, 10, 2, 23, 59, 58));
-    await room.evaluate(() => setMorningEnabled(true));
+    await enableMorning(room);
     await unlockTeacher(room, 'morning');
     await room.evaluate(() => { window.__renders = 0; const orig = renderMorning; window.renderMorning = () => { window.__renders++; orig(); }; });
     // 過了半夜：還不換
@@ -362,7 +370,7 @@ test('早自習頁開著過夜：半夜不換，早上 6 點才換日，而且�
 
 test('聯絡簿的說明（寫了「不用抄」或開頭打 *）不編號、字小一點；收作業也不會列出來', async ({ browser }) => {
     const room = await openDevice(browser, createCloud());
-    await room.evaluate(() => setMorningEnabled(true));
+    await enableMorning(room);
     await unlockTeacher(room, 'morning');
     await room.click('text=✏️ 編輯');
     const long = '週記說明（不用抄）：開學至今你觀察到為了班級主動付出的人，他的具體行為，並表達你的感謝';
@@ -390,7 +398,7 @@ test('聯絡簿的說明（寫了「不用抄」或開頭打 *）不編號、字
 
 test('聯絡簿橫式：太長的一項自己把字縮小，擠在同一行', async ({ browser }) => {
     const room = await openDevice(browser, createCloud(), { viewport: { width: 1366, height: 768 } });
-    await room.evaluate(() => setMorningEnabled(true));
+    await enableMorning(room);
     await unlockTeacher(room, 'morning');
     await room.click('text=✏️ 編輯');
     await room.fill('#contact-input', '週記：期中考反思+期末考自我複習計畫表\n考L7聽考');
@@ -410,7 +418,7 @@ test('聯絡簿每週固定作業：打那天的聯絡簿時自動帶入，可�
     const room = await openDevice(browser, cloud, { viewport: { width: 1366, height: 768 } });
     // 2026-11-10 是星期二，早上
     await room.clock.setFixedTime(new Date(2026, 10, 10, 9, 0, 0));
-    await room.evaluate(() => setMorningEnabled(true));
+    await enableMorning(room);
     await unlockTeacher(room, 'morning');
     await room.click('text=✏️ 編輯');
     await expect(room.locator('#contact-for-date')).toHaveValue('2026-11-10');
@@ -448,7 +456,7 @@ test('每週固定作業的「#數字」：那天有用到下次加 1，那週�
     const room = await openDevice(browser, cloud, { viewport: { width: 1366, height: 768 } });
     // 2026-11-27 是星期五，早上
     await room.clock.setFixedTime(new Date(2026, 10, 27, 9, 0, 0));
-    await room.evaluate(() => setMorningEnabled(true));
+    await enableMorning(room);
     await unlockTeacher(room, 'morning');
     await room.click('text=✏️ 編輯');
     await room.click('#contact-fixed summary');
