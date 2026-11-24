@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=caa12ee6" rel="stylesheet">
+    <link href="assets/tailwind.css?v=18a384d0" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -494,8 +494,38 @@
 
         // 早自習：到校打卡（每天歸零）＋聯絡簿（老師更新才換）
         window.DAILY_ITEMS_MAX = 15;
-        // 數學作業會記住寫到第幾頁的書
-        window.MATH_BOOKS = ['數習', '數練', '數課'];
+        // 課本進度表（下學期換書時在「課本進度設定」改）：國習每課起始頁（康軒6上）、數習／數練各單元頁碼和八格卷小節數（翰林6上）
+        window.BOOKS_DEFAULT = {
+            guoxi: { L7: 54, L8: 62, L9: 70, L10: 78, L11: 86, L12: 94, 閱讀階梯二: 102 },
+            shuxi: [
+                { name: 'U5', start: 50, end: 59 }, { name: 'U6', start: 60, end: 69 }, { name: 'U7', start: 70, end: 81 },
+                { name: 'U8', start: 82, end: 95 }, { name: '綜合練習二', start: 96, end: 101 }
+            ],
+            shulian: [
+                { name: 'U5', start: 31, end: 38 }, { name: 'U6', start: 39, end: 45 }, { name: 'U7', start: 46, end: 52 },
+                { name: 'U8', start: 53, end: 61 }, { name: '素養評量挑戰2', start: 62, end: 62 }, { name: '學力來挑戰2', start: 63, end: 63 }
+            ],
+            bage: { U5: 3, U6: 4, U7: 3, U8: 4 }
+        };
+        // 讀進來的課本進度表：格式不對的部分用預設的
+        window.parseBooks = function(b) {
+            b = b && typeof b === 'object' ? b : {};
+            const units = list => Array.isArray(list) ? list
+                .filter(u => u && typeof u.name === 'string' && u.name.trim() && Number.isFinite(Number(u.start)) && Number.isFinite(Number(u.end)) && Number(u.end) >= Number(u.start))
+                .slice(0, 30).map(u => ({ name: u.name.trim().slice(0, 12), start: Math.round(Number(u.start)), end: Math.round(Number(u.end)) })) : [];
+            const nums = (obj, max) => obj && typeof obj === 'object' ? Object.fromEntries(Object.entries(obj)
+                .filter(([k, v]) => k.trim() && Number.isFinite(Number(v)) && Number(v) > 0).slice(0, 30).map(([k, v]) => [k.trim().slice(0, 12), Math.min(max, Math.round(Number(v)))])) : {};
+            const guoxi = nums(b.guoxi, 999);
+            const shuxi = units(b.shuxi);
+            const shulian = units(b.shulian);
+            const bage = nums(b.bage, 20);
+            return {
+                guoxi: Object.keys(guoxi).length ? guoxi : { ...BOOKS_DEFAULT.guoxi },
+                shuxi: shuxi.length ? shuxi : BOOKS_DEFAULT.shuxi.map(u => ({ ...u })),
+                shulian: shulian.length ? shulian : BOOKS_DEFAULT.shulian.map(u => ({ ...u })),
+                bage: Object.keys(bage).length ? bage : { ...BOOKS_DEFAULT.bage }
+            };
+        };
         // 發到 BAND 的 Apps Script 網址
         window.BAND_URL_RE = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/;
         function defaultDaily() {
@@ -1194,16 +1224,30 @@
                     fixedUsed: cc.fixedUsed && typeof cc.fixedUsed === 'object' ? Object.fromEntries(Object.entries(cc.fixedUsed)
                         .filter(([k, v]) => k && v && /^\d{4}-\d{2}-\d{2}$/.test(String(v.date)) && Number.isFinite(Number(v.n)))
                         .slice(0, 25).map(([k, v]) => [k.replace(/^[1-5]\|/, '').slice(0, 80), { date: v.date, n: Math.max(0, Math.round(Number(v.n))) }])) : {},
-                    // 國語課次：{ n: 這週的課次, week: 那週的星期一 }，之後每週一自動 +1
-                    lesson: cc.lesson && Number.isFinite(Number(cc.lesson.n)) && /^\d{4}-\d{2}-\d{2}$/.test(String(cc.lesson.week))
-                        ? { n: Math.max(1, Math.min(99, Math.round(Number(cc.lesson.n)))), week: cc.lesson.week } : null,
-                    // 每一課的國習頁碼：{ 9: 'P.50-53' }
-                    lessonPages: cc.lessonPages && typeof cc.lessonPages === 'object' ? Object.fromEntries(Object.entries(cc.lessonPages)
-                        .filter(([k, v]) => /^\d{1,2}$/.test(k) && typeof v === 'string' && v.trim()).slice(0, 40).map(([k, v]) => [k, v.trim().slice(0, 30)])) : {},
-                    // 數學作業最後寫到第幾頁：{ 數習: { p: 40, date: 'YYYY-MM-DD' } }
-                    pages: cc.pages && typeof cc.pages === 'object' ? Object.fromEntries(Object.entries(cc.pages)
-                        .filter(([k, v]) => MATH_BOOKS.includes(k) && v && Number.isFinite(Number(v.p)) && /^\d{4}-\d{2}-\d{2}$/.test(String(v.date)))
-                        .map(([k, v]) => [k, { p: Math.max(0, Math.min(999, Math.round(Number(v.p)))), date: v.date }])) : {},
+                    // 國語課次：{ n: 這週的課次, week: 那週的星期一 }，之後每週一自動 +1；閱讀階梯等不是課次的週寫文字（label），不會自動加
+                    lesson: cc.lesson && /^\d{4}-\d{2}-\d{2}$/.test(String(cc.lesson.week))
+                        ? (typeof cc.lesson.label === 'string' && cc.lesson.label.trim()
+                            ? { label: cc.lesson.label.trim().slice(0, 10), week: cc.lesson.week }
+                            : Number.isFinite(Number(cc.lesson.n)) ? { n: Math.max(1, Math.min(99, Math.round(Number(cc.lesson.n)))), week: cc.lesson.week } : null)
+                        : null,
+                    // 課本進度表（國習起始頁、數習／數練單元頁碼、八格卷小節數）
+                    books: parseBooks(cc.books),
+                    // 數習、數練寫到第幾頁，八格卷寫到第幾小節：{ shuxi: { p, date }, shulian: { p, date }, bage: { u, s, date } }
+                    progress: (() => {
+                        const pr = cc.progress && typeof cc.progress === 'object' ? cc.progress : {};
+                        const okDate = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v));
+                        const page = v => v && Number.isFinite(Number(v.p)) && okDate(v.date) ? { p: Math.max(0, Math.min(999, Math.round(Number(v.p)))), date: v.date } : null;
+                        const out = {};
+                        if (page(pr.shuxi)) out.shuxi = page(pr.shuxi);
+                        if (page(pr.shulian)) out.shulian = page(pr.shulian);
+                        if (pr.bage && Number.isFinite(Number(pr.bage.u)) && Number.isFinite(Number(pr.bage.s)) && okDate(pr.bage.date)) {
+                            out.bage = { u: Math.round(Number(pr.bage.u)), s: Math.round(Number(pr.bage.s)), date: pr.bage.date };
+                        }
+                        return out;
+                    })(),
+                    // 前測卷、後測卷：已經出過（given）或老師刪掉不要（skipped）的就不再預填：{ 'U5後測': 'given' }
+                    mathTests: cc.mathTests && typeof cc.mathTests === 'object' ? Object.fromEntries(Object.entries(cc.mathTests)
+                        .filter(([k, v]) => /^U\d{1,2}(前測|後測)$/.test(k) && (v === 'given' || v === 'skipped')).slice(0, 60)) : {},
                     // 提醒事項：時間到了自動加在那天聯絡簿的最後
                     reminders: Array.isArray(cc.reminders) ? cc.reminders
                         .filter(r => r && typeof r.text === 'string' && r.text.trim() && /^\d{4}-\d{2}-\d{2}$/.test(String(r.date)))
@@ -2105,6 +2149,7 @@
                             <span class="text-sm font-black text-slate-800">📖 開啟早自習（到校打卡＋早修任務＋聯絡簿）</span>
                         </label>
                         <p class="text-[14px] text-slate-500 mt-1">開啟後上方多一個「早自習」分頁：學生到校點自己的座號打卡，旁邊顯示早修任務和今天的聯絡簿（可選直式或橫式）。家長查詢頁會顯示孩子幾點到教室。</p>
+                        <button type="button" id="settings-books-button" onclick="openBooksSettings()" class="mt-1.5 text-sm font-black text-sky-700 hover:text-sky-900 underline underline-offset-2">📚 課本進度設定（國習頁碼、數學單元、八格卷）</button>
                     </div>
 
                     <!-- 考試開關 -->
@@ -2521,13 +2566,14 @@
                     <p class="text-xs font-bold text-slate-400 mt-1">寫在星期幾，打那天的聯絡簿時就自動帶入，可以再改（例如「英」改成「英U3句子」）；多項用「、」分開；數字前加「#」（例如「品德學習單#4」），那天有用到下次就自動加 1，刪掉沒用就不加；同名的（例如週三、週五的「閱讀#」）共用一組號碼</p>
                     <div class="flex flex-wrap items-center gap-x-2 gap-y-1 mt-2">
                         <label for="contact-lesson" class="text-sm font-black text-sky-800">📖 本週國語課次 L</label>
-                        <input type="number" id="contact-lesson" min="1" max="99" onchange="applyContactFixed(); saveContactDraft()" class="w-16 bg-white border-2 border-slate-200 rounded-lg px-2 py-1 text-base font-black text-slate-800 focus:outline-none focus:border-sky-400">
-                        <span class="text-xs font-bold text-slate-400">每週一自動 +1；考試週、放假停一週就改回來</span>
+                        <input type="text" id="contact-lesson" maxlength="10" onchange="applyContactFixed(); saveContactDraft()" class="w-24 bg-white border-2 border-slate-200 rounded-lg px-2 py-1 text-base font-black text-slate-800 focus:outline-none focus:border-sky-400">
+                        <span class="text-xs font-bold text-slate-400">每週一自動 +1；考試週、放假停一週就改回來；閱讀階梯那週填「閱讀階梯二」，下週再改回課次</span>
                     </div>
-                    <p class="text-xs font-bold text-slate-400 mt-1">可以用：<b class="text-sky-800">{L}</b>＝課次（L9）、<b class="text-sky-800">{甲乙}</b>＝單數課「甲」雙數課「乙」、<b class="text-sky-800">{國習頁}</b>＝這課的國習頁碼</p>
-                    <label for="contact-lesson-pages" class="block text-sm font-black text-sky-800 mt-1">每課國習頁碼 <span class="text-xs font-bold text-slate-400">一行一課，例如「9=P.50-53」；沒寫的課就空著讓老師填</span></label>
-                    <textarea id="contact-lesson-pages" rows="2" onchange="applyContactFixed(); saveContactDraft()" placeholder="9=P.50-53" class="w-full bg-white border-2 border-slate-200 rounded-lg px-2 py-1 text-base font-black text-slate-800 focus:outline-none focus:border-sky-400"></textarea>
-                    <button type="button" id="contact-fixed-template" onclick="applyFixedTemplate()" class="mt-1 text-sm font-black text-sky-700 hover:text-sky-900 underline underline-offset-2">📋 套用國語作業範本</button>
+                    <p class="text-xs font-bold text-slate-400 mt-1">可以用：<b class="text-sky-800">{L}</b>＝課次（L9）、<b class="text-sky-800">{甲乙}</b>＝單數課「甲」雙數課「乙」、<b class="text-sky-800">{國習頁}</b>＝「P.起始頁–P.起始頁+1」（起始頁在「課本進度設定」）</p>
+                    <div class="flex flex-wrap gap-x-3 gap-y-1 mt-1">
+                        <button type="button" id="contact-fixed-template" onclick="applyFixedTemplate()" class="text-sm font-black text-sky-700 hover:text-sky-900 underline underline-offset-2">📋 套用國語作業範本</button>
+                        <button type="button" onclick="openBooksSettings()" class="text-sm font-black text-sky-700 hover:text-sky-900 underline underline-offset-2">📚 課本進度設定</button>
+                    </div>
                     <div class="grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1 mt-1">
                         <label for="contact-fixed-1" class="text-sm font-black text-sky-800">週一</label>
                         <input type="text" id="contact-fixed-1" data-day="1" maxlength="160" onchange="applyContactFixed(); saveContactDraft()" class="bg-white border-2 border-slate-200 rounded-lg px-2 py-1 text-base font-black text-slate-800 focus:outline-none focus:border-sky-400">
@@ -2552,6 +2598,42 @@
             <div class="grid grid-cols-2 gap-2.5 mt-3">
                 <button onclick="try { localStorage.removeItem(CONTACT_DRAFT_KEY); } catch (e) {} closeContactEditor()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-base transition-all">取消</button>
                 <button onclick="saveContact()" class="bg-amber-400 hover:bg-amber-500 text-slate-900 font-black py-2.5 rounded-xl text-base transition-all">儲存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 課本進度設定：國習起始頁、數習／數練單元頁碼、八格卷小節數、目前寫到哪（下學期換書時改） -->
+    <div id="modal-books" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4 hidden" onclick="if (event.target === this) closeBooksSettings()">
+        <div class="bg-white border-2 border-slate-200 rounded-3xl p-5 w-full max-w-lg board-shadow flex flex-col max-h-full">
+            <div class="text-center mb-3">
+                <div class="text-3xl mb-1">📚</div>
+                <h4 class="text-xl font-black text-slate-800">課本進度設定</h4>
+                <p class="text-sm text-slate-500 mt-0.5">一行一項；下學期換書時改這裡</p>
+            </div>
+            <div class="overflow-y-auto min-h-0 flex flex-col gap-2">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <label class="flex flex-col gap-0.5 text-sm font-black text-slate-700">國習每課起始頁 <span class="text-xs font-bold text-slate-400">例如「L9=70」「閱讀階梯二=102」</span>
+                        <textarea id="books-guoxi" rows="7" class="bg-slate-50 border-2 border-slate-200 rounded-lg px-2 py-1 font-bold text-slate-800"></textarea></label>
+                    <label class="flex flex-col gap-0.5 text-sm font-black text-slate-700">八格卷每單元幾小節 <span class="text-xs font-bold text-slate-400">例如「U5=3」</span>
+                        <textarea id="books-bage" rows="7" class="bg-slate-50 border-2 border-slate-200 rounded-lg px-2 py-1 font-bold text-slate-800"></textarea></label>
+                    <label class="flex flex-col gap-0.5 text-sm font-black text-slate-700">數習單元頁碼 <span class="text-xs font-bold text-slate-400">例如「U5=50-59」</span>
+                        <textarea id="books-shuxi" rows="7" class="bg-slate-50 border-2 border-slate-200 rounded-lg px-2 py-1 font-bold text-slate-800"></textarea></label>
+                    <label class="flex flex-col gap-0.5 text-sm font-black text-slate-700">數練單元頁碼 <span class="text-xs font-bold text-slate-400">只有一頁就寫「素養評量挑戰2=62」</span>
+                        <textarea id="books-shulian" rows="7" class="bg-slate-50 border-2 border-slate-200 rounded-lg px-2 py-1 font-bold text-slate-800"></textarea></label>
+                </div>
+                <div class="bg-emerald-50 border-2 border-emerald-100 rounded-xl px-3 py-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm font-black text-emerald-900">
+                    <span>📐 目前寫到：</span>
+                    <label>數習 P.<input type="number" id="progress-shuxi" min="0" max="999" class="w-16 bg-white border border-slate-200 rounded-md px-1 py-0.5"></label>
+                    <label>數練 P.<input type="number" id="progress-shulian" min="0" max="999" class="w-16 bg-white border border-slate-200 rounded-md px-1 py-0.5"></label>
+                    <label>八格卷 <input type="text" id="progress-bage" maxlength="5" placeholder="5-3" class="w-14 bg-white border border-slate-200 rounded-md px-1 py-0.5"></label>
+                    <span class="text-xs font-bold text-slate-400 w-full">空著＝還沒開始；平常存聯絡簿時會自動記，不用每天來改</span>
+                </div>
+                <button type="button" onclick="resetBooksSettings()" class="self-start text-sm font-black text-slate-500 hover:text-slate-700 underline underline-offset-2">↩️ 表格恢復預設（康軒國語、翰林數學 6 上）</button>
+                <p id="books-status" class="text-sm font-black min-h-[1.25rem] text-rose-600"></p>
+            </div>
+            <div class="grid grid-cols-2 gap-2.5 mt-3">
+                <button onclick="closeBooksSettings()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-base transition-all">取消</button>
+                <button id="books-save" onclick="saveBooksSettings()" class="bg-amber-400 hover:bg-amber-500 text-slate-900 font-black py-2.5 rounded-xl text-base transition-all">儲存</button>
             </div>
         </div>
     </div>
@@ -4175,17 +4257,21 @@
             if (!isDateKey(fromKey) || !isDateKey(toKey)) return 0;
             return Math.round((fromDateKey(weekMonday(toKey)) - fromDateKey(weekMonday(fromKey))) / (7 * 86400000));
         }
-        // 國語課次：設定的那週是第幾課，之後每週一自動 +1（考試週、放假老師自己改回來）
+        // 國語課次：設定的那週是第幾課，之後每週一自動 +1（考試週、放假、閱讀階梯老師自己改）
+        // 回傳 { tag: 'L9', n: 9 }；閱讀階梯這種週回傳 { tag: '閱讀階梯二', n: null }
         function lessonFor(c, key) {
             if (!c.lesson || !isDateKey(key)) return null;
-            return Math.max(1, c.lesson.n + weeksBetween(c.lesson.week, key));
+            if (c.lesson.label) return { tag: c.lesson.label, n: null };
+            const n = Math.max(1, c.lesson.n + weeksBetween(c.lesson.week, key));
+            return { tag: `L${n}`, n };
         }
-        // 固定作業裡的變數：{L}＝課次（L9）、{甲乙}＝單數課甲、雙數課乙、{國習頁}＝這課的國習頁碼（沒設定就空著）
+        // 固定作業裡的變數：{L}＝課次（L9）、{甲乙}＝單數課甲、雙數課乙、{國習頁}＝「P.起始頁–P.起始頁+1」（表裡沒有就空著）
         function expandFixedVars(c, t, key) {
-            const n = lessonFor(c, key);
-            return t.replace(/\{L\}/g, n ? `L${n}` : 'L')
-                .replace(/\{甲乙\}/g, n ? (n % 2 ? '甲' : '乙') : '')
-                .replace(/\{國習頁\}/g, n && (c.lessonPages || {})[n] ? c.lessonPages[n] : '');
+            const lesson = lessonFor(c, key);
+            const start = lesson ? (c.books || BOOKS_DEFAULT).guoxi[lesson.tag] : null;
+            return t.replace(/\{L\}/g, lesson ? lesson.tag : 'L')
+                .replace(/\{甲乙\}/g, lesson && lesson.n ? (lesson.n % 2 ? '甲' : '乙') : '')
+                .replace(/\{國習頁\}/g, start ? `P.${start}–P.${start + 1}` : '');
         }
 
         // 「品德學習單#4」：# 後面是下一次要用的號碼。那天的聯絡簿真的有這一項才往上加，那週刪掉沒用就不加
@@ -4281,18 +4367,103 @@
             return [...own.slice(0, at), ...add, ...own.slice(at)];
         }
 
-        // 數學作業寫到第幾頁：「數習P.38-40」→ 數習 40
-        function mathPageEnd(line) {
-            const m = squash(line).match(/^(數習|數練|數課)[Pp]?\.?(\d+)(?:[-–~～][Pp]?\.?(\d+))?/);
-            return m ? { book: m[1], end: Number(m[3] || m[2]) } : null;
+        // ---- 數學作業預填（數習、數練、八格卷、前測卷、後測卷）----
+        const unitNo = name => { const m = /^U(\d+)$/.exec(name); return m ? Number(m[1]) : null; };
+        const unitOfPage = (units, p) => units.find(u => p >= u.start && p <= u.end) || null;
+        const pageRange = (a, b) => a === b ? `P.${a}` : `P.${a}–${b}`;
+        // 數習：下一次從哪頁開始（還沒記過就從第一個單元開始）
+        function nextShuxiStart(c) {
+            const units = (c.books || BOOKS_DEFAULT).shuxi;
+            const p = c.progress && c.progress.shuxi ? c.progress.shuxi.p + 1 : units[0].start;
+            return unitOfPage(units, p) ? p : (units.find(u => u.start > p) || {}).start || null;
         }
-        function updateMathPages(pages, key, items) {
-            const out = { ...(pages || {}) };
-            items.forEach(t => {
-                const hit = mathPageEnd(t);
-                if (hit && (!out[hit.book] || key >= out[hit.book].date)) out[hit.book] = { p: hit.end, date: key };
+        // 數練：一次 2 頁、不跨單元；排完只剩 1 頁就併進來變 3 頁
+        function nextShulianRange(c) {
+            const units = (c.books || BOOKS_DEFAULT).shulian;
+            let start = c.progress && c.progress.shulian ? c.progress.shulian.p + 1 : units[0].start;
+            let unit = unitOfPage(units, start);
+            if (!unit) { unit = units.find(u => u.start > start); if (!unit) return null; start = unit.start; }
+            let end = Math.min(start + 1, unit.end);
+            if (unit.end - end === 1) end = unit.end;
+            return { start, end };
+        }
+        // 八格卷：下一小節（5-3 之後是 6-1）
+        function nextBage(c) {
+            const bage = (c.books || BOOKS_DEFAULT).bage;
+            const list = Object.entries(bage).map(([k, n]) => ({ u: unitNo(k), n })).filter(x => x.u);
+            if (!list.length) return null;
+            const last = c.progress && c.progress.bage;
+            if (!last) return { u: list[0].u, s: 1 };
+            const cur = list.find(x => x.u === last.u);
+            if (cur && last.s < cur.n) return { u: last.u, s: last.s + 1 };
+            const next = list.find(x => x.u > last.u);
+            return next ? { u: next.u, s: 1 } : null;
+        }
+        function bageDone(c, u) {
+            const last = c.progress && c.progress.bage;
+            const n = (c.books || BOOKS_DEFAULT).bage[`U${u}`];
+            return !!(last && n && (last.u > u || (last.u === u && last.s >= n)));
+        }
+        // 打書名就預填的字
+        function mathAutoText(c, book) {
+            if (book === '數習') { const p = nextShuxiStart(c); return p ? `P.${p}–` : ''; }
+            if (book === '數練') { const r = nextShulianRange(c); return r ? pageRange(r.start, r.end) : ''; }
+            if (book === '八格卷') { const b = nextBage(c); return b ? `${b.u}-${b.s}` : ''; }
+            return '';
+        }
+        // 自動帶入的前測卷、後測卷：進入新單元第一天出前測卷；數習和八格卷都寫完的單元出後測卷
+        function autoMathItems(c) {
+            const pr = c.progress || {};
+            const tests = c.mathTests || {};
+            const books = c.books || BOOKS_DEFAULT;
+            const out = [];
+            const post = new Set();
+            if (pr.shuxi) { const u = unitOfPage(books.shuxi, pr.shuxi.p); if (u && unitNo(u.name)) post.add(unitNo(u.name)); }
+            if (pr.bage) post.add(pr.bage.u);
+            [...post].sort((a, b) => a - b).forEach(n => {
+                const unit = books.shuxi.find(u => u.name === `U${n}`);
+                if (unit && pr.shuxi && pr.shuxi.p >= unit.end && bageDone(c, n) && !tests[`U${n}後測`]) out.push(`U${n}後測卷`);
             });
+            const pre = new Set();
+            // 上一個單元剛好寫完（數習寫到上一單元最後一頁、八格卷寫完上一單元最後一節）才算進入新單元
+            if (pr.shuxi) { const p = pr.shuxi.p + 1; const u = unitOfPage(books.shuxi, p); if (u && p === u.start && unitOfPage(books.shuxi, pr.shuxi.p) && unitNo(u.name)) pre.add(unitNo(u.name)); }
+            if (pr.bage && books.bage[`U${pr.bage.u}`]) { const b = nextBage(c); if (b && b.s === 1 && b.u !== pr.bage.u) pre.add(b.u); }
+            [...pre].sort((a, b) => a - b).forEach(n => { if (!tests[`U${n}前測`]) out.push(`U${n}前測卷`); });
             return out;
+        }
+        // 某一本的這個單元寫完了：「數習第5單元已寫完」
+        function mathProgressHint(c) {
+            const pr = c.progress || {};
+            const books = c.books || BOOKS_DEFAULT;
+            const done = name => unitNo(name) ? `第${unitNo(name)}單元已寫完` : `${name}已寫完`;
+            const parts = [];
+            [['shuxi', '數習'], ['shulian', '數練']].forEach(([k, label]) => {
+                if (!pr[k]) return;
+                const u = unitOfPage(books[k], pr[k].p);
+                parts.push(`${label}寫到 P.${pr[k].p}${u && pr[k].p === u.end ? `（${done(u.name)}）` : ''}`);
+            });
+            if (pr.bage) parts.push(`八格卷寫到 ${pr.bage.u}-${pr.bage.s}${bageDone(c, pr.bage.u) ? `（${done(`U${pr.bage.u}`)}）` : ''}`);
+            return parts;
+        }
+        // 存聯絡簿時記下寫到哪：「數習P.41–43」「數練P.36–38」「八格卷5-3」「U5後測卷」
+        function updateMathProgress(c, key, items, autos) {
+            const pr = { ...(c.progress || {}) };
+            const tests = { ...(c.mathTests || {}) };
+            items.forEach(t => {
+                const line = squash(t);
+                let m = line.match(/^(數習|數練)[Pp]?\.?(\d+)(?:[-–~～][Pp]?\.?(\d+))?/);
+                if (m) {
+                    const k = m[1] === '數習' ? 'shuxi' : 'shulian';
+                    if (!pr[k] || key >= pr[k].date) pr[k] = { p: Number(m[3] || m[2]), date: key };
+                }
+                m = line.match(/^八格卷(\d+)-(\d+)/);
+                if (m && (!pr.bage || key >= pr.bage.date)) pr.bage = { u: Number(m[1]), s: Number(m[2]), date: key };
+                m = line.match(/U(\d+)(前測|後測)/);
+                if (m) tests[`U${m[1]}${m[2]}`] = 'given';
+            });
+            // 預填了但老師刪掉的：不要再一直出現
+            (autos || []).forEach(a => { const k = a.replace(/卷$/, ''); if (!tests[k]) tests[k] = 'skipped'; });
+            return { progress: pr, mathTests: tests };
         }
 
         // 提醒事項：提前幾天開始，自動加在那天聯絡簿的最後；要倒數的寫「畢旅倒數3天」
@@ -5890,22 +6061,17 @@
         }
 
         // 本週國語課次（存成「這週的星期一是第幾課」）和每課國習頁碼
+        // 填數字是課次（9 或 L9），每週一自動 +1；填文字（例如「閱讀階梯二」）就是這週的名稱，不會自動加
         function readLessonInput() {
-            const n = parseInt(document.getElementById('contact-lesson').value, 10);
-            return Number.isFinite(n) && n > 0 ? { n: Math.min(99, n), week: weekMonday(todayKey()) } : null;
-        }
-        function readLessonPages() {
-            const pages = {};
-            document.getElementById('contact-lesson-pages').value.split('\n').forEach(line => {
-                const m = line.trim().match(/^L?\s*(\d{1,2})\s*[=:：]\s*(.+)$/i);
-                if (m) pages[Number(m[1])] = m[2].trim().slice(0, 30);
-            });
-            return pages;
+            const v = document.getElementById('contact-lesson').value.trim();
+            const m = v.match(/^L?\s*(\d{1,2})$/i);
+            if (m && Number(m[1]) > 0) return { n: Number(m[1]), week: weekMonday(todayKey()) };
+            return v ? { label: v.slice(0, 10), week: weekMonday(todayKey()) } : null;
         }
         // 編輯視窗裡現在的設定（還沒儲存的也算）
         function editorContactSettings() {
             const c = (window.state.daily || defaultDaily()).contact;
-            return { fixed: syncFixedCounters(readFixedInputs(), c.fixed), fixedUsed: c.fixedUsed || {}, lesson: readLessonInput(), lessonPages: readLessonPages() };
+            return { ...c, fixed: syncFixedCounters(readFixedInputs(), c.fixed), fixedUsed: c.fixedUsed || {}, lesson: readLessonInput() };
         }
 
         // 國語作業範本（閱讀、品德學習單沿用現在的號碼，沒有的從 1 開始）
@@ -5954,25 +6120,104 @@
             })).filter(r => r.text && isDateKey(r.date)).slice(0, 20);
         }
 
-        // 數學作業：打「數習」就接著上次的頁數先填好「P.41-」，老師補結束頁
+        // 數學作業：打「數習」「數練」「八格卷」就接著上次寫到的地方先填好，老師可以改
         function contactAutoPage(e) {
             const box = document.getElementById('contact-input');
             if (e && (e.isComposing || String(e.inputType || '').startsWith('delete'))) { saveContactDraft(); return; }
             const pos = box.selectionStart;
             if (pos === box.selectionEnd) {
                 const before = box.value.slice(0, pos);
-                const after = box.value.slice(pos);
                 const word = before.slice(before.lastIndexOf('\n') + 1).trim();
-                const rest = after.split('\n')[0];
-                const last = ((window.state.daily || defaultDaily()).contact.pages || {})[word];
-                if (MATH_BOOKS.includes(word) && last && !rest.trim()) box.setRangeText(`P.${last.p + 1}-`, pos, pos, 'end');
+                const rest = box.value.slice(pos).split('\n')[0];
+                const text = ['數習', '數練', '八格卷'].includes(word) && !rest.trim() ? mathAutoText((window.state.daily || defaultDaily()).contact, word) : '';
+                if (text) box.setRangeText(text, pos, pos, 'end');
             }
             saveContactDraft();
         }
         function fillContactPageHint() {
-            const pages = (window.state.daily || defaultDaily()).contact.pages || {};
-            const known = MATH_BOOKS.filter(b => pages[b]).map(b => `${b} P.${pages[b].p}`);
-            document.getElementById('contact-page-hint').textContent = known.length ? `📐 上次寫到：${known.join('・')}（打書名會自動接下一頁）` : '';
+            const parts = mathProgressHint((window.state.daily || defaultDaily()).contact);
+            document.getElementById('contact-page-hint').textContent = parts.length ? `📐 ${parts.join('・')}（打「數習」「數練」「八格卷」會自動接下去）` : '';
+        }
+
+        // ---- 課本進度設定 ----
+        const unitLines = list => list.map(u => `${u.name}=${u.start === u.end ? u.start : `${u.start}-${u.end}`}`).join('\n');
+        const mapLines = obj => Object.entries(obj).map(([k, v]) => `${k}=${v}`).join('\n');
+        function fillBooksForm(books, progress) {
+            document.getElementById('books-guoxi').value = mapLines(books.guoxi);
+            document.getElementById('books-shuxi').value = unitLines(books.shuxi);
+            document.getElementById('books-shulian').value = unitLines(books.shulian);
+            document.getElementById('books-bage').value = mapLines(books.bage);
+            document.getElementById('progress-shuxi').value = progress.shuxi ? progress.shuxi.p : '';
+            document.getElementById('progress-shulian').value = progress.shulian ? progress.shulian.p : '';
+            document.getElementById('progress-bage').value = progress.bage ? `${progress.bage.u}-${progress.bage.s}` : '';
+        }
+        function openBooksSettings() {
+            if (!canEditBoard()) {
+                openTeacherAuthModal(openBooksSettings, { allowHelper: true });
+                return;
+            }
+            const c = (window.state.daily || defaultDaily()).contact;
+            fillBooksForm(c.books || parseBooks(null), c.progress || {});
+            document.getElementById('books-status').textContent = '';
+            document.getElementById('modal-books').classList.remove('hidden');
+        }
+        function closeBooksSettings() {
+            document.getElementById('modal-books').classList.add('hidden');
+        }
+        function resetBooksSettings() {
+            const books = parseBooks(null);
+            document.getElementById('books-guoxi').value = mapLines(books.guoxi);
+            document.getElementById('books-shuxi').value = unitLines(books.shuxi);
+            document.getElementById('books-shulian').value = unitLines(books.shulian);
+            document.getElementById('books-bage').value = mapLines(books.bage);
+            showToast('表格已恢復預設；按「儲存」才會存起來');
+        }
+        function saveBooksSettings() {
+            const status = document.getElementById('books-status');
+            const bad = [];
+            const readMap = (id, label) => {
+                const out = {};
+                document.getElementById(id).value.split('\n').map(t => t.trim()).filter(Boolean).forEach(line => {
+                    const m = line.match(/^(.+?)\s*[=:：]\s*(\d+)$/);
+                    if (m) out[m[1].trim()] = Number(m[2]); else bad.push(`${label}「${line}」`);
+                });
+                return out;
+            };
+            const readUnits = (id, label) => document.getElementById(id).value.split('\n').map(t => t.trim()).filter(Boolean).map(line => {
+                const m = line.match(/^(.+?)\s*[=:：]\s*[Pp]?\.?\s*(\d+)(?:\s*[-–~～]\s*[Pp]?\.?\s*(\d+))?$/);
+                if (!m || (m[3] && Number(m[3]) < Number(m[2]))) { bad.push(`${label}「${line}」`); return null; }
+                return { name: m[1].trim(), start: Number(m[2]), end: Number(m[3] || m[2]) };
+            }).filter(Boolean);
+            const raw = { guoxi: readMap('books-guoxi', '國習'), shuxi: readUnits('books-shuxi', '數習'), shulian: readUnits('books-shulian', '數練'), bage: readMap('books-bage', '八格卷') };
+            const bageText = document.getElementById('progress-bage').value.trim();
+            const bageMatch = bageText.match(/^(\d+)\s*-\s*(\d+)$/);
+            if (bageText && !bageMatch) bad.push(`八格卷寫到「${bageText}」（例如 5-3）`);
+            if (bad.length) {
+                status.textContent = `看不懂：${bad.slice(0, 3).join('、')}`;
+                window.soundEffect.playAlert();
+                return;
+            }
+            const d = window.state.daily || defaultDaily();
+            const old = d.contact.progress || {};
+            const today = todayKey();
+            const progress = {};
+            // 老師改了才換成今天；沒改的保留原本的紀錄
+            [['shuxi', 'progress-shuxi'], ['shulian', 'progress-shulian']].forEach(([k, id]) => {
+                const v = document.getElementById(id).value.trim();
+                if (!v) return;
+                const p = Math.max(0, Math.min(999, parseInt(v, 10) || 0));
+                progress[k] = old[k] && old[k].p === p ? old[k] : { p, date: today };
+            });
+            if (bageMatch) {
+                const u = Number(bageMatch[1]), sec = Number(bageMatch[2]);
+                progress.bage = old.bage && old.bage.u === u && old.bage.s === sec ? old.bage : { u, s: sec, date: today };
+            }
+            window.state.daily = { ...d, contact: { ...d.contact, books: parseBooks(raw), progress } };
+            window.syncDaily(true);
+            closeBooksSettings();
+            if (!document.getElementById('modal-contact').classList.contains('hidden')) { applyContactFixed(); fillContactPageHint(); }
+            window.soundEffect.playSuccess();
+            showToast('課本進度設定已儲存');
         }
 
         // 把這天的固定作業帶進聯絡簿內容（已經有的不重複），老師可以直接改或刪
@@ -5981,7 +6226,15 @@
             const box = document.getElementById('contact-input');
             const own = box.value.split('\n').map(t => t.trim()).filter(Boolean);
             const fixedNow = editorContactSettings();
-            const merged = contactItemsFor(fixedNow, date, own);
+            let merged = contactItemsFor(fixedNow, date, own);
+            // 前測卷、後測卷（今天以後的聯絡簿才預填）
+            if (date >= todayKey()) {
+                const have = merged.map(squash);
+                const autos = autoMathItems(fixedNow).filter(a => !have.some(h => h.startsWith(squash(a).replace(/卷$/, ''))));
+                let at = merged.length;
+                while (at > 0 && isContactNote(merged[at - 1])) at--;
+                merged = [...merged.slice(0, at), ...autos, ...merged.slice(at)];
+            }
             const added = merged.length - own.length;
             if (added > 0) box.value = merged.join('\n');
             const fixed = contactFixedFor(fixedNow, date);
@@ -6003,8 +6256,8 @@
             document.getElementById('task-input').value = c.tasks.join('\n');
             // 設定的格子顯示下一次要用的號碼
             document.querySelectorAll('#contact-fixed input[data-day]').forEach(input => { input.value = ((c.fixed || {})[input.dataset.day] || []).join('、'); });
-            document.getElementById('contact-lesson').value = lessonFor(c, todayKey()) || '';
-            document.getElementById('contact-lesson-pages').value = Object.entries(c.lessonPages || {}).sort((a, b) => a[0] - b[0]).map(([k, v]) => `${k}=${v}`).join('\n');
+            const lesson = lessonFor(c, todayKey());
+            document.getElementById('contact-lesson').value = lesson ? (lesson.n || lesson.tag) : '';
             renderReminderRows((c.reminders || []).filter(r => r.date >= todayKey()));
             fillContactPageHint();
             fillContactDate(contactAssignDate(now));
@@ -6095,8 +6348,9 @@
             const keepPrev = d.contact.date && d.contact.date !== todayKey() && d.contact.items.length > 0;
             const prev = keepPrev ? { prevItems: d.contact.items, prevDate: d.contact.date } : {};
             const settings = editorContactSettings();
+            const autos = forDate >= todayKey() ? autoMathItems(d.contact) : [];
             const contact = { ...d.contact, ...prev, history: keptHistory, due: keptDue, ...updateFixedUsed(settings, forDate, items),
-                lesson: settings.lesson, lessonPages: settings.lessonPages, pages: updateMathPages(d.contact.pages, forDate, items),
+                lesson: settings.lesson, ...updateMathProgress(d.contact, forDate, items, autos),
                 reminders: readReminders().filter(r => r.date >= todayKey()), tasks: lines('task-input'), date: todayKey() };
             contact.items = contactShown(contact, now).items;
             window.state.daily = { ...d, contact };
@@ -7241,8 +7495,8 @@
                     '按「<b>✏️ 編輯</b>」寫<b>早修任務</b>（黃色便利貼）和<b>聯絡簿</b>，一行一項，不用自己打「1.」編號。聯絡簿上面可以選<b>這是哪天的作業、哪天收</b>（預設下午 3 點後寫的算下一個上課日、隔一個上課日收），也可以<b>先打好之後 5 個上課日</b>的，到時候教室畫面會自動換上。聯絡簿右上角、早修任務標題旁邊都可以各自切換<b>直式</b>（由右往左一項一欄，太長自動接下一行）或<b>橫式</b>（條列）；字會自動放大到剛好填滿。',
                     '聯絡簿開頭打「<b>*</b>」的項目不編號，前面畫 <b class="text-amber-500">▲</b>，代表<b>需要提醒的人再抄</b>；寫了「不用抄」的是說明。橫式時太長的一項會<b>自動縮小字</b>，盡量擠在同一行。',
                     '<b>🔁 每週固定作業</b>：在「✏️ 編輯」最下面打開，週一到週五各一格（例如週二填「完成書法作業」，多項用「、」分開）。打那天的聯絡簿時會<b>自動帶入</b>，可以直接改（例如「英」改成「英U3句子」），那天不用就刪掉。數字前加「<b>#</b>」（例如「品德學習單#4」），那天聯絡簿有用到，下次號碼<b>自動加 1</b>；那週沒發、刪掉了就不加；同名的（例如週三、週五的「閱讀#」）共用一組號碼。',
-                    '<b>📖 本週國語課次</b>：在「🔁 每週固定作業」裡設定，每週一自動 +1（考試週、放假就改回來）。固定作業裡寫 <b>{L}</b> 會變成「L9」、<b>{甲乙}</b> 單數課是「甲」雙數課是「乙」、<b>{國習頁}</b> 是這課的國習頁碼（在「每課國習頁碼」填「9=P.50-53」）。按「📋 套用國語作業範本」可以一次填好。',
-                    '<b>📐 數學頁數</b>：聯絡簿寫過「數習P.38-40」，下次打「數習」就會自動接「P.41-」，只要補結束頁（數習、數練、數課分開記）。',
+                    '<b>📖 本週國語課次</b>：在「🔁 每週固定作業」裡設定，每週一自動 +1（考試週、放假就改回來；閱讀階梯那週填「閱讀階梯二」）。固定作業裡寫 <b>{L}</b> 會變成「L9」、<b>{甲乙}</b> 單數課是「甲」雙數課是「乙」、<b>{國習頁}</b> 會變成「P.70–P.71」（每課起始頁在「📚 課本進度設定」）。按「📋 套用國語作業範本」可以一次填好。',
+                    '<b>📐 數學預填</b>：打「數習」會接上次寫到的下一頁「P.60–」；打「數練」會排好 2 頁（不跨單元，最後只剩 1 頁就併成 3 頁）；打「八格卷」會接下一小節（5-3 之後是 6-1）。進入新單元第一天自動帶入「前測卷」，數習和八格卷都寫完的單元自動帶入「後測卷」，不要就刪掉。單元頁碼、八格卷小節數和目前寫到哪，在「設定後台 → 📚 課本進度設定」改。',
                     '<b>🔔 提醒事項</b>：在「✏️ 編輯」最下面新增，填內容、日期、提前幾天；到了就自動加在聯絡簿最後，勾「倒數」會寫成「畢旅倒數3天」。',
                     '<b>📣 發到 BAND</b>：教師登記時，聯絡簿右上角有「發到BAND」，看過預覽、輸入發布密碼就送出，發過會顯示「今日已發布」。第一次要先照「docs/BAND發布設定說明.md」設定好發布程式。',
                     '早修任務和聯絡簿中間的<b>小白線可以左右拖曳</b>，調整兩邊寬度，這台電腦會記住。',

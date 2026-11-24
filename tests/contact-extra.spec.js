@@ -15,14 +15,13 @@ async function openEditorAt(browser, cloud, when) {
     return room;
 }
 
-test('國語課次：{L}、{甲乙}、{國習頁}帶進聯絡簿，每週一自動 +1，範本一次套用', async ({ browser }) => {
+test('國語課次：{L}、{甲乙}、{國習頁}帶進聯絡簿，每週一自動 +1，閱讀階梯那週填文字，範本一次套用', async ({ browser }) => {
     const cloud = createCloud();
     // 2026-11-23 是星期一，早上
     const room = await openEditorAt(browser, cloud, new Date(2026, 10, 23, 9, 0, 0));
     await room.click('text=✏️ 編輯');
     await room.click('#contact-fixed summary');
     await room.fill('#contact-lesson', '9');
-    await room.fill('#contact-lesson-pages', '9=P.50-53\n10=P.54-57');
     await room.click('#contact-fixed-template');
     await expect(room.locator('#contact-fixed-1')).toHaveValue('預習{L}+padlet、{甲乙}本{L}生造、帶直笛');
     await expect(room.locator('#contact-fixed-5')).toHaveValue('國習{L}、{甲乙}本{L}萬花筒、品德學習單#1、閱讀#1、週記、帶美勞用具');
@@ -31,18 +30,28 @@ test('國語課次：{L}、{甲乙}、{國習頁}帶進聯絡簿，每週一自�
     await room.click('#modal-contact >> text=儲存');
     await expect(room.locator('#contact-body')).toContainText('甲本L9生造');
     await expect.poll(() => cloud.board('main').daily?.contact?.lesson, { timeout: 15000 }).toEqual({ n: 9, week: '2026-11-23' });
-    // 這週二：國習頁碼；下週三：L10、乙
-    expect(await room.evaluate(() => contactFixedFor(state.daily.contact, '2026-11-24'))).toEqual(['國重L9', '國習P.50-53']);
+    // 國習頁：L9 起始頁 70 →「P.70–P.71」；下週 L10 → 78
+    expect(await room.evaluate(() => contactFixedFor(state.daily.contact, '2026-11-24'))).toEqual(['國重L9', '國習P.70–P.71']);
+    expect(await room.evaluate(() => contactFixedFor(state.daily.contact, '2026-12-01'))).toEqual(['國重L10', '國習P.78–P.79']);
     expect(await room.evaluate(() => contactFixedFor(state.daily.contact, '2026-12-02'))).toEqual(['乙本L10詞', '閱讀1', '完成書法作業']);
-    // 沒設定頁碼的課：空著讓老師填
-    expect(await room.evaluate(() => contactFixedFor(state.daily.contact, '2026-12-08'))).toEqual(['國重L11', '國習']);
+    // 表裡沒有的課：空著讓老師填
+    expect(await room.evaluate(() => contactFixedFor(state.daily.contact, '2027-01-26'))).toEqual(['國重L18', '國習']);
 
-    // 下週一打開：課次自動變 10；放假停一週就改回 10，下週還是 10
+    // 下週一打開：課次自動變 10
     await room.clock.setFixedTime(new Date(2026, 10, 30, 9, 0, 0));
     await room.click('text=✏️ 編輯');
     await expect(room.locator('#contact-lesson')).toHaveValue('10');
+    await room.waitForTimeout(300); // 編輯視窗打開後會先把游標放在早修任務
     await expect(room.locator('#contact-input')).toHaveValue('預習L10+padlet\n乙本L10生造\n帶直笛');
-    await room.click('#modal-contact >> text=取消');
+    // 閱讀階梯那週：填文字，國習頁照表（102），{甲乙} 空著，不會自動加
+    await room.fill('#contact-input', '');
+    await room.fill('#contact-lesson', '閱讀階梯二');
+    await room.dispatchEvent('#contact-lesson', 'change');
+    await expect(room.locator('#contact-input')).toHaveValue('預習閱讀階梯二+padlet\n本閱讀階梯二生造\n帶直笛');
+    await room.click('#modal-contact >> text=儲存');
+    await room.waitForTimeout(300);
+    expect(await room.evaluate(() => contactFixedFor(state.daily.contact, '2026-12-01'))).toEqual(['國重閱讀階梯二', '國習P.102–P.103']);
+    expect(await room.evaluate(() => contactFixedFor(state.daily.contact, '2026-12-08'))).toEqual(['國重閱讀階梯二', '國習P.102–P.103']);
     expect(room.errors).toEqual([]);
 });
 
@@ -92,31 +101,82 @@ test('舊版的號碼紀錄（前面有星期幾）讀進來還能用', async ({
     expect(room.errors).toEqual([]);
 });
 
-test('數學頁數：數習、數練、數課各自記住寫到第幾頁，打書名自動接下一頁', async ({ browser }) => {
+test('數學預填：數習接下一頁、數練一次 2 頁不跨單元（剩 1 頁併成 3 頁）、八格卷接下一小節、單元寫完有提示', async ({ browser }) => {
     const cloud = createCloud();
     const room = await openEditorAt(browser, cloud, new Date(2026, 10, 24, 9, 0, 0));
+    // 設定目前寫到哪
     await room.click('text=✏️ 編輯');
-    await room.fill('#contact-input', '數習P.38-40\n數練p.12\n數課P.20~21\n八格卷');
-    await room.click('#modal-contact >> text=儲存');
-    await expect.poll(() => cloud.board('main').daily?.contact?.pages, { timeout: 15000 }).toEqual({
-        數習: { p: 40, date: '2026-11-24' }, 數練: { p: 12, date: '2026-11-24' }, 數課: { p: 21, date: '2026-11-24' }
-    });
-    // 隔天：打「數習」就接 P.41-
-    await room.clock.setFixedTime(new Date(2026, 10, 25, 9, 0, 0));
-    await room.click('text=✏️ 編輯');
-    await expect(room.locator('#contact-page-hint')).toContainText('數習 P.40');
+    await room.click('#contact-fixed summary');
+    await room.click('#contact-fixed >> text=📚 課本進度設定');
+    await expect(room.locator('#modal-books')).toBeVisible();
+    await expect(room.locator('#books-shulian')).toHaveValue('U5=31-38\nU6=39-45\nU7=46-52\nU8=53-61\n素養評量挑戰2=62\n學力來挑戰2=63');
+    await expect(room.locator('#books-guoxi')).toHaveValue('L7=54\nL8=62\nL9=70\nL10=78\nL11=86\nL12=94\n閱讀階梯二=102');
+    await room.fill('#progress-shuxi', '55');
+    await room.fill('#progress-shulian', '33');
+    await room.fill('#progress-bage', '5-2');
+    await room.click('#books-save');
+    await expect(room.locator('#modal-books')).toBeHidden();
+    await expect(room.locator('#contact-page-hint')).toContainText('數習寫到 P.55');
     await room.waitForTimeout(300); // 編輯視窗打開後會先把游標放在早修任務
     await room.fill('#contact-input', '');
-    await room.locator('#contact-input').pressSequentially('數習');
-    await expect(room.locator('#contact-input')).toHaveValue('數習P.41-');
-    await room.locator('#contact-input').pressSequentially('43\n數課');
-    await expect(room.locator('#contact-input')).toHaveValue('數習P.41-43\n數課P.22-');
-    // 沒記頁數的書照常
-    await room.locator('#contact-input').pressSequentially('24\n八格卷');
-    await expect(room.locator('#contact-input')).toHaveValue('數習P.41-43\n數課P.22-24\n八格卷');
+    const box = room.locator('#contact-input');
+    await box.pressSequentially('數習');
+    await expect(box).toHaveValue('數習P.56–');
+    await box.pressSequentially('59\n數練');
+    // 數練 34–35 之後 U5 只剩 36–38：這次 34–35
+    await expect(box).toHaveValue('數習P.56–59\n數練P.34–35');
+    await box.pressSequentially('\n八格卷');
+    await expect(box).toHaveValue('數習P.56–59\n數練P.34–35\n八格卷5-3');
     await room.click('#modal-contact >> text=儲存');
-    await room.waitForTimeout(300);
-    expect(await room.evaluate(() => state.daily.contact.pages['數習'])).toEqual({ p: 43, date: '2026-11-25' });
+    await expect.poll(() => cloud.board('main').daily?.contact?.progress, { timeout: 15000 }).toEqual({
+        shuxi: { p: 59, date: '2026-11-24' }, shulian: { p: 35, date: '2026-11-24' }, bage: { u: 5, s: 3, date: '2026-11-24' }
+    });
+    // 函式直接確認：數練剩 3 頁時併成一次
+    expect(await room.evaluate(() => mathAutoText(state.daily.contact, '數練'))).toBe('P.36–38');
+    expect(await room.evaluate(() => mathAutoText({ ...state.daily.contact, progress: { shulian: { p: 38, date: '2026-11-24' } } }, '數練'))).toBe('P.39–40');
+    expect(await room.evaluate(() => mathAutoText({ ...state.daily.contact, progress: { shulian: { p: 61, date: '2026-11-24' } } }, '數練'))).toBe('P.62');
+    expect(await room.evaluate(() => mathAutoText(state.daily.contact, '八格卷'))).toBe('6-1');
+    expect(await room.evaluate(() => mathAutoText(state.daily.contact, '數習'))).toBe('P.60–');
+
+    // 隔天：數習和八格卷 U5 都寫完 → 帶入「U5後測卷」，數習進入 U6 → 帶入「U6前測卷」；提示單元寫完
+    await room.clock.setFixedTime(new Date(2026, 10, 25, 9, 0, 0));
+    await room.click('text=✏️ 編輯');
+    await expect(room.locator('#contact-page-hint')).toContainText('數習寫到 P.59（第5單元已寫完）');
+    await expect(room.locator('#contact-page-hint')).toContainText('八格卷寫到 5-3（第5單元已寫完）');
+    await expect(box).toHaveValue('U5後測卷\nU6前測卷');
+    // 老師不要前測卷：刪掉後存，之後就不會再帶入
+    await room.fill('#contact-input', 'U5後測卷');
+    await room.click('#modal-contact >> text=儲存');
+    await expect.poll(() => cloud.board('main').daily?.contact?.mathTests, { timeout: 15000 }).toEqual({ U5後測: 'given', U6前測: 'skipped' });
+    await room.clock.setFixedTime(new Date(2026, 10, 26, 9, 0, 0));
+    await room.click('text=✏️ 編輯');
+    await expect(box).toHaveValue('');
+    await room.click('#modal-contact >> text=取消');
+    expect(room.errors).toEqual([]);
+});
+
+test('課本進度設定可以改表格（下學期換書），格式不對會提醒', async ({ browser }) => {
+    const cloud = createCloud();
+    const room = await openDevice(browser, cloud);
+    await unlockTeacher(room, 'settings');
+    await room.click('#settings-books-button');
+    await expect(room.locator('#modal-books')).toBeVisible();
+    await room.fill('#books-shuxi', 'U1=2-11\nU2=12-23');
+    await room.fill('#books-bage', 'U1=2\n亂寫');
+    await room.click('#books-save');
+    await expect(room.locator('#books-status')).toContainText('亂寫');
+    await room.fill('#books-bage', 'U1=2\nU2=3');
+    await room.fill('#books-guoxi', 'L1=4\nL2=10');
+    await room.click('#books-save');
+    await expect(room.locator('#modal-books')).toBeHidden();
+    await expect.poll(() => cloud.board('main').daily?.contact?.books?.shuxi, { timeout: 15000 }).toEqual([{ name: 'U1', start: 2, end: 11 }, { name: 'U2', start: 12, end: 23 }]);
+    expect(cloud.board('main').daily.contact.books.bage).toEqual({ U1: 2, U2: 3 });
+    expect(cloud.board('main').daily.contact.books.guoxi).toEqual({ L1: 4, L2: 10 });
+    // 恢復預設
+    await room.click('#settings-books-button');
+    await room.click('text=↩️ 表格恢復預設');
+    await expect(room.locator('#books-shuxi')).toHaveValue('U5=50-59\nU6=60-69\nU7=70-81\nU8=82-95\n綜合練習二=96-101');
+    await room.click('#modal-books >> text=取消');
     expect(room.errors).toEqual([]);
 });
 
