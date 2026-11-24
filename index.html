@@ -6,7 +6,7 @@
     <title>下課檢查站 🎒 作業與成績訂正追蹤系統</title>
     <!-- Tailwind CSS（事先編譯，來源設定見 tailwind.config.js；修改 class 後執行 npm run build:css） -->
     <!-- v= 是樣式檔內容的雜湊，npm run build:css 會自動更新，避免瀏覽器沿用舊的樣式檔讓版面跑掉 -->
-    <link href="assets/tailwind.css?v=a60b6538" rel="stylesheet">
+    <link href="assets/tailwind.css?v=caa12ee6" rel="stylesheet">
     <link rel="apple-touch-icon" href="assets/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <meta name="apple-mobile-web-app-title" content="下課檢查站">
@@ -493,7 +493,11 @@
         };
 
         // 早自習：到校打卡（每天歸零）＋聯絡簿（老師更新才換）
-        window.DAILY_ITEMS_MAX = 10;
+        window.DAILY_ITEMS_MAX = 15;
+        // 數學作業會記住寫到第幾頁的書
+        window.MATH_BOOKS = ['數習', '數練', '數課'];
+        // 發到 BAND 的 Apps Script 網址
+        window.BAND_URL_RE = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/;
         function defaultDaily() {
             return { enabled: false, date: '', arrive: {}, leave: [], deadline: '08:00', contact: { date: '', items: [], tasks: [], layout: 'v', taskLayout: 'h' }, prev: null };
         }
@@ -1182,13 +1186,32 @@
                     // 每週固定的作業：{ 星期幾(1～5): [項目] }，那天的聯絡簿自動加在最後
                     fixed: cc.fixed && typeof cc.fixed === 'object' ? Object.fromEntries(Object.entries(cc.fixed)
                         .filter(([k, v]) => /^[1-5]$/.test(k) && Array.isArray(v))
-                        .map(([k, v]) => [k, v.map(String).map(t => t.trim().slice(0, 80)).filter(Boolean).slice(0, 5)])
+                        .map(([k, v]) => [k, v.map(String).map(t => t.trim().slice(0, 80)).filter(Boolean).slice(0, 8)])
                         .filter(([, v]) => v.length)) : {},
-                    // 固定作業裡「#數字」（例如「品德學習單#4」）的號碼是下一次要用的；這裡記每一項最近一次真的用到的那天和號碼
-                    // { '5|品德學習單': { date: 'YYYY-MM-DD', n: 4 } }，同一天重新儲存不會重複加
+                    // 固定作業裡「#數字」（例如「品德學習單#4」）的號碼是下一次要用的；這裡記每一種（同名的共用一組號碼，
+                    // 例如週三、週五的「閱讀#」）最近一次真的用到的那天和號碼：{ '品德學習單': { date: 'YYYY-MM-DD', n: 4 } }
+                    // 舊版的 key 前面有星期幾（'5|品德學習單'），讀進來時拿掉
                     fixedUsed: cc.fixedUsed && typeof cc.fixedUsed === 'object' ? Object.fromEntries(Object.entries(cc.fixedUsed)
-                        .filter(([k, v]) => /^[1-5]\|/.test(k) && v && /^\d{4}-\d{2}-\d{2}$/.test(String(v.date)) && Number.isFinite(Number(v.n)))
-                        .slice(0, 25).map(([k, v]) => [k.slice(0, 82), { date: v.date, n: Math.max(0, Math.round(Number(v.n))) }])) : {},
+                        .filter(([k, v]) => k && v && /^\d{4}-\d{2}-\d{2}$/.test(String(v.date)) && Number.isFinite(Number(v.n)))
+                        .slice(0, 25).map(([k, v]) => [k.replace(/^[1-5]\|/, '').slice(0, 80), { date: v.date, n: Math.max(0, Math.round(Number(v.n))) }])) : {},
+                    // 國語課次：{ n: 這週的課次, week: 那週的星期一 }，之後每週一自動 +1
+                    lesson: cc.lesson && Number.isFinite(Number(cc.lesson.n)) && /^\d{4}-\d{2}-\d{2}$/.test(String(cc.lesson.week))
+                        ? { n: Math.max(1, Math.min(99, Math.round(Number(cc.lesson.n)))), week: cc.lesson.week } : null,
+                    // 每一課的國習頁碼：{ 9: 'P.50-53' }
+                    lessonPages: cc.lessonPages && typeof cc.lessonPages === 'object' ? Object.fromEntries(Object.entries(cc.lessonPages)
+                        .filter(([k, v]) => /^\d{1,2}$/.test(k) && typeof v === 'string' && v.trim()).slice(0, 40).map(([k, v]) => [k, v.trim().slice(0, 30)])) : {},
+                    // 數學作業最後寫到第幾頁：{ 數習: { p: 40, date: 'YYYY-MM-DD' } }
+                    pages: cc.pages && typeof cc.pages === 'object' ? Object.fromEntries(Object.entries(cc.pages)
+                        .filter(([k, v]) => MATH_BOOKS.includes(k) && v && Number.isFinite(Number(v.p)) && /^\d{4}-\d{2}-\d{2}$/.test(String(v.date)))
+                        .map(([k, v]) => [k, { p: Math.max(0, Math.min(999, Math.round(Number(v.p)))), date: v.date }])) : {},
+                    // 提醒事項：時間到了自動加在那天聯絡簿的最後
+                    reminders: Array.isArray(cc.reminders) ? cc.reminders
+                        .filter(r => r && typeof r.text === 'string' && r.text.trim() && /^\d{4}-\d{2}-\d{2}$/.test(String(r.date)))
+                        .slice(0, 20).map(r => ({ text: r.text.trim().slice(0, 40), date: r.date, before: Math.max(0, Math.min(60, Math.round(Number(r.before) || 0))), countdown: !!r.countdown })) : [],
+                    // 發到 BAND：Apps Script 的網址（沒有密碼也發不出去），和最近一次發布的紀錄
+                    bandUrl: typeof cc.bandUrl === 'string' && BAND_URL_RE.test(cc.bandUrl) ? cc.bandUrl : '',
+                    bandPosted: cc.bandPosted && /^\d{4}-\d{2}-\d{2}$/.test(String(cc.bandPosted.date))
+                        ? { date: cc.bandPosted.date, key: /^\d{4}-\d{2}-\d{2}$/.test(String(cc.bandPosted.key)) ? cc.bandPosted.key : '', at: Number(cc.bandPosted.at) || 0 } : null,
                     // 老師今天自己挑要顯示哪一天的聯絡簿（只算當天，隔天恢復自動）
                     pick: cc.pick && /^\d{4}-\d{2}-\d{2}$/.test(String(cc.pick.day)) && /^\d{4}-\d{2}-\d{2}$/.test(String(cc.pick.key))
                         ? { day: cc.pick.day, key: cc.pick.key } : null
@@ -1764,6 +1787,8 @@
                                 <button id="contact-layout-h" onclick="setContactLayout('h')" class="px-3 py-1 rounded-lg text-sm font-black">橫式</button>
                             </div>
                             <button onclick="openContactEditor()" class="bg-amber-300 hover:bg-amber-200 text-amber-900 font-black px-3 py-1.5 rounded-xl text-sm whitespace-nowrap">✏️ 編輯</button>
+                            <!-- 老師確認今天的聯絡簿後發到 BAND（只有教師登記時看得到） -->
+                            <button id="band-publish-btn" onclick="openBandPublish()" class="hidden bg-emerald-300 hover:bg-emerald-200 text-emerald-950 font-black px-3 py-1.5 rounded-xl text-sm whitespace-nowrap">📣 發到BAND</button>
                         </div>
                     </div>
                     <div id="contact-body" class="flex-1 min-h-0 overflow-auto"></div>
@@ -2472,7 +2497,7 @@
             <div class="text-center mb-3">
                 <div class="text-3xl mb-1">📒</div>
                 <h4 class="text-xl font-black text-slate-800">編輯早修任務和聯絡簿</h4>
-                <p class="text-sm text-slate-500 mt-0.5">一行一項（各最多 10 項，每項最多 80 字）；寫了「不用抄」或開頭打「*」的是說明，不會編號</p>
+                <p class="text-sm text-slate-500 mt-0.5">一行一項（各最多 15 項，每項最多 80 字）；寫了「不用抄」或開頭打「*」的是說明，不會編號</p>
             </div>
             <div class="overflow-y-auto min-h-0 flex flex-col gap-1">
                 <label for="task-input" class="text-base font-black text-amber-700">⭐ 早修任務 <span class="text-sm font-bold text-slate-400">例如「訂正國卷 L.3」，不用可以空白</span></label>
@@ -2487,29 +2512,74 @@
                 </div>
                 <p class="text-xs font-bold text-slate-400"><span id="contact-date-hint"></span> <button type="button" id="contact-copy-prev" onclick="copyPrevContact()" class="text-emerald-700 hover:text-emerald-900 underline underline-offset-2 hidden">帶入上一份</button></p>
                 <label for="contact-input" class="text-base font-black text-emerald-800 mt-1">聯絡簿內容 <span class="text-sm font-bold text-slate-400">例如「國習 P.48」「帶水彩」</span></label>
-                <textarea id="contact-input" oninput="saveContactDraft()" rows="6" class="flex-shrink-0 w-full bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2 text-lg font-black text-slate-800 focus:outline-none focus:border-amber-400 leading-relaxed"></textarea>
+                <textarea id="contact-input" oninput="contactAutoPage(event)" oncompositionend="contactAutoPage(event)" rows="6" class="flex-shrink-0 w-full bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2 text-lg font-black text-slate-800 focus:outline-none focus:border-amber-400 leading-relaxed"></textarea>
+                <p id="contact-page-hint" class="text-xs font-bold text-slate-400"></p>
                 <p id="contact-fixed-hint" class="text-sm font-black text-sky-700"></p>
                 <!-- 每週固定的作業：那天的聯絡簿自動加在最後 -->
                 <details id="contact-fixed" class="mt-1 bg-sky-50 border-2 border-sky-100 rounded-xl px-3 py-2">
                     <summary class="cursor-pointer text-base font-black text-sky-800">🔁 每週固定作業 <span class="text-sm font-bold text-slate-400">例如每週二「完成書法作業」</span></summary>
-                    <p class="text-xs font-bold text-slate-400 mt-1">寫在星期幾，打那天的聯絡簿時就自動帶入，可以再改（例如「英」改成「英U3句子」）；多項用「、」分開；數字前加「#」（例如「品德學習單#4」），那天有用到下次就自動加 1，刪掉沒用就不加</p>
+                    <p class="text-xs font-bold text-slate-400 mt-1">寫在星期幾，打那天的聯絡簿時就自動帶入，可以再改（例如「英」改成「英U3句子」）；多項用「、」分開；數字前加「#」（例如「品德學習單#4」），那天有用到下次就自動加 1，刪掉沒用就不加；同名的（例如週三、週五的「閱讀#」）共用一組號碼</p>
+                    <div class="flex flex-wrap items-center gap-x-2 gap-y-1 mt-2">
+                        <label for="contact-lesson" class="text-sm font-black text-sky-800">📖 本週國語課次 L</label>
+                        <input type="number" id="contact-lesson" min="1" max="99" onchange="applyContactFixed(); saveContactDraft()" class="w-16 bg-white border-2 border-slate-200 rounded-lg px-2 py-1 text-base font-black text-slate-800 focus:outline-none focus:border-sky-400">
+                        <span class="text-xs font-bold text-slate-400">每週一自動 +1；考試週、放假停一週就改回來</span>
+                    </div>
+                    <p class="text-xs font-bold text-slate-400 mt-1">可以用：<b class="text-sky-800">{L}</b>＝課次（L9）、<b class="text-sky-800">{甲乙}</b>＝單數課「甲」雙數課「乙」、<b class="text-sky-800">{國習頁}</b>＝這課的國習頁碼</p>
+                    <label for="contact-lesson-pages" class="block text-sm font-black text-sky-800 mt-1">每課國習頁碼 <span class="text-xs font-bold text-slate-400">一行一課，例如「9=P.50-53」；沒寫的課就空著讓老師填</span></label>
+                    <textarea id="contact-lesson-pages" rows="2" onchange="applyContactFixed(); saveContactDraft()" placeholder="9=P.50-53" class="w-full bg-white border-2 border-slate-200 rounded-lg px-2 py-1 text-base font-black text-slate-800 focus:outline-none focus:border-sky-400"></textarea>
+                    <button type="button" id="contact-fixed-template" onclick="applyFixedTemplate()" class="mt-1 text-sm font-black text-sky-700 hover:text-sky-900 underline underline-offset-2">📋 套用國語作業範本</button>
                     <div class="grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1 mt-1">
                         <label for="contact-fixed-1" class="text-sm font-black text-sky-800">週一</label>
-                        <input type="text" id="contact-fixed-1" data-day="1" maxlength="120" onchange="applyContactFixed(); saveContactDraft()" class="bg-white border-2 border-slate-200 rounded-lg px-2 py-1 text-base font-black text-slate-800 focus:outline-none focus:border-sky-400">
+                        <input type="text" id="contact-fixed-1" data-day="1" maxlength="160" onchange="applyContactFixed(); saveContactDraft()" class="bg-white border-2 border-slate-200 rounded-lg px-2 py-1 text-base font-black text-slate-800 focus:outline-none focus:border-sky-400">
                         <label for="contact-fixed-2" class="text-sm font-black text-sky-800">週二</label>
-                        <input type="text" id="contact-fixed-2" data-day="2" maxlength="120" onchange="applyContactFixed(); saveContactDraft()" class="bg-white border-2 border-slate-200 rounded-lg px-2 py-1 text-base font-black text-slate-800 focus:outline-none focus:border-sky-400">
+                        <input type="text" id="contact-fixed-2" data-day="2" maxlength="160" onchange="applyContactFixed(); saveContactDraft()" class="bg-white border-2 border-slate-200 rounded-lg px-2 py-1 text-base font-black text-slate-800 focus:outline-none focus:border-sky-400">
                         <label for="contact-fixed-3" class="text-sm font-black text-sky-800">週三</label>
-                        <input type="text" id="contact-fixed-3" data-day="3" maxlength="120" onchange="applyContactFixed(); saveContactDraft()" class="bg-white border-2 border-slate-200 rounded-lg px-2 py-1 text-base font-black text-slate-800 focus:outline-none focus:border-sky-400">
+                        <input type="text" id="contact-fixed-3" data-day="3" maxlength="160" onchange="applyContactFixed(); saveContactDraft()" class="bg-white border-2 border-slate-200 rounded-lg px-2 py-1 text-base font-black text-slate-800 focus:outline-none focus:border-sky-400">
                         <label for="contact-fixed-4" class="text-sm font-black text-sky-800">週四</label>
-                        <input type="text" id="contact-fixed-4" data-day="4" maxlength="120" onchange="applyContactFixed(); saveContactDraft()" class="bg-white border-2 border-slate-200 rounded-lg px-2 py-1 text-base font-black text-slate-800 focus:outline-none focus:border-sky-400">
+                        <input type="text" id="contact-fixed-4" data-day="4" maxlength="160" onchange="applyContactFixed(); saveContactDraft()" class="bg-white border-2 border-slate-200 rounded-lg px-2 py-1 text-base font-black text-slate-800 focus:outline-none focus:border-sky-400">
                         <label for="contact-fixed-5" class="text-sm font-black text-sky-800">週五</label>
-                        <input type="text" id="contact-fixed-5" data-day="5" maxlength="120" onchange="applyContactFixed(); saveContactDraft()" class="bg-white border-2 border-slate-200 rounded-lg px-2 py-1 text-base font-black text-slate-800 focus:outline-none focus:border-sky-400">
+                        <input type="text" id="contact-fixed-5" data-day="5" maxlength="160" onchange="applyContactFixed(); saveContactDraft()" class="bg-white border-2 border-slate-200 rounded-lg px-2 py-1 text-base font-black text-slate-800 focus:outline-none focus:border-sky-400">
                     </div>
+                </details>
+                <!-- 提醒事項：時間到了自動加在那天聯絡簿的最後 -->
+                <details id="contact-reminders-box" class="mt-1 bg-rose-50 border-2 border-rose-100 rounded-xl px-3 py-2">
+                    <summary class="cursor-pointer text-base font-black text-rose-800">🔔 提醒事項 <span class="text-sm font-bold text-slate-400">例如「畢旅倒數3天」</span></summary>
+                    <p class="text-xs font-bold text-slate-400 mt-1">到了提前的天數就自動加在聯絡簿最後；勾「倒數」會寫成「畢旅倒數3天」，當天寫「今天畢旅」</p>
+                    <div id="contact-reminders" class="flex flex-col gap-1.5 mt-1"></div>
+                    <button type="button" id="contact-reminder-add" onclick="addReminderRow()" class="mt-1 text-sm font-black text-rose-700 hover:text-rose-900 underline underline-offset-2">＋ 新增提醒</button>
                 </details>
             </div>
             <div class="grid grid-cols-2 gap-2.5 mt-3">
                 <button onclick="try { localStorage.removeItem(CONTACT_DRAFT_KEY); } catch (e) {} closeContactEditor()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-base transition-all">取消</button>
                 <button onclick="saveContact()" class="bg-amber-400 hover:bg-amber-500 text-slate-900 font-black py-2.5 rounded-xl text-base transition-all">儲存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 今日聯絡簿發到 BAND：老師看過預覽、輸入發布密碼才送出 -->
+    <div id="modal-band" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden" onclick="if (event.target === this) closeBandPublish()">
+        <div class="bg-white border-2 border-slate-200 rounded-3xl p-5 w-full max-w-md board-shadow flex flex-col max-h-full">
+            <div class="text-center mb-3">
+                <div class="text-3xl mb-1">📣</div>
+                <h4 class="text-xl font-black text-slate-800">今日聯絡簿・發到 BAND</h4>
+                <p class="text-sm text-slate-500 mt-0.5">看過內容沒問題再按確認；內容可以直接改</p>
+            </div>
+            <div class="overflow-y-auto min-h-0 flex flex-col gap-1.5">
+                <textarea id="band-content" rows="9" class="flex-shrink-0 w-full bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2 text-base font-bold text-slate-800 focus:outline-none focus:border-emerald-400 leading-relaxed"></textarea>
+                <p id="band-already" class="hidden text-sm font-black text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">今天已經發過了。<label class="inline-flex items-center gap-1 ml-1"><input type="checkbox" id="band-force"> 確定要再發一次</label></p>
+                <label for="band-password" class="text-base font-black text-slate-700 mt-1">🔒 發布密碼</label>
+                <input type="password" id="band-password" autocomplete="off" class="w-full bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2 text-lg font-black text-slate-800 focus:outline-none focus:border-emerald-400">
+                <label class="flex items-center gap-1.5 text-sm font-bold text-slate-600"><input type="checkbox" id="band-remember"> 這台裝置記住密碼（共用電腦不要勾）</label>
+                <details id="band-setup" class="mt-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+                    <summary class="cursor-pointer text-sm font-black text-slate-600">⚙️ 發布程式網址</summary>
+                    <p class="text-xs font-bold text-slate-400 mt-1">貼上 Google Apps Script 部署後的網址（https://script.google.com/macros/s/…/exec）；設定方法見專案裡的「docs/BAND發布設定說明.md」</p>
+                    <input type="url" id="band-url" placeholder="https://script.google.com/macros/s/…/exec" class="mt-1 w-full bg-white border-2 border-slate-200 rounded-lg px-2 py-1 text-sm font-bold text-slate-800 focus:outline-none focus:border-emerald-400">
+                </details>
+                <p id="band-status" class="text-sm font-black min-h-[1.25rem] text-slate-500"></p>
+            </div>
+            <div class="grid grid-cols-2 gap-2.5 mt-3">
+                <button onclick="closeBandPublish()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-base transition-all">取消</button>
+                <button id="band-send" onclick="sendBandPublish()" class="bg-emerald-500 hover:bg-emerald-600 text-white font-black py-2.5 rounded-xl text-base transition-all disabled:opacity-50">確認，發到BAND</button>
             </div>
         </div>
     </div>
@@ -3084,6 +3154,8 @@
             btnTeacher.className = role === 'teacher' && !helperActive ? `${ROLE_ON} bg-amber-400 text-slate-900` : ROLE_OFF;
             btnHelper.className = helperActive ? `${ROLE_ON} bg-sky-400 text-slate-900` : ROLE_OFF;
             btnHelper.classList.toggle('hidden', !window.state.helperEnabled);
+            // 發到 BAND：只有老師本人（不是小幫手）登記時看得到
+            document.getElementById('band-publish-btn')?.classList.toggle('hidden', role !== 'teacher' || helperActive);
             const counting = window.state.markMode === 'missing';
             if (indicatorText) {
                 indicatorText.textContent = role === 'student' ? "學生自主消單模式"
@@ -4092,64 +4164,148 @@
 
         // 每週固定的作業（例如每週二「英」）：打開編輯那天的聯絡簿時自動帶入，老師可以直接改（例如改成「英U3句子」）或刪掉
         const WEEKDAY_NAMES = ['日', '一', '二', '三', '四', '五', '六'];
+        // 那一週的星期一（'YYYY-MM-DD'）
+        function weekMonday(key) {
+            const d = fromDateKey(key);
+            d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+            return toDateInputValue(d);
+        }
+        // 從 fromKey 那週到 toKey 那週隔了幾週
+        function weeksBetween(fromKey, toKey) {
+            if (!isDateKey(fromKey) || !isDateKey(toKey)) return 0;
+            return Math.round((fromDateKey(weekMonday(toKey)) - fromDateKey(weekMonday(fromKey))) / (7 * 86400000));
+        }
+        // 國語課次：設定的那週是第幾課，之後每週一自動 +1（考試週、放假老師自己改回來）
+        function lessonFor(c, key) {
+            if (!c.lesson || !isDateKey(key)) return null;
+            return Math.max(1, c.lesson.n + weeksBetween(c.lesson.week, key));
+        }
+        // 固定作業裡的變數：{L}＝課次（L9）、{甲乙}＝單數課甲、雙數課乙、{國習頁}＝這課的國習頁碼（沒設定就空著）
+        function expandFixedVars(c, t, key) {
+            const n = lessonFor(c, key);
+            return t.replace(/\{L\}/g, n ? `L${n}` : 'L')
+                .replace(/\{甲乙\}/g, n ? (n % 2 ? '甲' : '乙') : '')
+                .replace(/\{國習頁\}/g, n && (c.lessonPages || {})[n] ? c.lessonPages[n] : '');
+        }
+
         // 「品德學習單#4」：# 後面是下一次要用的號碼。那天的聯絡簿真的有這一項才往上加，那週刪掉沒用就不加
+        // 同名的（例如週三、週五都有「閱讀#」）共用一組號碼
         const FIXED_NUM_RE = /#\s*(\d+)/;
-        const fixedUsedKey = (day, t) => `${day}|${contactClean(t.split('#')[0]).replace(/\s+/g, '')}`;
-        function fixedNumberFor(c, day, t, key) {
-            const m = t.match(FIXED_NUM_RE);
-            if (!m) return null;
-            const used = (c.fixedUsed || {})[fixedUsedKey(day, t)];
-            // 已經用過的那天再打開：還是那天的號碼
-            return used && used.date === key ? used.n : Number(m[1]);
+        const squash = t => contactClean(t).replace(/\s+/g, '');
+        const fixedPrefix = t => squash(t.split('#')[0]);
+        // 設定裡這一種現在的號碼
+        function fixedCounter(fixed, prefix) {
+            for (const list of Object.values(fixed || {})) {
+                for (const t of list) {
+                    const m = t.match(FIXED_NUM_RE);
+                    if (m && fixedPrefix(t) === prefix) return Number(m[1]);
+                }
+            }
+            return null;
+        }
+        function setFixedCounter(fixed, prefix, n) {
+            return Object.fromEntries(Object.entries(fixed || {}).map(([day, list]) => [day,
+                list.map(t => FIXED_NUM_RE.test(t) && fixedPrefix(t) === prefix ? t.replace(FIXED_NUM_RE, '#' + n) : t)]));
+        }
+        // 設定的格子裡同一種寫了不同號碼：以老師這次改過的那個為準，其他天跟著改
+        function syncFixedCounters(fixed, before) {
+            const nums = {};
+            Object.values(fixed).forEach(list => list.forEach(t => {
+                const m = t.match(FIXED_NUM_RE);
+                if (m) (nums[fixedPrefix(t)] = nums[fixedPrefix(t)] || []).push(Number(m[1]));
+            }));
+            let out = fixed;
+            Object.entries(nums).forEach(([prefix, list]) => {
+                const old = fixedCounter(before, prefix);
+                const chosen = list.find(n => n !== old);
+                out = setFixedCounter(out, prefix, chosen === undefined ? list[0] : chosen);
+            });
+            return out;
+        }
+        // 這天要帶入的固定作業：text 是要放進聯絡簿的字，match 用來判斷老師是不是已經寫了
+        function contactFixedEntries(c, key) {
+            if (!isDateKey(key)) return [];
+            return ((c.fixed || {})[fromDateKey(key).getDay()] || []).map(t => {
+                const m = t.match(FIXED_NUM_RE);
+                if (!m) {
+                    const text = expandFixedVars(c, t, key);
+                    return { text, match: squash(text) };
+                }
+                const used = (c.fixedUsed || {})[fixedPrefix(t)];
+                // 已經用過的那天再打開：還是那天的號碼
+                const n = used && used.date === key ? used.n : Number(m[1]);
+                return { text: expandFixedVars(c, t, key).replace(FIXED_NUM_RE, String(n)), match: squash(expandFixedVars(c, t.split('#')[0], key)) };
+            });
         }
         function contactFixedFor(c, key) {
-            if (!isDateKey(key)) return [];
-            const day = fromDateKey(key).getDay();
-            return ((c.fixed || {})[day] || []).map(t => {
-                const n = fixedNumberFor(c, day, t, key);
-                return n === null ? t : t.replace(FIXED_NUM_RE, String(n));
-            });
+            return contactFixedEntries(c, key).map(e => e.text);
         }
         // 存聯絡簿時：有用到「品德學習單4」就記下來，下次號碼變 5；那天刪掉了就退回原本的號碼
         function updateFixedUsed(c, key, items) {
-            const fixed = { ...(c.fixed || {}) };
+            let fixed = { ...(c.fixed || {}) };
             const usedMap = { ...(c.fixedUsed || {}) };
             if (!isDateKey(key)) return { fixed, fixedUsed: usedMap };
-            const day = fromDateKey(key).getDay();
-            const lines = items.map(t => contactClean(t).replace(/\s+/g, ''));
-            fixed[day] = (fixed[day] || []).map(t => {
-                const m = t.match(FIXED_NUM_RE);
-                if (!m) return t;
-                const k = fixedUsedKey(day, t);
-                const prefix = k.slice(2);
-                const prev = usedMap[k];
-                const hit = prefix && lines.map(l => l.startsWith(prefix) ? l.slice(prefix.length).match(/^\d+/) : null).find(Boolean);
+            const lines = items.map(squash);
+            const seen = new Set();
+            (fixed[fromDateKey(key).getDay()] || []).forEach(t => {
+                if (!FIXED_NUM_RE.test(t)) return;
+                const prefix = fixedPrefix(t);
+                if (!prefix || seen.has(prefix)) return;
+                seen.add(prefix);
+                const head = squash(expandFixedVars(c, t.split('#')[0], key));
+                const prev = usedMap[prefix];
+                const hit = head && lines.map(l => l.startsWith(head) ? l.slice(head.length).match(/^\d+/) : null).find(Boolean);
                 if (hit) {
                     const n = Number(hit[0]);
-                    if (!prev || prev.date !== key || prev.n !== n) {
-                        usedMap[k] = { date: key, n };
-                        return t.replace(FIXED_NUM_RE, '#' + (n + 1));
+                    // 改的是比較早的那天（後面幾天已經用過了）就不動號碼
+                    if (!prev || (key >= prev.date && (prev.date !== key || prev.n !== n))) {
+                        usedMap[prefix] = { date: key, n };
+                        fixed = setFixedCounter(fixed, prefix, n + 1);
                     }
-                    return t;
-                }
-                if (prev && prev.date === key) {
+                } else if (prev && prev.date === key) {
                     // 那天原本有用、後來刪掉了：號碼退回去
-                    delete usedMap[k];
-                    return t.replace(FIXED_NUM_RE, '#' + prev.n);
+                    delete usedMap[prefix];
+                    fixed = setFixedCounter(fixed, prefix, prev.n);
                 }
-                return t;
             });
             return { fixed, fixedUsed: usedMap };
         }
         function contactItemsFor(c, key, items) {
             const own = items || [];
             // 已經寫了（或改寫成開頭一樣的，例如「英」→「英U3句子」）就不再加
-            const have = own.map(t => contactClean(t).replace(/\s+/g, ''));
-            const add = contactFixedFor(c, key).filter(t => { const f = contactClean(t).replace(/\s+/g, ''); return !have.some(h => h.startsWith(f)); });
+            const have = own.map(squash);
+            const add = contactFixedEntries(c, key).filter(e => !have.some(h => h.startsWith(e.match))).map(e => e.text);
             // 加在作業的最後、最後面的說明（例如 * 開頭的提醒）之前
             let at = own.length;
             while (at > 0 && isContactNote(own[at - 1])) at--;
             return [...own.slice(0, at), ...add, ...own.slice(at)];
+        }
+
+        // 數學作業寫到第幾頁：「數習P.38-40」→ 數習 40
+        function mathPageEnd(line) {
+            const m = squash(line).match(/^(數習|數練|數課)[Pp]?\.?(\d+)(?:[-–~～][Pp]?\.?(\d+))?/);
+            return m ? { book: m[1], end: Number(m[3] || m[2]) } : null;
+        }
+        function updateMathPages(pages, key, items) {
+            const out = { ...(pages || {}) };
+            items.forEach(t => {
+                const hit = mathPageEnd(t);
+                if (hit && (!out[hit.book] || key >= out[hit.book].date)) out[hit.book] = { p: hit.end, date: key };
+            });
+            return out;
+        }
+
+        // 提醒事項：提前幾天開始，自動加在那天聯絡簿的最後；要倒數的寫「畢旅倒數3天」
+        function reminderItems(c, key) {
+            if (!isDateKey(key)) return [];
+            return (c.reminders || []).filter(r => {
+                const start = toDateInputValue(new Date(fromDateKey(r.date).getTime() - r.before * 86400000));
+                return key >= start && key <= r.date;
+            }).sort((a, b) => a.date.localeCompare(b.date)).map(r => {
+                const days = Math.round((fromDateKey(r.date) - fromDateKey(key)) / 86400000);
+                if (!r.countdown) return r.text;
+                return days > 0 ? `${r.text}倒數${days}天` : `今天${r.text}`;
+            });
         }
 
         function contactShown(c, now = new Date()) {
@@ -4158,9 +4314,9 @@
             if (keys.length === 0) return { key: '', items: c.items || [] };
             // 老師今天挑了要顯示哪一天，就照老師挑的
             const pick = c.pick;
-            if (pick && pick.day === toDateInputValue(now) && history[pick.key]) return { key: pick.key, items: history[pick.key], picked: true };
+            if (pick && pick.day === toDateInputValue(now) && history[pick.key]) return { key: pick.key, items: [...history[pick.key], ...reminderItems(c, pick.key)], picked: true };
             const key = keys.filter(k => k <= contactAssignDate(now)).sort().pop();
-            return key ? { key, items: history[key] } : { key: '', items: [] };
+            return key ? { key, items: [...history[key], ...reminderItems(c, key)] } : { key: '', items: [] };
         }
 
         // 教室畫面要顯示哪一天的聯絡簿：選回自動的那份就恢復自動（下午 3 點換成下一個上課日）
@@ -5495,6 +5651,7 @@
                 : `（${md(shown.key && ahead ? shown.key : today)}${ahead ? ` 週${wd(shown.key)}` : ''}）`;
             document.getElementById('contact-date').innerHTML = picker
                 + (dayNote && !picker.startsWith('<select') ? `<span class="ml-1 text-xs sm:text-sm font-bold text-amber-200/80 whitespace-nowrap">${dayNote}</span>` : '');
+            refreshBandButton();
             ['v', 'h'].forEach(k => {
                 document.getElementById(`contact-layout-${k}`).className = `px-3 py-1 rounded-lg text-sm font-black ${c.layout === k ? 'bg-amber-300 text-amber-900' : 'text-white/80 hover:text-white'}`;
             });
@@ -5726,10 +5883,96 @@
         function readFixedInputs() {
             const fixed = {};
             document.querySelectorAll('#contact-fixed input[data-day]').forEach(input => {
-                const items = input.value.split(/[、,，;；\n]/).map(t => t.trim().slice(0, 80)).filter(Boolean).slice(0, 5);
+                const items = input.value.split(/[、,，;；\n]/).map(t => t.trim().slice(0, 80)).filter(Boolean).slice(0, 8);
                 if (items.length) fixed[input.dataset.day] = items;
             });
             return fixed;
+        }
+
+        // 本週國語課次（存成「這週的星期一是第幾課」）和每課國習頁碼
+        function readLessonInput() {
+            const n = parseInt(document.getElementById('contact-lesson').value, 10);
+            return Number.isFinite(n) && n > 0 ? { n: Math.min(99, n), week: weekMonday(todayKey()) } : null;
+        }
+        function readLessonPages() {
+            const pages = {};
+            document.getElementById('contact-lesson-pages').value.split('\n').forEach(line => {
+                const m = line.trim().match(/^L?\s*(\d{1,2})\s*[=:：]\s*(.+)$/i);
+                if (m) pages[Number(m[1])] = m[2].trim().slice(0, 30);
+            });
+            return pages;
+        }
+        // 編輯視窗裡現在的設定（還沒儲存的也算）
+        function editorContactSettings() {
+            const c = (window.state.daily || defaultDaily()).contact;
+            return { fixed: syncFixedCounters(readFixedInputs(), c.fixed), fixedUsed: c.fixedUsed || {}, lesson: readLessonInput(), lessonPages: readLessonPages() };
+        }
+
+        // 國語作業範本（閱讀、品德學習單沿用現在的號碼，沒有的從 1 開始）
+        const FIXED_TEMPLATE = {
+            1: ['預習{L}+padlet', '{甲乙}本{L}生造', '帶直笛'],
+            2: ['國重{L}', '國習{國習頁}'],
+            3: ['{甲乙}本{L}詞', '閱讀#N', '完成書法作業'],
+            4: ['直行{L}+成'],
+            5: ['國習{L}', '{甲乙}本{L}萬花筒', '品德學習單#N', '閱讀#N', '週記', '帶美勞用具']
+        };
+        function applyFixedTemplate() {
+            const now = readFixedInputs();
+            Object.entries(FIXED_TEMPLATE).forEach(([day, list]) => {
+                document.getElementById(`contact-fixed-${day}`).value = list.map(t => t.replace('#N', '#' + (fixedCounter(now, fixedPrefix(t)) || 1))).join('、');
+            });
+            applyContactFixed();
+            saveContactDraft();
+            showToast('已套用範本；按「儲存」才會存起來，按「取消」就不變');
+        }
+
+        // 提醒事項：一列一則
+        function reminderRowHtml(r) {
+            return `<div class="reminder-row grid grid-cols-[1fr_auto] gap-1 bg-white border border-rose-100 rounded-lg p-1.5">
+                <input type="text" class="reminder-text col-span-2 bg-slate-50 border border-slate-200 rounded-md px-2 py-1 font-black text-slate-800" maxlength="40" placeholder="例如：畢旅" value="${escapeHtml(r.text || '')}">
+                <div class="flex flex-wrap items-center gap-1 text-sm font-bold text-slate-600">
+                    <input type="date" class="reminder-date bg-slate-50 border border-slate-200 rounded-md px-1 py-0.5" value="${r.date || ''}">
+                    <span>提前</span><input type="number" class="reminder-before w-14 bg-slate-50 border border-slate-200 rounded-md px-1 py-0.5" min="0" max="60" value="${r.before ?? 3}"><span>天</span>
+                    <label class="inline-flex items-center gap-1"><input type="checkbox" class="reminder-countdown" ${r.countdown ? 'checked' : ''}>倒數</label>
+                </div>
+                <button type="button" onclick="this.closest('.reminder-row').remove()" class="text-rose-500 hover:text-rose-700 font-black px-1" title="刪掉這則提醒" aria-label="刪掉這則提醒">✕</button>
+            </div>`;
+        }
+        function renderReminderRows(list) {
+            document.getElementById('contact-reminders').innerHTML = list.map(reminderRowHtml).join('');
+        }
+        function addReminderRow() {
+            document.getElementById('contact-reminders').insertAdjacentHTML('beforeend', reminderRowHtml({ text: '', date: '', before: 3, countdown: true }));
+            document.querySelector('#contact-reminders .reminder-row:last-child .reminder-text').focus();
+        }
+        function readReminders() {
+            return [...document.querySelectorAll('#contact-reminders .reminder-row')].map(row => ({
+                text: row.querySelector('.reminder-text').value.trim().slice(0, 40),
+                date: row.querySelector('.reminder-date').value,
+                before: Math.max(0, Math.min(60, parseInt(row.querySelector('.reminder-before').value, 10) || 0)),
+                countdown: row.querySelector('.reminder-countdown').checked
+            })).filter(r => r.text && isDateKey(r.date)).slice(0, 20);
+        }
+
+        // 數學作業：打「數習」就接著上次的頁數先填好「P.41-」，老師補結束頁
+        function contactAutoPage(e) {
+            const box = document.getElementById('contact-input');
+            if (e && (e.isComposing || String(e.inputType || '').startsWith('delete'))) { saveContactDraft(); return; }
+            const pos = box.selectionStart;
+            if (pos === box.selectionEnd) {
+                const before = box.value.slice(0, pos);
+                const after = box.value.slice(pos);
+                const word = before.slice(before.lastIndexOf('\n') + 1).trim();
+                const rest = after.split('\n')[0];
+                const last = ((window.state.daily || defaultDaily()).contact.pages || {})[word];
+                if (MATH_BOOKS.includes(word) && last && !rest.trim()) box.setRangeText(`P.${last.p + 1}-`, pos, pos, 'end');
+            }
+            saveContactDraft();
+        }
+        function fillContactPageHint() {
+            const pages = (window.state.daily || defaultDaily()).contact.pages || {};
+            const known = MATH_BOOKS.filter(b => pages[b]).map(b => `${b} P.${pages[b].p}`);
+            document.getElementById('contact-page-hint').textContent = known.length ? `📐 上次寫到：${known.join('・')}（打書名會自動接下一頁）` : '';
         }
 
         // 把這天的固定作業帶進聯絡簿內容（已經有的不重複），老師可以直接改或刪
@@ -5737,7 +5980,7 @@
             const date = document.getElementById('contact-for-date').value;
             const box = document.getElementById('contact-input');
             const own = box.value.split('\n').map(t => t.trim()).filter(Boolean);
-            const fixedNow = { fixed: readFixedInputs(), fixedUsed: (window.state.daily || defaultDaily()).contact.fixedUsed || {} };
+            const fixedNow = editorContactSettings();
             const merged = contactItemsFor(fixedNow, date, own);
             const added = merged.length - own.length;
             if (added > 0) box.value = merged.join('\n');
@@ -5760,6 +6003,10 @@
             document.getElementById('task-input').value = c.tasks.join('\n');
             // 設定的格子顯示下一次要用的號碼
             document.querySelectorAll('#contact-fixed input[data-day]').forEach(input => { input.value = ((c.fixed || {})[input.dataset.day] || []).join('、'); });
+            document.getElementById('contact-lesson').value = lessonFor(c, todayKey()) || '';
+            document.getElementById('contact-lesson-pages').value = Object.entries(c.lessonPages || {}).sort((a, b) => a[0] - b[0]).map(([k, v]) => `${k}=${v}`).join('\n');
+            renderReminderRows((c.reminders || []).filter(r => r.date >= todayKey()));
+            fillContactPageHint();
             fillContactDate(contactAssignDate(now));
             // 上次打到一半沒儲存（例如視窗被關掉、網頁重新整理）：把打好的內容拿回來
             let draft = null;
@@ -5847,7 +6094,10 @@
             const keptDue = Object.fromEntries(Object.entries(due).filter(([k]) => k in keptHistory));
             const keepPrev = d.contact.date && d.contact.date !== todayKey() && d.contact.items.length > 0;
             const prev = keepPrev ? { prevItems: d.contact.items, prevDate: d.contact.date } : {};
-            const contact = { ...d.contact, ...prev, history: keptHistory, due: keptDue, ...updateFixedUsed({ fixed: readFixedInputs(), fixedUsed: d.contact.fixedUsed }, forDate, items), tasks: lines('task-input'), date: todayKey() };
+            const settings = editorContactSettings();
+            const contact = { ...d.contact, ...prev, history: keptHistory, due: keptDue, ...updateFixedUsed(settings, forDate, items),
+                lesson: settings.lesson, lessonPages: settings.lessonPages, pages: updateMathPages(d.contact.pages, forDate, items),
+                reminders: readReminders().filter(r => r.date >= todayKey()), tasks: lines('task-input'), date: todayKey() };
             contact.items = contactShown(contact, now).items;
             window.state.daily = { ...d, contact };
             try { localStorage.removeItem(CONTACT_DRAFT_KEY); } catch (e) {}
@@ -5858,6 +6108,95 @@
             showToast(forDate > cur
                 ? `已存好 ${shortDate(forDate)} 的聯絡簿（${shortDate(contactDueDate(contact, forDate))} 收），到時候教室畫面會自動換上`
                 : '早修任務和聯絡簿已更新');
+        }
+
+        // ---- 發到 BAND ----
+        // 網址存在看板設定裡（沒有發布密碼也發不出去）；BAND 的金鑰和發布密碼只放在 Apps Script，不放在這裡
+        const BAND_PW_KEY = 'checkpoint_band_password';
+        function bandPostedToday(c) {
+            return !!(c.bandPosted && c.bandPosted.date === todayKey());
+        }
+        // 今天要發的內容：教室畫面現在顯示的那份聯絡簿
+        function buildBandContent(c) {
+            const shown = contactShown(c);
+            const key = shown.key || todayKey();
+            const nums = contactNumbers(shown.items);
+            const lines = shown.items.map((t, i) => nums[i] === null ? `${isContactOptional(t) ? '▲' : '※'} ${contactClean(t)}` : `${nums[i]}. ${contactClean(t)}`);
+            return { key, content: [`📒 ${shortDate(key)}（週${WEEKDAY_NAMES[fromDateKey(key).getDay()]}）聯絡簿`, ...lines].join('\n') };
+        }
+        function refreshBandButton() {
+            const btn = document.getElementById('band-publish-btn');
+            if (!btn) return;
+            const posted = bandPostedToday((window.state.daily || defaultDaily()).contact);
+            btn.textContent = posted ? '✅ 今日已發布' : '📣 發到BAND';
+            btn.className = `${btn.classList.contains('hidden') ? 'hidden ' : ''}${posted ? 'bg-white/15 text-emerald-100 hover:bg-white/25' : 'bg-emerald-300 hover:bg-emerald-200 text-emerald-950'} font-black px-3 py-1.5 rounded-xl text-sm whitespace-nowrap`;
+        }
+        function openBandPublish() {
+            if (!isTeacherMode() || window.state.isHelperUnlocked && !window.state.isTeacherUnlocked) {
+                openTeacherAuthModal(openBandPublish);
+                return;
+            }
+            const c = (window.state.daily || defaultDaily()).contact;
+            const { content } = buildBandContent(c);
+            document.getElementById('band-content').value = content;
+            const posted = bandPostedToday(c);
+            document.getElementById('band-already').classList.toggle('hidden', !posted);
+            document.getElementById('band-force').checked = false;
+            let saved = '';
+            try { saved = localStorage.getItem(BAND_PW_KEY) || ''; } catch (e) {}
+            document.getElementById('band-password').value = saved;
+            document.getElementById('band-remember').checked = !!saved;
+            document.getElementById('band-url').value = c.bandUrl || '';
+            document.getElementById('band-setup').open = !c.bandUrl;
+            document.getElementById('band-status').textContent = '';
+            document.getElementById('band-send').disabled = false;
+            document.getElementById('modal-band').classList.remove('hidden');
+        }
+        function closeBandPublish() {
+            document.getElementById('modal-band').classList.add('hidden');
+        }
+        async function sendBandPublish() {
+            const status = document.getElementById('band-status');
+            const fail = msg => { status.textContent = msg; status.className = 'text-sm font-black min-h-[1.25rem] text-rose-600'; window.soundEffect.playAlert(); };
+            const url = document.getElementById('band-url').value.trim();
+            const password = document.getElementById('band-password').value;
+            const content = document.getElementById('band-content').value.trim().slice(0, 3000);
+            const d = window.state.daily || defaultDaily();
+            const { key } = buildBandContent(d.contact);
+            const force = document.getElementById('band-force').checked;
+            if (!BAND_URL_RE.test(url)) { document.getElementById('band-setup').open = true; return fail('請先貼上發布程式的網址（https://script.google.com/macros/s/…/exec）'); }
+            if (!password) return fail('請輸入發布密碼');
+            if (!content) return fail('沒有內容可以發');
+            if (bandPostedToday(d.contact) && !force) return fail('今天已經發過了；真的要再發，請勾「確定要再發一次」');
+            const btn = document.getElementById('band-send');
+            btn.disabled = true;
+            status.textContent = '發送中…';
+            status.className = 'text-sm font-black min-h-[1.25rem] text-slate-500';
+            let data = null;
+            try {
+                // 用純文字送出（不會先多問一次），Apps Script 讀 e.postData.contents
+                const res = await fetch(url, { method: 'POST', body: JSON.stringify({ password, content, date: key, force }) });
+                data = await res.json();
+            } catch (e) {
+                btn.disabled = false;
+                return fail('連不上發布程式，請確認網址和網路');
+            }
+            btn.disabled = false;
+            if (!data || !data.ok) {
+                if (data && data.already) document.getElementById('band-already').classList.remove('hidden');
+                return fail((data && data.error) || '發布失敗');
+            }
+            try {
+                if (document.getElementById('band-remember').checked) localStorage.setItem(BAND_PW_KEY, password);
+                else localStorage.removeItem(BAND_PW_KEY);
+            } catch (e) {}
+            const fresh = window.state.daily || defaultDaily();
+            window.state.daily = { ...fresh, contact: { ...fresh.contact, bandUrl: url, bandPosted: { date: todayKey(), key, at: Date.now() } } };
+            window.syncDaily(true);
+            closeBandPublish();
+            refreshBandButton();
+            window.soundEffect.playSuccess();
+            showToast('已發到 BAND');
         }
 
         // 時鐘只在早自習頁開著時每秒更新
@@ -6901,7 +7240,11 @@
                     '老師或小幫手在<b>教師登記</b>模式點座號，可以切換「未到 → 已到 → 請假」。打卡紀錄<b>每天自動歸零</b>。',
                     '按「<b>✏️ 編輯</b>」寫<b>早修任務</b>（黃色便利貼）和<b>聯絡簿</b>，一行一項，不用自己打「1.」編號。聯絡簿上面可以選<b>這是哪天的作業、哪天收</b>（預設下午 3 點後寫的算下一個上課日、隔一個上課日收），也可以<b>先打好之後 5 個上課日</b>的，到時候教室畫面會自動換上。聯絡簿右上角、早修任務標題旁邊都可以各自切換<b>直式</b>（由右往左一項一欄，太長自動接下一行）或<b>橫式</b>（條列）；字會自動放大到剛好填滿。',
                     '聯絡簿開頭打「<b>*</b>」的項目不編號，前面畫 <b class="text-amber-500">▲</b>，代表<b>需要提醒的人再抄</b>；寫了「不用抄」的是說明。橫式時太長的一項會<b>自動縮小字</b>，盡量擠在同一行。',
-                    '<b>🔁 每週固定作業</b>：在「✏️ 編輯」最下面打開，週一到週五各一格（例如週二填「完成書法作業」，多項用「、」分開）。打那天的聯絡簿時會<b>自動帶入</b>，可以直接改（例如「英」改成「英U3句子」），那天不用就刪掉。數字前加「<b>#</b>」（例如「品德學習單#4」），那天聯絡簿有用到，下次號碼<b>自動加 1</b>；那週沒發、刪掉了就不加。',
+                    '<b>🔁 每週固定作業</b>：在「✏️ 編輯」最下面打開，週一到週五各一格（例如週二填「完成書法作業」，多項用「、」分開）。打那天的聯絡簿時會<b>自動帶入</b>，可以直接改（例如「英」改成「英U3句子」），那天不用就刪掉。數字前加「<b>#</b>」（例如「品德學習單#4」），那天聯絡簿有用到，下次號碼<b>自動加 1</b>；那週沒發、刪掉了就不加；同名的（例如週三、週五的「閱讀#」）共用一組號碼。',
+                    '<b>📖 本週國語課次</b>：在「🔁 每週固定作業」裡設定，每週一自動 +1（考試週、放假就改回來）。固定作業裡寫 <b>{L}</b> 會變成「L9」、<b>{甲乙}</b> 單數課是「甲」雙數課是「乙」、<b>{國習頁}</b> 是這課的國習頁碼（在「每課國習頁碼」填「9=P.50-53」）。按「📋 套用國語作業範本」可以一次填好。',
+                    '<b>📐 數學頁數</b>：聯絡簿寫過「數習P.38-40」，下次打「數習」就會自動接「P.41-」，只要補結束頁（數習、數練、數課分開記）。',
+                    '<b>🔔 提醒事項</b>：在「✏️ 編輯」最下面新增，填內容、日期、提前幾天；到了就自動加在聯絡簿最後，勾「倒數」會寫成「畢旅倒數3天」。',
+                    '<b>📣 發到 BAND</b>：教師登記時，聯絡簿右上角有「發到BAND」，看過預覽、輸入發布密碼就送出，發過會顯示「今日已發布」。第一次要先照「docs/BAND發布設定說明.md」設定好發布程式。',
                     '早修任務和聯絡簿中間的<b>小白線可以左右拖曳</b>，調整兩邊寬度，這台電腦會記住。',
                     '家長頁會顯示孩子「<b>今日到教室</b>」的時間，每天到了遲到時間（例如 8:00）才統一更新，<b>那時教室的看板要開著</b>。聯絡簿不會給家長看。'
                 ]),
