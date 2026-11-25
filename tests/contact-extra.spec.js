@@ -24,7 +24,7 @@ test('國語課次：{L}、{甲乙}、{國習頁}帶進聯絡簿，每週一自�
     await room.fill('#contact-lesson', '9');
     await room.click('#contact-fixed-template');
     await expect(room.locator('#contact-fixed-1')).toHaveValue('預習{L}+padlet、{甲乙}本{L}生造、帶直笛');
-    await expect(room.locator('#contact-fixed-5')).toHaveValue('國習{L}、{甲乙}本{L}萬花筒、品德學習單#1、閱讀#1、週記、帶美勞用具');
+    await expect(room.locator('#contact-fixed-5')).toHaveValue('國習{L}、{甲乙}本{L}萬花筒、品德學習單#1、閱讀#1、考國{L-1}、週記、帶美勞用具');
     // 週一：L9 是單數課 → 甲
     await expect(room.locator('#contact-input')).toHaveValue('預習L9+padlet\n甲本L9生造\n帶直笛');
     await room.click('#modal-contact >> text=儲存');
@@ -302,5 +302,32 @@ test('早上提醒發到 BAND：老師登記時還沒發就閃動「今天還沒
     await room.clock.setFixedTime(new Date(2026, 10, 24, 8, 0, 0));
     await room.evaluate(() => { state.daily = { ...state.daily, contact: { ...state.daily.contact, bandPosted: { date: '2026-11-24', key: '2026-11-24', at: 1 } } }; renderContact(); });
     await expect(room.locator('#band-publish-btn')).toHaveText('✅ 今日已發布');
+    expect(room.errors).toEqual([]);
+});
+
+test('存過的那天再打開編輯：刪掉的固定作業不會再帶回來；{L-1} 是上一週的課次', async ({ browser }) => {
+    const cloud = createCloud();
+    // 2026-11-27 是星期五
+    const room = await openEditorAt(browser, cloud, new Date(2026, 10, 27, 9, 0, 0));
+    await room.click('text=✏️ 編輯');
+    await room.click('#contact-fixed summary');
+    await room.fill('#contact-lesson', '9');
+    await room.fill('#contact-fixed-5', '國習{L}、品德學習單#4、考國{L-1}、週記');
+    await room.fill('#contact-input', '');
+    await room.dispatchEvent('#contact-fixed-5', 'change');
+    await expect(room.locator('#contact-input')).toHaveValue('國習L9\n品德學習單4\n考國L8\n週記');
+    // 這週不寫品德學習單和週記
+    await room.fill('#contact-input', '國習L9\n考國L8');
+    await room.click('#modal-contact >> text=儲存');
+    await expect.poll(() => cloud.board('main').daily?.contact?.history?.['2026-11-27'], { timeout: 15000 }).toEqual(['國習L9', '考國L8']);
+    // 再打開：照存的內容，不會又多出品德學習單和週記；號碼也沒有往上加
+    await room.click('text=✏️ 編輯');
+    await expect(room.locator('#contact-input')).toHaveValue('國習L9\n考國L8');
+    await expect(room.locator('#contact-fixed-hint')).toContainText('這天已經存過');
+    await expect(room.locator('#contact-fixed-5')).toHaveValue('國習{L}、品德學習單#4、考國{L-1}、週記');
+    await room.click('#modal-contact >> text=取消');
+    // 下週五：L10、考國L9；閱讀階梯那週考 L12
+    expect(await room.evaluate(() => contactFixedFor(state.daily.contact, '2026-12-04'))).toEqual(['國習L10', '品德學習單4', '考國L9', '週記']);
+    expect(await room.evaluate(() => contactFixedFor(state.daily.contact, '2026-12-25'))).toEqual(['國習閱讀階梯二', '品德學習單4', '考國L12', '週記']);
     expect(room.errors).toEqual([]);
 });

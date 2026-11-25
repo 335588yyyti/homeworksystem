@@ -2579,7 +2579,7 @@
                         <input type="text" id="contact-lesson" maxlength="10" onchange="applyContactFixed(); saveContactDraft()" class="w-24 bg-white border-2 border-slate-200 rounded-lg px-2 py-1 text-base font-black text-slate-800 focus:outline-none focus:border-sky-400">
                         <span class="text-xs font-bold text-slate-400">每週一自動換下一課（L12 之後是閱讀階梯二）；考試週、放假要停一週就改回來</span>
                     </div>
-                    <p class="text-xs font-bold text-slate-400 mt-1">可以用：<b class="text-sky-800">{L}</b>＝課次（L9）、<b class="text-sky-800">{甲乙}</b>＝單數課「甲」雙數課「乙」、<b class="text-sky-800">{國習頁}</b>＝「P.起始頁–起始頁+1」，例如 P.70–71（起始頁在「課本進度設定」）</p>
+                    <p class="text-xs font-bold text-slate-400 mt-1">可以用：<b class="text-sky-800">{L}</b>＝課次（L9）、<b class="text-sky-800">{L-1}</b>＝上一週的課次（例如「考國{L-1}」→ 考國L8）、<b class="text-sky-800">{甲乙}</b>＝單數課「甲」雙數課「乙」、<b class="text-sky-800">{國習頁}</b>＝「P.起始頁–起始頁+1」，例如 P.70–71（起始頁在「課本進度設定」）</p>
                     <div class="flex flex-wrap gap-x-3 gap-y-1 mt-1">
                         <button type="button" id="contact-fixed-template" onclick="applyFixedTemplate()" class="text-sm font-black text-sky-700 hover:text-sky-900 underline underline-offset-2">📋 套用國語作業範本</button>
                         <button type="button" onclick="openBooksSettings()" class="text-sm font-black text-sky-700 hover:text-sky-900 underline underline-offset-2">📚 課本進度設定</button>
@@ -4297,7 +4297,10 @@
         function expandFixedVars(c, t, key) {
             const lesson = lessonFor(c, key);
             const row = lesson ? (c.books || BOOKS_DEFAULT).guoxi.find(g => g.name === lesson.tag) : null;
-            return t.replace(/\{L\}/g, lesson ? lesson.tag : 'L')
+            // {L-1}：上一週的課次（例如週五考上一課「考國L8」）
+            const prev = /\{L-1\}/.test(t) ? lessonFor(c, toDateInputValue(new Date(fromDateKey(key).getTime() - 7 * 86400000))) : null;
+            return t.replace(/\{L-1\}/g, prev ? prev.tag : 'L')
+                .replace(/\{L\}/g, lesson ? lesson.tag : 'L')
                 .replace(/\{甲乙\}/g, lesson && lesson.n ? (lesson.n % 2 ? '甲' : '乙') : '')
                 .replace(/\{國習頁\}/g, row ? `P.${row.start}–${row.start + 1}` : '');
         }
@@ -6119,7 +6122,7 @@
             2: ['國重{L}', '國習{國習頁}'],
             3: ['{甲乙}本{L}詞', '閱讀#N', '完成書法作業'],
             4: ['直行{L}+成'],
-            5: ['國習{L}', '{甲乙}本{L}萬花筒', '品德學習單#N', '閱讀#N', '週記', '帶美勞用具']
+            5: ['國習{L}', '{甲乙}本{L}萬花筒', '品德學習單#N', '閱讀#N', '考國{L-1}', '週記', '帶美勞用具']
         };
         function applyFixedTemplate() {
             const now = readFixedInputs();
@@ -6260,25 +6263,35 @@
         }
 
         // 把這天的固定作業帶進聯絡簿內容（已經有的不重複），老師可以直接改或刪
-        function applyContactFixed() {
+        // 這次編輯視窗自動帶入的前測卷、後測卷：老師刪掉後存起來，才記成「不要」
+        let contactPrefilledAutos = new Set();
+        // addItems 為 false：這天已經存過，只更新提示，不再把老師刪掉的帶回來
+        function applyContactFixed(addItems = true) {
             const date = document.getElementById('contact-for-date').value;
             const box = document.getElementById('contact-input');
             const own = box.value.split('\n').map(t => t.trim()).filter(Boolean);
             const fixedNow = editorContactSettings();
+            const dayName = isDateKey(date) ? WEEKDAY_NAMES[fromDateKey(date).getDay()] : '';
+            const fixed = contactFixedFor(fixedNow, date);
+            if (!addItems) {
+                document.getElementById('contact-fixed-hint').textContent = !fixed.length ? ''
+                    : `🔁 週${dayName}固定作業：${fixed.join('、')}（這天已經存過，刪掉的不會再帶入）`;
+                return 0;
+            }
             let merged = contactItemsFor(fixedNow, date, own);
             // 前測卷、後測卷（今天以後的聯絡簿才預填）
             if (date >= todayKey()) {
                 const have = merged.map(squash);
                 const autos = autoMathItems(fixedNow).filter(a => !have.some(h => h.startsWith(squash(a).replace(/卷$/, ''))));
+                autos.forEach(a => contactPrefilledAutos.add(a));
                 let at = merged.length;
                 while (at > 0 && isContactNote(merged[at - 1])) at--;
                 merged = [...merged.slice(0, at), ...autos, ...merged.slice(at)];
             }
             const added = merged.length - own.length;
             if (added > 0) box.value = merged.join('\n');
-            const fixed = contactFixedFor(fixedNow, date);
             document.getElementById('contact-fixed-hint').textContent = !fixed.length ? ''
-                : `🔁 已帶入週${WEEKDAY_NAMES[fromDateKey(date).getDay()]}固定作業：${fixed.join('、')}（可以直接改，例如寫上頁數；這天不用就刪掉）`;
+                : `🔁 已帶入週${dayName}固定作業：${fixed.join('、')}（可以直接改，例如寫上頁數；這天不用就刪掉）`;
             return added;
         }
 
@@ -6327,7 +6340,9 @@
             dueInput.min = toDateInputValue(new Date(fromDateKey(date).getTime() + 86400000));
             dueInput.value = contactDueDate(c, date);
             document.getElementById('contact-input').value = items.join('\n');
-            applyContactFixed();
+            // 還沒存過的那天才自動帶入固定作業；存過的照存的內容（老師刪掉的不會再出現）
+            contactPrefilledAutos = new Set();
+            applyContactFixed(!history[date]);
             const cur = contactAssignDate(now);
             document.getElementById('contact-date-hint').textContent = date === cur
                 ? (now.getHours() >= CONTACT_NEXT_DAY_HOUR ? '下午 3 點後寫的算下一個上課日的作業。' : '今天的作業。') + '可以改日期先打好之後幾天的。'
@@ -6387,7 +6402,7 @@
             const keepPrev = d.contact.date && d.contact.date !== todayKey() && d.contact.items.length > 0;
             const prev = keepPrev ? { prevItems: d.contact.items, prevDate: d.contact.date } : {};
             const settings = editorContactSettings();
-            const autos = forDate >= todayKey() ? autoMathItems(d.contact) : [];
+            const autos = forDate >= todayKey() ? [...contactPrefilledAutos] : [];
             const contact = { ...d.contact, ...prev, history: keptHistory, due: keptDue, ...updateFixedUsed(settings, forDate, items),
                 lesson: settings.lesson, ...updateMathProgress(d.contact, forDate, items, autos),
                 reminders: readReminders().filter(r => r.date >= todayKey()), tasks: lines('task-input'), date: todayKey() };
@@ -7541,8 +7556,8 @@
                     '老師或小幫手在<b>教師登記</b>模式點座號，可以切換「未到 → 已到 → 請假」。打卡紀錄<b>每天自動歸零</b>。',
                     '按「<b>✏️ 編輯</b>」寫<b>早修任務</b>（黃色便利貼）和<b>聯絡簿</b>，一行一項，不用自己打「1.」編號。聯絡簿上面可以選<b>這是哪天的作業、哪天收</b>（預設下午 3 點後寫的算下一個上課日、隔一個上課日收），也可以<b>先打好之後 5 個上課日</b>的，到時候教室畫面會自動換上。聯絡簿右上角、早修任務標題旁邊都可以各自切換<b>直式</b>（由右往左一項一欄，太長自動接下一行）或<b>橫式</b>（條列）；字會自動放大到剛好填滿。',
                     '聯絡簿開頭打「<b>*</b>」的項目不編號，前面畫 <b class="text-amber-500">▲</b>，代表<b>需要提醒的人再抄</b>；寫了「不用抄」的是說明。橫式時太長的一項會<b>自動縮小字</b>，盡量擠在同一行。',
-                    '<b>🔁 每週固定作業</b>：在「✏️ 編輯」最下面打開，週一到週五各一格（例如週二填「完成書法作業」，多項用「、」分開）。打那天的聯絡簿時會<b>自動帶入</b>，可以直接改（例如「英」改成「英U3句子」），那天不用就刪掉。數字前加「<b>#</b>」（例如「品德學習單#4」），那天聯絡簿有用到，下次號碼<b>自動加 1</b>；那週沒發、刪掉了就不加；同名的（例如週三、週五的「閱讀#」）共用一組號碼。',
-                    '<b>📖 本週國語課次</b>：在「🔁 每週固定作業」裡設定，每週一照「國習起始頁」表自動換下一課（L12 的下一週是「閱讀階梯二」；考試週、放假就改回來）。固定作業裡寫 <b>{L}</b> 會變成「L9」、<b>{甲乙}</b> 單數課是「甲」雙數課是「乙」（閱讀階梯那週空著）、<b>{國習頁}</b> 會變成「P.70–71」（每課起始頁在「📚 課本進度設定」）。按「📋 套用國語作業範本」可以一次填好。',
+                    '<b>🔁 每週固定作業</b>：在「✏️ 編輯」最下面打開，週一到週五各一格（例如週二填「完成書法作業」，多項用「、」分開）。打那天的聯絡簿時會<b>自動帶入</b>（那天存過以後，刪掉的就不會再帶回來），可以直接改（例如「英」改成「英U3句子」），那天不用就刪掉。數字前加「<b>#</b>」（例如「品德學習單#4」），那天聯絡簿有用到，下次號碼<b>自動加 1</b>；那週沒發、刪掉了就不加；同名的（例如週三、週五的「閱讀#」）共用一組號碼。',
+                    '<b>📖 本週國語課次</b>：在「🔁 每週固定作業」裡設定，每週一照「國習起始頁」表自動換下一課（L12 的下一週是「閱讀階梯二」；考試週、放假就改回來）。固定作業裡寫 <b>{L}</b> 會變成「L9」、<b>{L-1}</b> 是上一週的課次（「考國{L-1}」→ 考國L8）、<b>{甲乙}</b> 單數課是「甲」雙數課是「乙」（閱讀階梯那週空著）、<b>{國習頁}</b> 會變成「P.70–71」（每課起始頁在「📚 課本進度設定」）。按「📋 套用國語作業範本」可以一次填好。',
                     '<b>📐 數學預填</b>：打「數習」會接上次寫到的下一頁「P.60–」；打「數練」會排好 2 頁（不跨單元，最後只剩 1 頁就併成 3 頁）；打「八格卷」會接下一小節（5-3 之後是 6-1）。進入新單元第一天自動帶入「前測卷」，數習和八格卷都寫完的單元自動帶入「後測卷」，不要就刪掉。單元頁碼、八格卷小節數和目前寫到哪，在「設定後台 → 📚 課本進度設定」改。',
                     '<b>🔔 提醒事項</b>：在「✏️ 編輯」最下面新增，填內容、日期、提前幾天；到了就自動加在聯絡簿最後，勾「倒數」會寫成「畢旅倒數3天」。',
                     '<b>📣 發到 BAND</b>：教師登記時，聯絡簿右上角有「發到BAND」，看過預覽、輸入發布密碼就送出，發過會顯示「今日已發布」。第一次要先照「docs/BAND發布設定說明.md」設定好發布程式。',
